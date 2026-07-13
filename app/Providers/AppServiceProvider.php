@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Event;
+use Stancl\Tenancy\Events\TenancyInitialized;
+use App\Services\TenantConfigService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,6 +22,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Vite::prefetch(concurrency: 3);
+        Event::listen(TenancyInitialized::class, function (TenancyInitialized $event) {
+            if (isset($event->tenancy->tenant)) {
+                TenantConfigService::configure($event->tenancy->tenant);
+            }
+        });
     }
 }
