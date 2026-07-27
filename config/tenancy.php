@@ -182,6 +182,16 @@ return [
     'routes' => true,
 
     /**
+     * ID sandbox-тенанта, используемого локальным AI-агентом (LarAgent,
+     * раздел 16 системной инструкции) для безопасных тестовых прогонов.
+     * Читается в PreventSandboxTenantHttpAccess (запрет HTTP-доступа к
+     * sandbox-тенанту) и в тестах через TenantAgentTestCase — единая точка
+     * правды для id, тот же env-ключ, что уже используется в
+     * phpunit.tenant.xml и TestRunnerGuard.
+     */
+    'agent_sandbox_tenant_id' => env('AI_AGENT_SANDBOX_TENANT', 'tenant_agent_sandbox'),
+
+    /**
      * Parameters used by the tenants:migrate command.
      */
     'migration_parameters' => [

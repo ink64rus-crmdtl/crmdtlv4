@@ -126,6 +126,11 @@ return [
         'emergency' => [
             'path' => storage_path('logs/laravel.log'),
         ],
+        'ai_agent' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/ai-agent.log'),
+            'level' => 'debug',
+        ],
 
     ],
 
