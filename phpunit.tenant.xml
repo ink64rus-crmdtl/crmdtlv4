@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Отдельный конфиг для тестов агента (раздел 16.5 системной инструкции,
+    TestRunnerGuard). Не заменяет основной phpunit.xml — тот по-прежнему
+    гоняет обычные unit-тесты на изолированном sqlite :memory:.
+
+    Этот конфиг используется ТОЛЬКО когда нужно реально проверить код против
+    физической tenant-БД (tenant_agent_sandbox), а не заменяет CI/дефолтный прогон.
+
+    Запуск: php artisan test с флагом configuration=phpunit.tenant.xml
+    (см. TestRunnerGuard::run в app/Services/AiAgent/TestRunnerGuard.php)
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Agent">
+            <directory>tests/Agent</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">app</directory>
+        </include>
+    </source>
+    <php>
+        <!--
+            ВАЖНО: DB_CONNECTION здесь — central-подключение (mysql, БД crmdtlv4),
+            НЕ sqlite и НЕ напрямую tenant-БД. TenantAgentTestCase сам вызывает
+            tenancy()->initialize() в setUp(), и именно это переключает
+            подключение на tenanttenant_agent_sandbox через bootstrapper
+            stancl/tenancy — то есть Laravel в момент старта теста должен видеть
+            central-конфигурацию, чтобы штатно инициализировать tenancy.
+        -->
+        <env name="APP_ENV" value="testing"/>
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="crmdtlv4"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="CACHE_DRIVER" value="array"/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+
+        <!--
+            Явный маркер, что это прогон против sandbox-тенанта — читается в
+            TenantAgentTestCase, чтобы жёстко зафиксировать id тенанта в одном
+            месте, а не хардкодить его в каждом тесте.
+        -->
+        <env name="AI_AGENT_SANDBOX_TENANT" value="tenant_agent_sandbox"/>
+    </php>
+</phpunit>

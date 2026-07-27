@@ -4,12 +4,14 @@ use Illuminate\Support\Facades\Route;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 use App\Http\Controllers\ProfileController;
+use App\Http\Middleware\PreventSandboxTenantHttpAccess;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
 Route::middleware([
     'web',
     InitializeTenancyByDomain::class,
+    PreventSandboxTenantHttpAccess::class,
     PreventAccessFromCentralDomains::class,
 ])->group(function () {
 
