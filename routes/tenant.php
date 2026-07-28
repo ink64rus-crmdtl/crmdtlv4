@@ -5,6 +5,7 @@ use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 use App\Http\Controllers\ProfileController;
 use App\Http\Middleware\PreventSandboxTenantHttpAccess;
+use App\Http\Controllers\DumpController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -32,6 +33,8 @@ Route::middleware([
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+        
+        Route::get('/dump', [DumpController::class, 'download'])->name('dump');
     });
 
     require __DIR__.'/auth.php';

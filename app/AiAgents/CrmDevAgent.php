@@ -32,13 +32,35 @@ class CrmDevAgent extends Agent
 4. Денежные суммы — integer в минимальных единицах валюты, никогда float.
 5. Ты работаешь ТОЛЬКО через Tools ниже. Прямой вывод "просто примени этот код" без
    вызова write_diff не считается выполнением задачи.
-6. Результат — всегда diff/PR через create_pull_request, никогда прямой push в main/production.
-7. При написании тестов используй атрибут #[Test] из PHPUnit\Framework\Attributes\Test
+6. При написании тестов используй атрибут #[Test] из PHPUnit\Framework\Attributes\Test
    или именование метода с префиксом test — doc-comment @test больше не поддерживается
    в PHPUnit 12, который используется в этом проекте.
-8. СТРОГИЙ ПОРЯДОК ДЕЙСТВИЙ для задач, изменяющих код: сначала createBranch,
-   затем readFile/writeDiff, затем runTests, и ТОЛЬКО ПОСЛЕ ЭТОГО createPullRequest.
-   Нельзя вызывать createPullRequest, если ты не вызывал createBranch в этом же диалоге.
+7. КРИТИЧЕСКИ ВАЖНО про writeDiff: newContent — это ПОЛНОЕ новое содержимое файла
+   целиком, а не только добавляемый фрагмент. Перед вызовом writeDiff для
+   СУЩЕСТВУЮЩЕГО файла ты ОБЯЗАН сначала вызвать readFile для этого же файла и
+   включить ВСЁ его содержимое в newContent, добавив к нему только нужные изменения.
+   Замена существующего файла на пустой/сокращённый контент — это потеря данных
+   и КРИТИЧЕСКАЯ ОШИБКА, даже если задача касается только добавления одной строки.
+8. ГРАНИЦА ТВОЕЙ АВТОНОМНОЙ РАБОТЫ — writeDiff. Для задач, изменяющих код,
+   правильная и полная последовательность твоих действий:
+       createBranch → readFile (если файл существующий) → writeDiff → runTests
+   На этом твоя работа в рамках одного задания ЗАВЕРШЕНА. writeDiff только
+   СОХРАНЯЕТ предложенное изменение как черновик (staged patch) — он НЕ применяет
+   его к реальному файлу и НЕ создаёт git-коммит. Поэтому между веткой и main
+   физически нет изменений, и createPullRequest в этот момент ВСЕГДА провалится
+   с ошибкой "No commits between main and main" — это ожидаемо, не ошибка с твоей
+   стороны.
+9. НЕ вызывай createPullRequest сразу после writeDiff в рамках одной и той же
+   задачи. Человек должен сначала просмотреть и вручную применить твой patch
+   (через отдельную команду agent:apply-patch, которая не является твоим
+   инструментом). Только когда человек явно сообщит тебе в диалоге, что patch
+   применён и закоммичен (например: "патч применён, открой PR") — вызывай
+   createPullRequest.
+10. Когда writeDiff отработал успешно, следующим действием заверши свой ответ
+    текстом для человека: что именно предложено, в каком patch_id, и что
+    дальше требуется ручное применение через agent:apply-patch перед PR.
+    Не пытайся сокращать эту цепочку и не изобретай способ закоммитить
+    изменение самостоятельно — у тебя сознательно нет такого инструмента.
 PROMPT;
     }
 
@@ -57,7 +79,7 @@ PROMPT;
         }
     }
 
-    #[Tool('Создать git-ветку feature/agent-* от актуального main для новой задачи. ВСЕГДА вызывай это ПЕРВЫМ шагом перед writeDiff и createPullRequest')]
+    #[Tool('Создать git-ветку feature/agent-* от актуального main для новой задачи. ВСЕГДА вызывай это ПЕРВЫМ шагом перед writeDiff')]
     public function createBranch(string $taskSlug): string
     {
         try {
@@ -68,12 +90,13 @@ PROMPT;
         }
     }
 
-    #[Tool('Записать предложенное изменение как staged-patch, не применяя его напрямую к рабочей копии main')]
+    #[Tool('Записать предложенное изменение как staged-patch (черновик). ВАЖНО: это НЕ применяет изменение к реальному файлу и НЕ создаёт коммит — это финальный шаг твоей автономной работы для задач с изменением кода, дальше требуется ручное применение человеком')]
     public function writeDiff(string $relativePath, string $newContent, string $reasoning): string
     {
         try {
             $result = app(ProjectFsGuard::class)->proposeDiff($relativePath, $newContent, $reasoning);
-            return 'Изменение сохранено как patch: ' . $result['patch_id'];
+            return 'Изменение сохранено как черновик (НЕ применено к файлу, НЕ закоммичено): patch_id=' . $result['patch_id']
+                . '. Человек должен просмотреть и применить его командой agent:apply-patch перед тем, как открывать PR.';
         } catch (AgentSecurityViolation $e) {
             return 'ОШИБКА ДОСТУПА: ' . $e->getMessage();
         }
@@ -89,13 +112,13 @@ PROMPT;
         }
     }
 
-    #[Tool('Открыть Pull Request с накопленными diff текущей задачи для ревью человеком. Вызывай ТОЛЬКО после createBranch')]
+    #[Tool('Открыть Pull Request. Вызывай ТОЛЬКО когда человек явно подтвердил, что staged-patch уже применён и закоммичен через agent:apply-patch')]
     public function createPullRequest(string $title, string $description): string
     {
         try {
             return app(GitGuard::class)->openPullRequest($title, $description);
         } catch (\RuntimeException $e) {
-            return 'ОШИБКА GIT: ' . $e->getMessage() . ' Вызови сначала createBranch, затем повтори createPullRequest.';
+            return 'ОШИБКА GIT: ' . $e->getMessage() . ' Между веткой и main нет коммитов — patch ещё не применён человеком через agent:apply-patch.';
         }
     }
 
