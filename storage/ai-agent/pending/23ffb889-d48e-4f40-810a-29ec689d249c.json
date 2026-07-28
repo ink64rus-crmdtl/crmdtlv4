@@ -1,0 +1,6 @@
+{
+    "relative_path": "routes\/tenant.php",
+    "new_content": "Route::get('\/up-check', function () {\n    return response()->json(['status' => 'ok']);\n});",
+    "reasoning": "Добавлен маршрут для проверки статуса системы, возвращающий JSON {\"status\":\"ok\"} без использования tenant-контекста и БД",
+    "created_at": "2026-07-27T22:21:13+00:00"
+}

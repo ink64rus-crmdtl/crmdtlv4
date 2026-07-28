@@ -12,18 +12,9 @@ use LarAgent\Attributes\Tool;
 
 class CrmDevAgent extends Agent
 {
-    // Совпадает с 'model' в config/laragent.php -> providers.local_default,
-    // но явно продублировано здесь для читаемости и на случай override.
     protected $model = 'qwen3:8b';
-
-    // Имя провайдера из config/laragent.php (раздел 16.3 системной инструкции)
     protected $provider = 'local_default';
-
-    // Персистентная история диалога в файле — удобно дебажить шаги агента
     protected $history = 'json';
-
-    // Явно пусто: инструменты этого агента заведены через #[Tool] на методах
-    // ниже (attribute-based tools), а не через отдельные Tool-классы.
     protected $tools = [];
 
     public function instructions()
@@ -45,6 +36,9 @@ class CrmDevAgent extends Agent
 7. При написании тестов используй атрибут #[Test] из PHPUnit\Framework\Attributes\Test
    или именование метода с префиксом test — doc-comment @test больше не поддерживается
    в PHPUnit 12, который используется в этом проекте.
+8. СТРОГИЙ ПОРЯДОК ДЕЙСТВИЙ для задач, изменяющих код: сначала createBranch,
+   затем readFile/writeDiff, затем runTests, и ТОЛЬКО ПОСЛЕ ЭТОГО createPullRequest.
+   Нельзя вызывать createPullRequest, если ты не вызывал createBranch в этом же диалоге.
 PROMPT;
     }
 
@@ -63,10 +57,15 @@ PROMPT;
         }
     }
 
-    #[Tool('Создать git-ветку feature/agent-* от актуального main для новой задачи')]
+    #[Tool('Создать git-ветку feature/agent-* от актуального main для новой задачи. ВСЕГДА вызывай это ПЕРВЫМ шагом перед writeDiff и createPullRequest')]
     public function createBranch(string $taskSlug): string
     {
-        return app(GitGuard::class)->createFeatureBranch($taskSlug);
+        try {
+            $branch = app(GitGuard::class)->createFeatureBranch($taskSlug);
+            return "Ветка '{$branch}' создана и является текущей. Теперь можно использовать writeDiff.";
+        } catch (\RuntimeException $e) {
+            return 'ОШИБКА GIT: ' . $e->getMessage();
+        }
     }
 
     #[Tool('Записать предложенное изменение как staged-patch, не применяя его напрямую к рабочей копии main')]
@@ -83,13 +82,21 @@ PROMPT;
     #[Tool('Запустить тесты проекта на sandbox-тенанте (никогда не на проде)')]
     public function runTests(?string $filter = null): string
     {
-        return app(TestRunnerGuard::class)->run($filter);
+        try {
+            return app(TestRunnerGuard::class)->run($filter);
+        } catch (\Throwable $e) {
+            return 'ОШИБКА ТЕСТОВ: ' . $e->getMessage();
+        }
     }
 
-    #[Tool('Открыть Pull Request с накопленными diff текущей задачи для ревью человеком')]
+    #[Tool('Открыть Pull Request с накопленными diff текущей задачи для ревью человеком. Вызывай ТОЛЬКО после createBranch')]
     public function createPullRequest(string $title, string $description): string
     {
-        return app(GitGuard::class)->openPullRequest($title, $description);
+        try {
+            return app(GitGuard::class)->openPullRequest($title, $description);
+        } catch (\RuntimeException $e) {
+            return 'ОШИБКА GIT: ' . $e->getMessage() . ' Вызови сначала createBranch, затем повтори createPullRequest.';
+        }
     }
 
     #[Tool('Задать архитектору уточняющий вопрос вместо предположения молча')]

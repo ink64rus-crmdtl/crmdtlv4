@@ -25,7 +25,20 @@ class GitGuard
 
     public function openPullRequest(string $title, string $description): string
     {
-        // Требует настроенного GitHub CLI (шаг 4.3) с токеном ограниченных прав
+        // Явная проверка ДО вызова gh — раньше падало прямо внутри gh с
+        // невнятной для модели ошибкой "must be on a branch named
+        // differently than main", если createBranch не был вызван перед
+        // этим (агент может пропустить шаг в многошаговой цепочке).
+        $currentBranch = trim($this->run(['git', 'rev-parse', '--abbrev-ref', 'HEAD']));
+
+        if ($currentBranch === 'main' || $currentBranch === 'master') {
+            throw new \RuntimeException(
+                "Нельзя открыть PR находясь на ветке '{$currentBranch}'. " .
+                'Сначала вызови Tool createBranch, чтобы создать отдельную feature-ветку, ' .
+                'и только после этого — createPullRequest.'
+            );
+        }
+
         $result = $this->run([
             'gh', 'pr', 'create',
             '--title', $title,
