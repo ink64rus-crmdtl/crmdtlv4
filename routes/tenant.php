@@ -5,9 +5,12 @@ use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
 use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 use App\Http\Controllers\ProfileController;
 use App\Http\Middleware\PreventSandboxTenantHttpAccess;
+use App\Http\Middleware\SetBranchContext;
 use App\Http\Controllers\DumpController;
 use App\Http\Controllers\Tenant\LegalEntityController;
 use App\Http\Controllers\Tenant\AccountController;
+use App\Http\Controllers\Tenant\BranchController;
+use App\Http\Controllers\Tenant\SystemController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -16,6 +19,7 @@ Route::middleware([
     InitializeTenancyByDomain::class,
     PreventSandboxTenantHttpAccess::class,
     PreventAccessFromCentralDomains::class,
+    SetBranchContext::class,
 ])->group(function () {
 
     Route::get('/', function () {
@@ -36,6 +40,8 @@ Route::middleware([
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
         
+        // Системный раздел (Логи и Дамп)
+        Route::get('/system', [SystemController::class, 'index'])->name('system.index');
         Route::get('/dump', [DumpController::class, 'download'])->name('dump');
 
         // Главный маршрут настроек (редирект на Юрлица)
@@ -53,6 +59,15 @@ Route::middleware([
         Route::post('/settings/accounts', [AccountController::class, 'store'])->name('settings.accounts.store');
         Route::put('/settings/accounts/{account}', [AccountController::class, 'update'])->name('settings.accounts.update');
         Route::delete('/settings/accounts/{account}', [AccountController::class, 'destroy'])->name('settings.accounts.destroy');
+
+        // Настройки: Филиалы
+        Route::get('/settings/branches', [BranchController::class, 'index'])->name('settings.branches.index');
+        Route::post('/settings/branches', [BranchController::class, 'store'])->name('settings.branches.store');
+        Route::put('/settings/branches/{branch}', [BranchController::class, 'update'])->name('settings.branches.update');
+        Route::delete('/settings/branches/{branch}', [BranchController::class, 'destroy'])->name('settings.branches.destroy');
+
+        // Переключение филиала
+        Route::post('/branches/{branch}/switch', [BranchController::class, 'switch'])->name('branches.switch');
     });
 
     require __DIR__.'/auth.php';

@@ -19,6 +19,7 @@ class ModuleSeeder extends Seeder
             ['key' => 'communications', 'label' => ['en' => 'Communications', 'ru' => 'Общение'], 'icon' => 'ChatBubbleLeftRightIcon', 'is_core' => true, 'sort_order' => 70],
             ['key' => 'documents', 'label' => ['en' => 'Documents', 'ru' => 'Документы'], 'icon' => 'DocumentTextIcon', 'is_core' => true, 'sort_order' => 80],
             ['key' => 'settings', 'label' => ['en' => 'Settings', 'ru' => 'Настройки'], 'icon' => 'Cog6ToothIcon', 'is_core' => true, 'sort_order' => 90],
+            ['key' => 'system', 'label' => ['en' => 'System', 'ru' => 'Система'], 'icon' => 'ri-server-line', 'is_core' => true, 'sort_order' => 100],
         ];
 
         foreach ($modules as $mod) {

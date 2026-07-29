@@ -1,47 +1,77 @@
 <script setup>
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
-import * as HeroIcons from '@heroicons/vue/24/outline';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 
 const page = usePage();
 const modules = computed(() => page.props.modules || []);
 
-// Динамическая подгрузка иконок
-const resolveIcon = (iconName) => {
-    return HeroIcons[iconName] || HeroIcons['Squares2X2Icon'];
+// Маппинг старых иконок из сидера на новые Remix Icons (Attex Theme)
+const iconMap = {
+    'HomeIcon': 'ri-home-4-line',
+    'UsersIcon': 'ri-group-line',
+    'BriefcaseIcon': 'ri-briefcase-line',
+    'ArchiveBoxIcon': 'ri-archive-line',
+    'BanknotesIcon': 'ri-money-dollar-circle-line',
+    'UserGroupIcon': 'ri-team-line',
+    'ChatBubbleLeftRightIcon': 'ri-chat-3-line',
+    'DocumentTextIcon': 'ri-file-text-line',
+    'Cog6ToothIcon': 'ri-settings-3-line',
 };
 
-// Защита от ошибок роутинга (пока мы не создали все контроллеры)
+const resolveIcon = (iconName) => {
+    // Если иконка уже передана в формате Remix (начинается с ri-), используем её напрямую
+    if (iconName && iconName.startsWith('ri-')) {
+        return iconName;
+    }
+    return iconMap[iconName] || 'ri-grid-line';
+};
+
+// Маппинг ключей модулей на реальные имена маршрутов Laravel
+const routeMap = {
+    'dashboard': 'dashboard',
+    'settings': 'settings',
+    'system': 'system.index',
+};
+
+// Защита от ошибок роутинга
 const getRoute = (key) => {
-    return route().has(key) ? route(key) : '#';
+    const routeName = routeMap[key] || key;
+    return route().has(routeName) ? route(routeName) : '#';
+};
+
+// Проверка активности пункта меню
+const isRouteActive = (key) => {
+    const routeName = routeMap[key] || key;
+    // Проверяем точное совпадение или вхождение (например, system.index -> system)
+    return route().current(routeName) || route().current(key + '.*');
 };
 </script>
 
 <template>
-    <aside class="flex flex-col w-64 h-screen px-4 py-8 overflow-y-auto bg-midnight-900 border-r border-midnight-800">
+    <aside class="flex flex-col w-64 h-screen px-4 py-6 bg-[#313a46] border-r border-gray-700/80 shrink-0">
         <div class="flex items-center justify-center mb-8">
             <Link :href="route('dashboard')" class="flex items-center gap-2">
-                <ApplicationLogo class="w-auto h-8 text-indigo-500 fill-current" />
-                <span class="text-xl font-bold text-white tracking-wider">CRM<span class="text-indigo-500">DTL</span></span>
+                <ApplicationLogo class="w-auto h-8 text-primary fill-current" />
+                <span class="text-xl font-bold text-white tracking-wider">CRM<span class="text-primary">DTL</span></span>
             </Link>
         </div>
 
-        <div class="flex flex-col justify-between flex-1 mt-6">
-            <nav class="space-y-2">
+        <div class="flex flex-col justify-between flex-1 mt-2">
+            <nav class="space-y-1.5">
                 <Link
                     v-for="module in modules"
                     :key="module.id"
                     :href="getRoute(module.key)"
                     :class="[
-                        route().current(module.key) 
-                            ? 'bg-midnight-800 text-indigo-400 border-l-4 border-indigo-500' 
-                            : 'text-gray-400 hover:bg-midnight-800 hover:text-white border-l-4 border-transparent',
-                        'flex items-center px-4 py-3 transition-colors duration-200 transform rounded-r-lg'
+                        isRouteActive(module.key) 
+                            ? 'bg-primary/10 text-primary' 
+                            : 'text-[#aab8c5] hover:bg-gray-800 hover:text-white',
+                        'flex items-center px-4 py-2.5 transition-all duration-300 rounded-md text-sm font-medium'
                     ]"
                 >
-                    <component :is="resolveIcon(module.icon)" class="w-5 h-5" />
-                    <span class="mx-4 font-medium">{{ module.label }}</span>
+                    <i :class="['text-lg mr-3', resolveIcon(module.icon)]"></i>
+                    <span>{{ module.label }}</span>
                 </Link>
             </nav>
         </div>

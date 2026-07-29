@@ -5,6 +5,8 @@ namespace App\Http\Middleware;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use App\Models\Module;
+use App\Models\Branch;
+use App\Services\BranchContext;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -30,30 +32,32 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        $modules = [];
-        
-        // Загружаем модули только если пользователь авторизован и мы находимся в тенанте
-        if ($request->user() && tenancy()->initialized) {
-            $modules = Module::where('is_enabled', true)
-                ->orderBy('sort_order')
-                ->get()
-                ->map(function ($module) {
-                    return [
-                        'id' => $module->id,
-                        'key' => $module->key,
-                        'label' => $module->label, // Spatie вернет перевод для текущей локали
-                        'icon' => $module->icon,
-                        'parent_id' => $module->parent_id,
-                    ];
-                });
-        }
-
         return [
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
             ],
-            'modules' => $modules,
+            // Ленивая загрузка (Closure) гарантирует, что данные берутся ПОСЛЕ отработки SetBranchContext
+            'modules' => fn () => ($request->user() && tenancy()->initialized)
+                ? Module::where('is_enabled', true)
+                    ->orderBy('sort_order')
+                    ->get()
+                    ->map(function ($module) {
+                        return [
+                            'id' => $module->id,
+                            'key' => $module->key,
+                            'label' => $module->label,
+                            'icon' => $module->icon,
+                            'parent_id' => $module->parent_id,
+                        ];
+                    })
+                : [],
+            'branches' => fn () => ($request->user() && tenancy()->initialized)
+                ? Branch::where('is_active', true)->get(['id', 'name'])
+                : [],
+            'current_branch_id' => fn () => ($request->user() && tenancy()->initialized)
+                ? BranchContext::current()
+                : null,
         ];
     }
 }
