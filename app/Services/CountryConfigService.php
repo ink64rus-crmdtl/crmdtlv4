@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Services;
+
+class CountryConfigService
+{
+    public static function getSupportedCountries(): array
+    {
+        return [
+            'RU' => [
+                'code' => 'RU',
+                'name' => 'Россия',
+                'currency' => 'RUB',
+                'locale' => 'ru',
+                'phone_mask' => '+7 (999) 999-99-99',
+                'phone_code' => '+7',
+                'plate_regex' => '^[АВЕКМНОРСТУХa-vekmhortuxA-VEKMHORTUX]{1}\d{3}[АВЕКМНОРСТУХa-vekmhortuxA-VEKMHORTUX]{2}\d{2,3}$',
+                'plate_placeholder' => 'А 000 АА 77',
+                'bank_labels' => [
+                    'bik' => 'БИК банка',
+                    'account_number' => 'Расчетный счет (20 цифр)',
+                    'corr_account' => 'Корреспондентский счет',
+                ],
+                'requisite_schema' => [
+                    ['key' => 'inn', 'label' => 'ИНН', 'required' => true, 'type' => 'text', 'placeholder' => '10 или 12 цифр'],
+                    ['key' => 'kpp', 'label' => 'КПП', 'required' => false, 'type' => 'text', 'placeholder' => '9 цифр (для ООО)'],
+                    ['key' => 'ogrn', 'label' => 'ОГРН / ОГРНИП', 'required' => false, 'type' => 'text', 'placeholder' => '13 или 15 цифр'],
+                    ['key' => 'legal_address', 'label' => 'Юридический адрес', 'required' => true, 'type' => 'textarea', 'placeholder' => 'г. Москва, ул...'],
+                ],
+            ],
+            'BY' => [
+                'code' => 'BY',
+                'name' => 'Беларусь',
+                'currency' => 'BYN',
+                'locale' => 'ru',
+                'phone_mask' => '+375 (99) 999-99-99',
+                'phone_code' => '+375',
+                'plate_regex' => '^\d{4}\s?[A-Za-z]{2}-[1-7]$',
+                'plate_placeholder' => '0000 AA-7',
+                'bank_labels' => [
+                    'bik' => 'BIC / БИК банка',
+                    'account_number' => 'IBAN счет (BY28...)',
+                    'corr_account' => 'Код банка',
+                ],
+                'requisite_schema' => [
+                    ['key' => 'unp', 'label' => 'УНП (Учетный номер плательщика)', 'required' => true, 'type' => 'text', 'placeholder' => '9 цифр'],
+                    ['key' => 'okpo', 'label' => 'ОКПО', 'required' => false, 'type' => 'text', 'placeholder' => '8 цифр'],
+                    ['key' => 'legal_address', 'label' => 'Юридический адрес', 'required' => true, 'type' => 'textarea', 'placeholder' => 'г. Минск, ул...'],
+                ],
+            ],
+            'KZ' => [
+                'code' => 'KZ',
+                'name' => 'Казахстан',
+                'currency' => 'KZT',
+                'locale' => 'ru',
+                'phone_mask' => '+7 (799) 999-99-99',
+                'phone_code' => '+7',
+                'plate_regex' => '^\d{3}\s?[A-Za-z]{2,3}\s?\d{2}$',
+                'plate_placeholder' => '001 AAA 02',
+                'bank_labels' => [
+                    'bik' => 'БИК / SWIFT',
+                    'account_number' => 'IBAN счет (KZ86...)',
+                    'corr_account' => 'Кбе (Код бенефициара)',
+                ],
+                'requisite_schema' => [
+                    ['key' => 'bin_iin', 'label' => 'БИН / ИИН', 'required' => true, 'type' => 'text', 'placeholder' => '12 цифр'],
+                    ['key' => 'legal_address', 'label' => 'Юридический адрес', 'required' => true, 'type' => 'textarea', 'placeholder' => 'г. Алматы, пр...'],
+                ],
+            ],
+            'GE' => [
+                'code' => 'GE',
+                'name' => 'Грузия',
+                'currency' => 'GEL',
+                'locale' => 'en',
+                'phone_mask' => '+995 (599) 99-99-99',
+                'phone_code' => '+995',
+                'plate_regex' => '^[A-Za-z]{2}-\d{3}-[A-Za-z]{2}$',
+                'plate_placeholder' => 'AA-000-AA',
+                'bank_labels' => [
+                    'bik' => 'SWIFT Code',
+                    'account_number' => 'IBAN Account (GE29TB...)',
+                    'corr_account' => 'Intermediary Bank',
+                ],
+                'requisite_schema' => [
+                    ['key' => 'tax_id', 'label' => 'Identification Code (ИНН)', 'required' => true, 'type' => 'text', 'placeholder' => '9 or 11 digits'],
+                    ['key' => 'legal_address', 'label' => 'Legal Address', 'required' => true, 'type' => 'textarea', 'placeholder' => 'Tbilisi, Rustaveli ave...'],
+                ],
+            ],
+        ];
+    }
+
+    public static function getForCountry(string $countryCode): ?array
+    {
+        $countryCode = strtoupper($countryCode);
+        $countries = static::getSupportedCountries();
+
+        return $countries[$countryCode] ?? $countries['RU'] ?? null;
+    }
+}

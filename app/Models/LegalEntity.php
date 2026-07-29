@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LegalEntity extends Model
 {
@@ -16,8 +17,16 @@ class LegalEntity extends Model
         'is_active',
     ];
 
-    protected $casts = [
-        'is_active' => 'boolean',
-        'requisites' => 'array',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'requisites' => 'array',
+        ];
+    }
+
+    public function accounts(): HasMany
+    {
+        return $this->hasMany(Account::class);
+    }
 }

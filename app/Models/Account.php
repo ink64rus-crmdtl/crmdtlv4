@@ -11,7 +11,18 @@ class Account extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'branch_id', 'name', 'type', 'currency_id', 'balance', 'is_active'
+        'branch_id',
+        'legal_entity_id',
+        'name',
+        'type',
+        'bank_name',
+        'bik',
+        'account_number',
+        'corr_account',
+        'currency_id',
+        'balance',
+        'is_active',
+        'is_default_for_invoicing',
     ];
 
     protected function casts(): array
@@ -20,11 +31,17 @@ class Account extends Model
             'balance' => 'integer',
             'currency_id' => 'integer',
             'is_active' => 'boolean',
+            'is_default_for_invoicing' => 'boolean',
         ];
     }
 
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function legalEntity(): BelongsTo
+    {
+        return $this->belongsTo(LegalEntity::class);
     }
 }
