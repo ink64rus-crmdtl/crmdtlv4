@@ -13,6 +13,8 @@ use App\Http\Controllers\Tenant\BranchController;
 use App\Http\Controllers\Tenant\SystemController;
 use App\Http\Controllers\Tenant\BusinessDirectionController;
 use App\Http\Controllers\Tenant\WarehouseSettingsController;
+use App\Http\Controllers\Tenant\CustomFieldController;
+use App\Http\Controllers\Tenant\FieldPermissionController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -80,6 +82,17 @@ Route::middleware([
         // Настройки: Склад
         Route::get('/settings/warehouse', [WarehouseSettingsController::class, 'index'])->name('settings.warehouse.index');
         Route::post('/settings/warehouse', [WarehouseSettingsController::class, 'store'])->name('settings.warehouse.store');
+
+        // Настройки: Кастомные поля
+        Route::get('/settings/custom-fields', [CustomFieldController::class, 'index'])->name('settings.custom-fields.index');
+        Route::post('/settings/custom-fields', [CustomFieldController::class, 'store'])->name('settings.custom-fields.store');
+        Route::put('/settings/custom-fields/{customField}', [CustomFieldController::class, 'update'])->name('settings.custom-fields.update');
+        Route::delete('/settings/custom-fields/{customField}', [CustomFieldController::class, 'destroy'])->name('settings.custom-fields.destroy');
+
+        // Настройки: Права на поля и модули
+        Route::get('/settings/field-permissions', [FieldPermissionController::class, 'index'])->name('settings.field-permissions.index');
+        Route::post('/settings/field-permissions', [FieldPermissionController::class, 'store'])->name('settings.field-permissions.store');
+        Route::post('/settings/module-permissions', [FieldPermissionController::class, 'storeModulePermissions'])->name('settings.module-permissions.store');
     });
 
     require __DIR__.'/auth.php';

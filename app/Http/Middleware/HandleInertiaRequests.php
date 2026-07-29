@@ -42,6 +42,17 @@ class HandleInertiaRequests extends Middleware
                 ? Module::where('is_enabled', true)
                     ->orderBy('sort_order')
                     ->get()
+                    ->filter(function ($module) use ($request) {
+                        // Админ видит все включенные модули
+                        if ($request->user()->hasRole('admin')) {
+                            return true;
+                        }
+                        // Если у модуля нет требования прав, либо пользователь имеет это право
+                        if (empty($module->required_permission)) {
+                            return true;
+                        }
+                        return $request->user()->can($module->required_permission);
+                    })
                     ->map(function ($module) {
                         return [
                             'id' => $module->id,
@@ -51,6 +62,7 @@ class HandleInertiaRequests extends Middleware
                             'parent_id' => $module->parent_id,
                         ];
                     })
+                    ->values()
                 : [],
             'branches' => fn () => ($request->user() && tenancy()->initialized)
                 ? Branch::where('is_active', true)->get(['id', 'name'])

@@ -154,7 +154,24 @@ const deleteAccount = (account) => {
         </template>
 
         <div class="max-w-7xl mx-auto space-y-6 font-sans text-slate-600">
-            
+            <!-- Header Card (Admindek Card Style) -->
+            <div class="flex justify-between items-center bg-white p-6 rounded-xl shadow-xs border border-slate-200">
+                <div>
+                    <h1 class="text-xl font-bold text-slate-800 tracking-tight">Юридические лица и Реквизиты</h1>
+                    <p class="text-xs text-slate-500 mt-1">
+                        Управление юридическими лицами компании и их банковскими счетами
+                    </p>
+                </div>
+                <!-- Кнопка по вашему шаблону: inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs text-white -->
+                <button
+                    @click="openModal()"
+                    class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-600/90 transition-colors shadow-xs"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus h-3.5 w-3.5"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+                    Добавить юрлицо
+                </button>
+            </div>
+
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
                 <nav class="-mb-px flex space-x-8 overflow-x-auto">
@@ -202,131 +219,135 @@ const deleteAccount = (account) => {
                     >
                         Склад
                     </Link>
+                    <Link
+                        :href="route('settings.custom-fields.index')"
+                        :class="[
+                            route().current('settings.custom-fields.index')
+                                ? 'border-primary text-primary'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
+                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
+                        ]"
+                    >
+                        Кастомные поля
+                    </Link>
+                    <Link
+                        :href="route('settings.field-permissions.index')"
+                        :class="[
+                            route().current('settings.field-permissions.index')
+                                ? 'border-primary text-primary'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
+                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
+                        ]"
+                    >
+                        Права на поля
+                    </Link>
                 </nav>
             </div>
 
-            <!-- Header Card (Attex Theme) -->
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
-                <div>
-                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Юридические лица и Реквизиты</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Управление юридическими лицами компании и их банковскими счетами
-                    </p>
-                </div>
-                <button
-                    @click="openModal()"
-                    class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
-                >
-                    <i class="ri-add-line text-base"></i>
-                    Добавить юрлицо
-                </button>
-            </div>
-
-            <!-- Table Card (Attex Theme) -->
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
-                <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрисдикция</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Налоговый номер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Счета</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="entity in legalEntities" :key="entity.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">{{ entity.name }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                                        {{ countryConfig?.name || tenantCountry }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entity.tax_id || '—' }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span class="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
-                                        <i class="ri-bank-card-line text-sm"></i> {{ entity.accounts?.length || 0 }} сч.
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span
-                                        :class="[
-                                            entity.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
-                                            'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
-                                        ]"
-                                    >
-                                        {{ entity.is_active ? 'Активно' : 'Неактивно' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button 
-                                        @click="openModal(entity)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click="deleteEntity(entity)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="legalEntities.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Юридические лица еще не добавлены. Нажмите "Добавить юрлицо".
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+            <!-- Table Card (Admindek Table Style) -->
+            <div class="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+                <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-500 font-bold uppercase text-xs tracking-wider">
+                        <tr>
+                            <th class="px-6 py-4">Название</th>
+                            <th class="px-6 py-4">Юрисдикция</th>
+                            <th class="px-6 py-4">Налоговый номер</th>
+                            <th class="px-6 py-4">Расчетные счета</th>
+                            <th class="px-6 py-4">Статус</th>
+                            <th class="px-6 py-4 text-right">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 text-slate-600">
+                        <tr v-for="entity in legalEntities" :key="entity.id" class="hover:bg-slate-50/80 transition-colors">
+                            <td class="px-6 py-4 font-bold text-slate-800">{{ entity.name }}</td>
+                            <td class="px-6 py-4">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                    {{ countryConfig?.name || tenantCountry }}
+                                </span>
+                            </td>
+                            <!-- Цифры строго в Nunito Sans (без font-mono) -->
+                            <td class="px-6 py-4 text-sm text-slate-600">{{ entity.tax_id || '—' }}</td>
+                            <td class="px-6 py-4">
+                                <span class="inline-flex items-center gap-1.5 font-medium text-xs text-slate-600">
+                                    💳 {{ entity.accounts?.length || 0 }} сч.
+                                </span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <!-- Статусы по вашему шаблону: inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium -->
+                                <div
+                                    :class="[
+                                        entity.is_active ? 'border-transparent bg-emerald-600 text-white' : 'border-transparent bg-rose-500 text-white',
+                                        'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium transition-colors shadow-xs'
+                                    ]"
+                                >
+                                    {{ entity.is_active ? 'Активно' : 'Неактивно' }}
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 text-right space-x-2">
+                                <!-- Маленькие кнопки по вашему шаблону: rounded px-2.5 py-1 text-xs font-medium -->
+                                <button 
+                                    @click="openModal(entity)" 
+                                    class="rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors bg-indigo-600 text-white hover:bg-indigo-600/90"
+                                >
+                                    Редактировать
+                                </button>
+                                <button 
+                                    @click="deleteEntity(entity)" 
+                                    class="rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors bg-rose-600 text-white hover:bg-rose-600/90"
+                                >
+                                    Удалить
+                                </button>
+                            </td>
+                        </tr>
+                        <tr v-if="legalEntities.length === 0">
+                            <td colspan="6" class="px-6 py-12 text-center text-slate-400 text-xs">
+                                Юридические лица еще не добавлены. Нажмите "Добавить юрлицо".
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Модальное окно Юрлица (Attex Standard: 50% width, Card Styling) -->
-        <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl lg:max-w-3xl my-8 mx-auto flex flex-col">
+        <!-- Модальное окно Юрлица (50% ширины на десктопе, max-w-2xl/3xl) -->
+        <div v-if="isModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+            <div class="bg-white rounded-xl w-full sm:max-w-2xl lg:max-w-3xl shadow-2xl border border-slate-200 overflow-hidden transition-all my-8 mx-auto">
                 
-                <!-- Модальная Шапка (Attex Theme) -->
-                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        {{ editingEntity ? 'Редактирование юридического лица' : 'Новое юридическое лицо' }}
-                    </h3>
-                    <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
-                        <i class="ri-close-line text-xl"></i>
-                    </button>
-                </div>
+                <!-- Модальная Шапка и Вкладки (Midnight Slate Header) -->
+                <div class="bg-slate-900 text-white pt-6 pb-0">
+                    <div class="flex justify-between items-center mb-5 px-6">
+                        <h3 class="text-base font-bold tracking-tight">
+                            {{ editingEntity ? 'Редактирование юридического лица' : 'Новое юридическое лицо' }}
+                        </h3>
+                        <button @click="closeModal()" class="text-slate-400 hover:text-white text-base font-bold transition-colors px-2">✕</button>
+                    </div>
 
-                <!-- Вкладки -->
-                <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6" v-if="editingEntity">
-                    <button
-                        type="button"
-                        @click="activeTab = 'main'"
-                        :class="[
-                            activeTab === 'main' ? 'border-primary text-primary' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
-                            'py-3 border-b-2 font-medium text-sm transition-colors focus:outline-none'
-                        ]"
-                    >
-                        Основная информация
-                    </button>
-                    <button
-                        type="button"
-                        @click="activeTab = 'accounts'"
-                        :class="[
-                            activeTab === 'accounts' ? 'border-primary text-primary' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300',
-                            'py-3 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 focus:outline-none'
-                        ]"
-                    >
-                        <span>Расчетные счета</span>
-                        <span class="bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 text-xs px-2 py-0.5 rounded-full font-medium">
-                            {{ editingEntity.accounts?.length || 0 }}
-                        </span>
-                    </button>
+                    <!-- Стандартизированные Вкладки Admindek -->
+                    <div class="flex space-x-6 border-b border-slate-800 px-6" v-if="editingEntity">
+                        <button
+                            type="button"
+                            @click="activeTab = 'main'"
+                            :class="[
+                                activeTab === 'main' ? 'border-indigo-500 text-indigo-400 font-bold border-b-2' : 'border-transparent text-slate-400 hover:text-slate-200 font-medium border-b-2',
+                                'py-3 px-2 text-xs transition-colors focus:outline-none'
+                            ]"
+                        >
+                            Основная информация
+                        </button>
+                        <button
+                            type="button"
+                            @click="activeTab = 'accounts'"
+                            :class="[
+                                activeTab === 'accounts' ? 'border-indigo-500 text-indigo-400 font-bold border-b-2' : 'border-transparent text-slate-400 hover:text-slate-200 font-medium border-b-2',
+                                'py-3 px-2 text-xs transition-colors flex items-center gap-2 focus:outline-none'
+                            ]"
+                        >
+                            <span>Расчетные счета</span>
+                            <span class="bg-slate-800 text-slate-200 text-xs px-2 py-0.5 rounded-full font-semibold">
+                                {{ editingEntity.accounts?.length || 0 }}
+                            </span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Содержимое Вкладки 1: Основная информация -->
@@ -334,32 +355,32 @@ const deleteAccount = (account) => {
                     <div class="p-6 space-y-5">
                         
                         <!-- Инфо блок юрисдикции -->
-                        <div class="flex items-center justify-between bg-light dark:bg-gray-800/50 p-3 rounded-md border border-gray-200 dark:border-gray-700/50">
-                            <span class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Страна юрисдикции:</span>
-                            <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ countryConfig?.name }} ({{ tenantCountry }})</span>
+                        <div class="flex items-center justify-between bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Страна юрисдикции:</span>
+                            <span class="text-xs font-bold text-slate-800">{{ countryConfig?.name }} ({{ tenantCountry }})</span>
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Официальное название (ИП / ООО)</label>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1.5">Официальное название (ИП / ООО)</label>
                             <input 
                                 v-model="form.name" 
                                 type="text" 
                                 required 
                                 placeholder="ООО Детейлинг Групп" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white placeholder-slate-400" 
                             />
                         </div>
 
                         <!-- Динамические реквизиты под юрисдикцию тенанта -->
-                        <div class="border-t border-gray-200 dark:border-gray-700 pt-5 mt-2">
-                            <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+                        <div class="border-t border-slate-200 pt-5 mt-4">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
                                 Налоговые реквизиты ({{ countryConfig?.name }})
                             </h4>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div v-for="field in currentCountrySchema" :key="field.key" :class="field.type === 'textarea' ? 'sm:col-span-2' : ''">
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                        {{ field.label }} <span v-if="field.required" class="text-danger">*</span>
+                                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">
+                                        {{ field.label }} <span v-if="field.required" class="text-rose-500">*</span>
                                     </label>
 
                                     <textarea
@@ -368,7 +389,7 @@ const deleteAccount = (account) => {
                                         :required="field.required"
                                         :placeholder="field.placeholder"
                                         rows="2"
-                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                        class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white placeholder-slate-400"
                                     ></textarea>
 
                                     <input
@@ -377,84 +398,98 @@ const deleteAccount = (account) => {
                                         :type="field.type"
                                         :required="field.required"
                                         :placeholder="field.placeholder"
-                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                        class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white placeholder-slate-400"
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Toggle Switch (Attex Style) -->
                         <div class="flex items-center pt-2">
-                            <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
-                                <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
-                            </div>
-                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
-                                Активно для работы
-                            </label>
+                            <input id="is_active" v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                            <label for="is_active" class="ml-2.5 block text-xs font-semibold text-slate-700">Активно для работы</label>
                         </div>
                     </div>
 
-                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4 mt-6">
+                        <button 
+                            type="button" 
+                            @click="closeModal()" 
+                            class="rounded px-3 py-1.5 text-xs font-medium transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        >
                             Отмена
                         </button>
-                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                        <button 
+                            type="submit" 
+                            :disabled="form.processing" 
+                            class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-600/90 transition-colors shadow-xs disabled:opacity-50"
+                        >
                             Сохранить
                         </button>
                     </div>
                 </form>
 
                 <!-- Содержимое Вкладки 2: Расчетные счета -->
-                <div v-if="activeTab === 'accounts'" class="flex flex-col h-full">
-                    <div class="p-6 space-y-4 flex-1">
-                        <div class="flex justify-between items-center mb-2">
-                            <p class="text-sm text-gray-500 dark:text-gray-400 font-medium">Банковские счета компании</p>
-                            <button
-                                type="button"
-                                @click="openAccountModal()"
-                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-sm font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white gap-1.5"
-                            >
-                                <i class="ri-add-line"></i> Добавить счет
-                            </button>
+                <div v-if="activeTab === 'accounts'" class="p-6 space-y-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <p class="text-xs text-slate-500 font-medium">Банковские счета компании</p>
+                        <button
+                            type="button"
+                            @click="openAccountModal()"
+                            class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-600/90 transition-colors shadow-xs"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus h-3.5 w-3.5"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+                            Добавить счет
+                        </button>
+                    </div>
+
+                    <div class="space-y-3 max-h-80 overflow-y-auto pr-1">
+                        <div
+                            v-for="account in editingEntity?.accounts"
+                            :key="account.id"
+                            class="p-3.5 border rounded-lg bg-slate-50/50 border-slate-200 flex justify-between items-center shadow-2xs"
+                        >
+                            <div>
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-bold text-slate-800 text-xs">{{ account.name }}</span>
+                                    <div v-if="account.is_default_for_invoicing" class="inline-flex items-center rounded-md border border-transparent px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800">
+                                        Основной для документов
+                                    </div>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    <strong class="text-slate-700 font-medium">{{ account.bank_name || 'Банк не указан' }}</strong> |
+                                    {{ bankLabels.bik }}: {{ account.bik || '—' }} |
+                                    Счет: <span class="text-xs text-slate-700 font-semibold">{{ account.account_number || '—' }}</span>
+                                </p>
+                            </div>
+                            <div class="flex gap-2">
+                                <button 
+                                    type="button" 
+                                    @click="openAccountModal(account)" 
+                                    class="rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors bg-indigo-600 text-white hover:bg-indigo-600/90"
+                                >
+                                    Правка
+                                </button>
+                                <button 
+                                    type="button" 
+                                    @click="deleteAccount(account)" 
+                                    class="rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors bg-rose-600 text-white hover:bg-rose-600/90"
+                                >
+                                    Удалить
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="space-y-3 max-h-80 overflow-y-auto pr-1">
-                            <div
-                                v-for="account in editingEntity?.accounts"
-                                :key="account.id"
-                                class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-light dark:bg-[#2d333c] flex justify-between items-center transition-colors"
-                            >
-                                <div>
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="font-semibold text-gray-800 dark:text-gray-200 text-sm">{{ account.name }}</span>
-                                        <span v-if="account.is_default_for_invoicing" class="inline-flex items-center gap-1.5 py-0.5 px-1.5 rounded text-xs font-medium bg-info/10 text-info">
-                                            Основной для документов
-                                        </span>
-                                    </div>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400">
-                                        <strong class="text-gray-700 dark:text-gray-300 font-medium">{{ account.bank_name || 'Банк не указан' }}</strong> |
-                                        {{ bankLabels.bik }}: {{ account.bik || '—' }} |
-                                        Счет: <span class="text-gray-700 dark:text-gray-300">{{ account.account_number || '—' }}</span>
-                                    </p>
-                                </div>
-                                <div class="flex gap-2 shrink-0">
-                                    <button type="button" @click="openAccountModal(account)" class="inline-flex items-center justify-center rounded px-2 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button type="button" @click="deleteAccount(account)" class="inline-flex items-center justify-center rounded px-2 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div v-if="!editingEntity?.accounts || editingEntity?.accounts.length === 0" class="text-center py-10 text-gray-400 dark:text-gray-500 text-sm">
-                                Счета еще не добавлены. Нажмите "Добавить счет".
-                            </div>
+                        <div v-if="!editingEntity?.accounts || editingEntity?.accounts.length === 0" class="text-center py-10 text-slate-400 text-xs">
+                            Счета еще не добавлены. Нажмите "Добавить счет".
                         </div>
                     </div>
 
-                    <div class="flex justify-end border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                    <div class="flex justify-end border-t border-slate-200 pt-4 mt-6">
+                        <button 
+                            type="button" 
+                            @click="closeModal()" 
+                            class="rounded px-3 py-1.5 text-xs font-medium transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        >
                             Закрыть
                         </button>
                     </div>
@@ -463,87 +498,91 @@ const deleteAccount = (account) => {
             </div>
         </div>
 
-        <!-- Под-модальное окно создания / редактирования Счета (Attex Standard: 50% width) -->
-        <div v-if="isAccountModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl lg:max-w-3xl my-8 mx-auto flex flex-col">
-                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+        <!-- Под-модальное окно создания / редактирования Счета (50% ширины) -->
+        <div v-if="isAccountModalOpen" class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6">
+            <div class="bg-white rounded-xl w-full sm:max-w-xl lg:max-w-2xl shadow-2xl border border-slate-200 overflow-hidden transition-all my-8 mx-auto">
+                <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                    <h3 class="text-sm font-bold tracking-tight">
                         {{ editingAccount ? 'Редактирование расчетного счета' : 'Добавление расчетного счета' }}
                     </h3>
-                    <button type="button" @click="closeAccountModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
-                        <i class="ri-close-line text-xl"></i>
-                    </button>
+                    <button type="button" @click="closeAccountModal()" class="text-slate-400 hover:text-white text-sm font-bold transition-colors px-2">✕</button>
                 </div>
 
-                <form @submit.prevent="submitAccount" class="flex flex-col">
-                    <div class="p-6 space-y-4">
+                <form @submit.prevent="submitAccount" class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Название счета (для внутренних документов)</label>
+                        <input 
+                            v-model="accountForm.name" 
+                            type="text" 
+                            required 
+                            placeholder="Основной р/с в Сбербанке" 
+                            class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white placeholder-slate-400" 
+                        />
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Наименование банка</label>
+                        <input 
+                            v-model="accountForm.bank_name" 
+                            type="text" 
+                            placeholder="ПАО Сбербанк" 
+                            class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white placeholder-slate-400" 
+                        />
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название счета (для внутренних документов)</label>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1.5">{{ bankLabels.bik }}</label>
                             <input 
-                                v-model="accountForm.name" 
+                                v-model="accountForm.bik" 
                                 type="text" 
-                                required 
-                                placeholder="Основной р/с в Сбербанке" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                placeholder="044525225" 
+                                class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white font-mono placeholder-slate-400" 
                             />
                         </div>
-
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Наименование банка</label>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1.5">{{ bankLabels.corr_account }}</label>
                             <input 
-                                v-model="accountForm.bank_name" 
+                                v-model="accountForm.corr_account" 
                                 type="text" 
-                                placeholder="ПАО Сбербанк" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                placeholder="30101810400000000225" 
+                                class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs py-2 px-3 text-slate-700 bg-white font-mono placeholder-slate-400" 
                             />
                         </div>
+                    </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.bik }}</label>
-                                <input 
-                                    v-model="accountForm.bik" 
-                                    type="text" 
-                                    placeholder="044525225" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.corr_account }}</label>
-                                <input 
-                                    v-model="accountForm.corr_account" 
-                                    type="text" 
-                                    placeholder="30101810400000000225" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                            </div>
-                        </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">{{ bankLabels.account_number }}</label>
+                        <input 
+                            v-model="accountForm.account_number" 
+                            type="text" 
+                            placeholder="40702810938000001234" 
+                            class="block w-full rounded-md border-slate-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 text-xs font-mono py-2 px-3 text-slate-700 bg-white placeholder-slate-400" 
+                        />
+                    </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.account_number }}</label>
-                            <input 
-                                v-model="accountForm.account_number" 
-                                type="text" 
-                                placeholder="40702810938000001234" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                            />
-                        </div>
-
-                        <div class="pt-2 flex items-center">
-                            <div @click="accountForm.is_default_for_invoicing = !accountForm.is_default_for_invoicing" :class="[accountForm.is_default_for_invoicing ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
-                                <div :class="[accountForm.is_default_for_invoicing ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
-                            </div>
-                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="accountForm.is_default_for_invoicing = !accountForm.is_default_for_invoicing">
+                    <div class="pt-2">
+                        <div class="flex items-center">
+                            <input id="is_default_for_invoicing" v-model="accountForm.is_default_for_invoicing" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                            <label for="is_default_for_invoicing" class="ml-2.5 block text-xs font-semibold text-slate-700">
                                 Основной для документов
                             </label>
                         </div>
                     </div>
 
-                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 mt-2 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeAccountModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                    <div class="flex justify-end gap-2 border-t border-slate-200 pt-4 mt-6">
+                        <button 
+                            type="button" 
+                            @click="closeAccountModal()" 
+                            class="rounded px-3 py-1.5 text-xs font-medium transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        >
                             Отмена
                         </button>
-                        <button type="submit" :disabled="accountForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                        <button 
+                            type="submit" 
+                            :disabled="accountForm.processing" 
+                            class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-600/90 transition-colors shadow-xs disabled:opacity-50"
+                        >
                             Сохранить счет
                         </button>
                     </div>

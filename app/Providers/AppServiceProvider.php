@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Stancl\Tenancy\Events\TenancyInitialized;
 use App\Services\TenantConfigService;
 
@@ -26,6 +27,11 @@ class AppServiceProvider extends ServiceProvider
             if (isset($event->tenancy->tenant)) {
                 TenantConfigService::configure($event->tenancy->tenant);
             }
+        });
+
+        // Неявное предоставление всех прав роли admin
+        Gate::before(function ($user, $ability) {
+            return $user->hasRole('admin') ? true : null;
         });
     }
 }
