@@ -11,6 +11,8 @@ use App\Http\Controllers\Tenant\LegalEntityController;
 use App\Http\Controllers\Tenant\AccountController;
 use App\Http\Controllers\Tenant\BranchController;
 use App\Http\Controllers\Tenant\SystemController;
+use App\Http\Controllers\Tenant\BusinessDirectionController;
+use App\Http\Controllers\Tenant\WarehouseSettingsController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -68,6 +70,16 @@ Route::middleware([
 
         // Переключение филиала
         Route::post('/branches/{branch}/switch', [BranchController::class, 'switch'])->name('branches.switch');
+
+        // Настройки: Направления бизнеса
+        Route::get('/settings/business-directions', [BusinessDirectionController::class, 'index'])->name('settings.business-directions.index');
+        Route::post('/settings/business-directions', [BusinessDirectionController::class, 'store'])->name('settings.business-directions.store');
+        Route::put('/settings/business-directions/{businessDirection}', [BusinessDirectionController::class, 'update'])->name('settings.business-directions.update');
+        Route::delete('/settings/business-directions/{businessDirection}', [BusinessDirectionController::class, 'destroy'])->name('settings.business-directions.destroy');
+
+        // Настройки: Склад
+        Route::get('/settings/warehouse', [WarehouseSettingsController::class, 'index'])->name('settings.warehouse.index');
+        Route::post('/settings/warehouse', [WarehouseSettingsController::class, 'store'])->name('settings.warehouse.store');
     });
 
     require __DIR__.'/auth.php';
