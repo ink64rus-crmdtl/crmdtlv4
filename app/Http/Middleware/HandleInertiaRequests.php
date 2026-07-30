@@ -65,7 +65,7 @@ class HandleInertiaRequests extends Middleware
                     ->values()
                 : [],
             'branches' => fn () => ($request->user() && tenancy()->initialized)
-                ? Branch::where('is_active', true)->get(['id', 'name'])
+                ? $request->user()->availableBranches()->where('is_active', true)->get(['branches.id', 'branches.name'])
                 : [],
             'current_branch_id' => fn () => ($request->user() && tenancy()->initialized)
                 ? BranchContext::current()

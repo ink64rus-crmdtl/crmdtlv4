@@ -14,7 +14,7 @@ use App\Http\Controllers\Tenant\SystemController;
 use App\Http\Controllers\Tenant\BusinessDirectionController;
 use App\Http\Controllers\Tenant\WarehouseSettingsController;
 use App\Http\Controllers\Tenant\CustomFieldController;
-use App\Http\Controllers\Tenant\FieldPermissionController;
+use App\Http\Controllers\Tenant\RolePermissionController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -89,10 +89,11 @@ Route::middleware([
         Route::put('/settings/custom-fields/{customField}', [CustomFieldController::class, 'update'])->name('settings.custom-fields.update');
         Route::delete('/settings/custom-fields/{customField}', [CustomFieldController::class, 'destroy'])->name('settings.custom-fields.destroy');
 
-        // Настройки: Права на поля и модули
-        Route::get('/settings/field-permissions', [FieldPermissionController::class, 'index'])->name('settings.field-permissions.index');
-        Route::post('/settings/field-permissions', [FieldPermissionController::class, 'store'])->name('settings.field-permissions.store');
-        Route::post('/settings/module-permissions', [FieldPermissionController::class, 'storeModulePermissions'])->name('settings.module-permissions.store');
+        // Настройки: Роли и Права (Меню, Поля, Доступ к данным)
+        Route::get('/settings/roles-permissions', [RolePermissionController::class, 'index'])->name('settings.roles-permissions.index');
+        Route::post('/settings/roles-permissions/fields', [RolePermissionController::class, 'storeFields'])->name('settings.roles-permissions.fields.store');
+        Route::post('/settings/roles-permissions/modules', [RolePermissionController::class, 'storeModules'])->name('settings.roles-permissions.modules.store');
+        Route::post('/settings/roles-permissions/scopes', [RolePermissionController::class, 'storeScopes'])->name('settings.roles-permissions.scopes.store');
     });
 
     require __DIR__.'/auth.php';

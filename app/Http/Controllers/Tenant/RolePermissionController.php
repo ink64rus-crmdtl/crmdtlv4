@@ -6,21 +6,35 @@ use App\Http\Controllers\Controller;
 use App\Models\FieldPermission;
 use App\Models\CustomFieldDefinition;
 use App\Models\Module;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
+use App\Models\Branch;
+use App\Models\LegalEntity;
+use App\Models\BusinessDirection;
+use App\Models\Warehouse;
+use App\Models\Account;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class FieldPermissionController extends Controller
+class RolePermissionController extends Controller
 {
     public function index(): Response
     {
-        // Получаем все роли, кроме admin, вместе с их текущими правами Spatie
-        $roles = Role::where('name', '!=', 'admin')->with('permissions')->get(['id', 'name']);
+        // Получаем все роли, кроме admin, вместе с их текущими правами Spatie и Scopes
+        $roles = Role::where('name', '!=', 'admin')
+            ->with(['permissions', 'branches', 'legalEntities', 'businessDirections', 'warehouses', 'accounts'])
+            ->get();
 
         // Получаем все модули
         $modules = Module::orderBy('sort_order')->get();
+
+        // Получаем все справочники для Scopes
+        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $legalEntities = LegalEntity::where('is_active', true)->get(['id', 'name']);
+        $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
+        $warehouses = Warehouse::where('is_active', true)->get(['id', 'name']);
+        $accounts = Account::where('is_active', true)->get(['id', 'name']);
 
         // Базовые системные поля для каждой сущности
         $systemFields = [
@@ -67,17 +81,24 @@ class FieldPermissionController extends Controller
             ['key' => 'work_order', 'label' => 'Заказ-наряды', 'fields' => $systemFields['work_order']],
         ];
 
-        $existingPermissions = FieldPermission::all();
+        $existingFieldPermissions = FieldPermission::all();
 
-        return Inertia::render('Settings/FieldPermissions/Index', [
+        return Inertia::render('Settings/RolesPermissions/Index', [
             'roles' => $roles,
             'modules' => $modules,
             'entities' => $entities,
-            'existingPermissions' => $existingPermissions,
+            'existingFieldPermissions' => $existingFieldPermissions,
+            'scopes' => [
+                'branches' => $branches,
+                'legalEntities' => $legalEntities,
+                'businessDirections' => $businessDirections,
+                'warehouses' => $warehouses,
+                'accounts' => $accounts,
+            ]
         ]);
     }
 
-    public function store(Request $request)
+    public function storeFields(Request $request)
     {
         $validated = $request->validate([
             'permissions' => ['array'],
@@ -114,7 +135,7 @@ class FieldPermissionController extends Controller
         return redirect()->back()->with('success', 'Права доступа к полям успешно сохранены');
     }
 
-    public function storeModulePermissions(Request $request)
+    public function storeModules(Request $request)
     {
         $validated = $request->validate([
             'role_permissions' => ['array'],
@@ -122,12 +143,37 @@ class FieldPermissionController extends Controller
         ]);
 
         foreach ($validated['role_permissions'] ?? [] as $roleId => $permissions) {
-            $role = Role::findById($roleId);
+            $role = Role::find($roleId);
             if ($role && $role->name !== 'admin') {
                 $role->syncPermissions($permissions);
             }
         }
 
         return redirect()->back()->with('success', 'Права доступа к разделам успешно сохранены');
+    }
+
+    public function storeScopes(Request $request)
+    {
+        $validated = $request->validate([
+            'role_scopes' => ['array'],
+            'role_scopes.*.branches' => ['array'],
+            'role_scopes.*.legal_entities' => ['array'],
+            'role_scopes.*.business_directions' => ['array'],
+            'role_scopes.*.warehouses' => ['array'],
+            'role_scopes.*.accounts' => ['array'],
+        ]);
+
+        foreach ($validated['role_scopes'] ?? [] as $roleId => $scopes) {
+            $role = Role::find($roleId);
+            if ($role && $role->name !== 'admin') {
+                $role->branches()->sync($scopes['branches'] ?? []);
+                $role->legalEntities()->sync($scopes['legal_entities'] ?? []);
+                $role->businessDirections()->sync($scopes['business_directions'] ?? []);
+                $role->warehouses()->sync($scopes['warehouses'] ?? []);
+                $role->accounts()->sync($scopes['accounts'] ?? []);
+            }
+        }
+
+        return redirect()->back()->with('success', 'Права доступа к данным (Scopes) успешно сохранены');
     }
 }

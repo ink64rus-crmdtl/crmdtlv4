@@ -12,15 +12,22 @@ class SetBranchContext
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (tenancy()->initialized) {
+        $user = $request->user();
+
+        if (tenancy()->initialized && $user) {
             $branchId = session('current_branch_id');
 
-            // Если филиал в сессии не выбран, берем первый активный
-            if (!$branchId) {
-                $firstBranch = Branch::where('is_active', true)->first();
-                if ($firstBranch) {
-                    $branchId = $firstBranch->id;
+            // Получаем список доступных ID филиалов для текущего пользователя (с учетом приоритетов User > Role)
+            $availableBranches = $user->availableBranches()->where('is_active', true)->pluck('branches.id')->toArray();
+
+            // Если филиал в сессии не выбран или недоступен пользователю, берем первый доступный
+            if (!$branchId || !in_array($branchId, $availableBranches)) {
+                $branchId = !empty($availableBranches) ? $availableBranches[0] : null;
+                
+                if ($branchId) {
                     session(['current_branch_id' => $branchId]);
+                } else {
+                    session()->forget('current_branch_id');
                 }
             }
 

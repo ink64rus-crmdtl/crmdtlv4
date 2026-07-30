@@ -84,15 +84,15 @@ const submit = () => {
                         Кастомные поля
                     </Link>
                     <Link
-                        :href="route('settings.field-permissions.index')"
+                        :href="route('settings.roles-permissions.index')"
                         :class="[
-                            route().current('settings.field-permissions.index')
+                            route().current('settings.roles-permissions.index')
                                 ? 'border-primary text-primary'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
                             'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
                         ]"
                     >
-                        Права на поля
+                        Роли и Права
                     </Link>
                 </nav>
             </div>

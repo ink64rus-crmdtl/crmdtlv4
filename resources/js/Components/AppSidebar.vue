@@ -46,6 +46,19 @@ const isRouteActive = (key) => {
     // Проверяем точное совпадение или вхождение (например, system.index -> system)
     return route().current(routeName) || route().current(key + '.*');
 };
+
+// Парсинг JSON-переводов из БД
+const getLocalizedLabel = (label) => {
+    if (!label) return '';
+    if (typeof label === 'string') {
+        try {
+            label = JSON.parse(label);
+        } catch (e) {
+            return label;
+        }
+    }
+    return label['ru'] || label['en'] || Object.values(label)[0] || '';
+};
 </script>
 
 <template>
@@ -71,7 +84,7 @@ const isRouteActive = (key) => {
                     ]"
                 >
                     <i :class="['text-lg mr-3', resolveIcon(module.icon)]"></i>
-                    <span>{{ module.label }}</span>
+                    <span>{{ getLocalizedLabel(module.label) }}</span>
                 </Link>
             </nav>
         </div>
