@@ -1,0 +1,316 @@
+<?php
+
+namespace App\Http\Controllers\Tenant;
+
+use App\Http\Controllers\Controller;
+use App\Models\Employee;
+use App\Models\User;
+use App\Models\Role;
+use App\Models\Branch;
+use App\Models\Position;
+use App\Models\LegalEntity;
+use App\Models\BusinessDirection;
+use App\Models\Warehouse;
+use App\Models\Account;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class EmployeeController extends Controller
+{
+    public function index(): Response
+    {
+        $employees = Employee::with(['user.roles', 'branch', 'position'])->orderBy('id', 'desc')->get();
+        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $positions = Position::where('is_active', true)->get(['id', 'name']);
+        $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
+        
+        $scopes = [
+            'branches' => $branches,
+            'legalEntities' => LegalEntity::where('is_active', true)->get(['id', 'name']),
+            'businessDirections' => BusinessDirection::where('is_active', true)->get(['id', 'name']),
+            'warehouses' => Warehouse::where('is_active', true)->get(['id', 'name']),
+            'accounts' => Account::where('is_active', true)->get(['id', 'name']),
+        ];
+
+        // Подгружаем индивидуальные доступы для пользователей, чтобы передать на фронт
+        $userScopes = [];
+        foreach ($employees as $employee) {
+            if ($employee->user_id) {
+                $user = $employee->user;
+                $userScopes[$employee->user_id] = [
+                    'branches' => $user->branches()->pluck('branches.id')->toArray(),
+                    'legal_entities' => $user->legalEntities()->pluck('legal_entities.id')->toArray(),
+                    'business_directions' => $user->businessDirections()->pluck('business_directions.id')->toArray(),
+                    'warehouses' => $user->warehouses()->pluck('warehouses.id')->toArray(),
+                    'accounts' => $user->accounts()->pluck('accounts.id')->toArray(),
+                ];
+            }
+        }
+
+        $tenantCountry = config('tenant.country_code', 'RU');
+
+        return Inertia::render('HR/Employees/Index', [
+            'employees' => $employees,
+            'branches' => $branches,
+            'positions' => $positions,
+            'roles' => $roles,
+            'scopes' => $scopes,
+            'userScopes' => $userScopes,
+            'tenantCountry' => $tenantCountry,
+        ]);
+    }
+
+    public function show(Employee $employee): Response
+    {
+        $employee->load(['user.roles', 'branch', 'position']);
+        
+        $resolvedScopes = [];
+        if ($employee->user_id) {
+            $user = $employee->user;
+            $resolvedScopes = [
+                'branches' => $user->branches()->get(['branches.id', 'branches.name']),
+                'legal_entities' => $user->legalEntities()->get(['legal_entities.id', 'legal_entities.name']),
+                'business_directions' => $user->businessDirections()->get(['business_directions.id', 'business_directions.name']),
+                'warehouses' => $user->warehouses()->get(['warehouses.id', 'warehouses.name']),
+                'accounts' => $user->accounts()->get(['accounts.id', 'accounts.name']),
+            ];
+        }
+
+        return Inertia::render('HR/Employees/Show', [
+            'employee' => $employee,
+            'resolvedScopes' => $resolvedScopes,
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $tenantCountry = config('tenant.country_code', 'RU');
+        $needsMiddleName = in_array($tenantCountry, ['RU', 'BY', 'KZ']);
+
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'middle_name' => [$needsMiddleName ? 'required' : 'nullable', 'string', 'max:255'],
+            'phone' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('employees')->where(function ($query) use ($request) {
+                    return $query->where('branch_id', $request->branch_id)->whereNull('deleted_at');
+                })
+            ],
+            'personal_email' => ['nullable', 'email', 'max:255'],
+            'birth_date' => ['nullable', 'date'],
+            'branch_id' => ['required', 'exists:branches,id'],
+            'position_id' => ['required', 'exists:positions,id'],
+            'type' => ['required', 'string', 'in:staff,self_employed,outsource'],
+            'hire_date' => ['nullable', 'date'],
+            'termination_date' => ['nullable', 'date'],
+            'is_active' => ['boolean'],
+            'passport_data' => ['nullable', 'array'],
+            
+            // CRM Access
+            'has_crm_access' => ['boolean'],
+            'email' => ['exclude_if:has_crm_access,false', 'required', 'email', 'unique:users,email'],
+            'password' => ['exclude_if:has_crm_access,false', 'required', Password::defaults()],
+            'role_id' => ['exclude_if:has_crm_access,false', 'required', 'exists:roles,id'],
+
+            // Scopes
+            'scopes' => ['nullable', 'array'],
+            'scopes.branches' => ['array'],
+            'scopes.legal_entities' => ['array'],
+            'scopes.business_directions' => ['array'],
+            'scopes.warehouses' => ['array'],
+            'scopes.accounts' => ['array'],
+        ], [
+            'phone.unique' => 'Сотрудник с таким номером телефона уже существует в выбранном филиале.',
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            $userId = null;
+
+            if (!empty($validated['has_crm_access'])) {
+                $user = User::create([
+                    'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                    'email' => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                ]);
+
+                $role = Role::findById($validated['role_id']);
+                $user->assignRole($role);
+
+                if (!empty($validated['scopes'])) {
+                    $user->branches()->sync($validated['scopes']['branches'] ?? []);
+                    $user->legalEntities()->sync($validated['scopes']['legal_entities'] ?? []);
+                    $user->businessDirections()->sync($validated['scopes']['business_directions'] ?? []);
+                    $user->warehouses()->sync($validated['scopes']['warehouses'] ?? []);
+                    $user->accounts()->sync($validated['scopes']['accounts'] ?? []);
+                }
+
+                $userId = $user->id;
+            }
+
+            Employee::create([
+                'user_id' => $userId,
+                'branch_id' => $validated['branch_id'],
+                'position_id' => $validated['position_id'],
+                'type' => $validated['type'],
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'middle_name' => $validated['middle_name'] ?? null,
+                'phone' => $validated['phone'],
+                'personal_email' => $validated['personal_email'] ?? null,
+                'birth_date' => $validated['birth_date'] ?? null,
+                'hire_date' => $validated['hire_date'] ?? null,
+                'termination_date' => $validated['termination_date'] ?? null,
+                'passport_data' => $validated['passport_data'] ?? null,
+                'is_active' => $validated['is_active'] ?? true,
+            ]);
+        });
+
+        return redirect()->back()->with('success', 'Сотрудник успешно добавлен');
+    }
+
+    public function update(Request $request, Employee $employee)
+    {
+        $tenantCountry = config('tenant.country_code', 'RU');
+        $needsMiddleName = in_array($tenantCountry, ['RU', 'BY', 'KZ']);
+
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'middle_name' => [$needsMiddleName ? 'required' : 'nullable', 'string', 'max:255'],
+            'phone' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('employees')->ignore($employee->id)->where(function ($query) use ($request) {
+                    return $query->where('branch_id', $request->branch_id)->whereNull('deleted_at');
+                })
+            ],
+            'personal_email' => ['nullable', 'email', 'max:255'],
+            'birth_date' => ['nullable', 'date'],
+            'branch_id' => ['required', 'exists:branches,id'],
+            'position_id' => ['required', 'exists:positions,id'],
+            'type' => ['required', 'string', 'in:staff,self_employed,outsource'],
+            'hire_date' => ['nullable', 'date'],
+            'termination_date' => ['nullable', 'date'],
+            'is_active' => ['boolean'],
+            'passport_data' => ['nullable', 'array'],
+            
+            // CRM Access
+            'has_crm_access' => ['boolean'],
+            'email' => ['exclude_if:has_crm_access,false', 'required', 'email', 'unique:users,email,' . $employee->user_id],
+            'password' => ['nullable', Password::defaults()],
+            'role_id' => ['exclude_if:has_crm_access,false', 'required', 'exists:roles,id'],
+
+            // Scopes
+            'scopes' => ['nullable', 'array'],
+            'scopes.branches' => ['array'],
+            'scopes.legal_entities' => ['array'],
+            'scopes.business_directions' => ['array'],
+            'scopes.warehouses' => ['array'],
+            'scopes.accounts' => ['array'],
+        ], [
+            'phone.unique' => 'Сотрудник с таким номером телефона уже существует в выбранном филиале.',
+        ]);
+
+        DB::transaction(function () use ($validated, $employee) {
+            $userId = $employee->user_id;
+
+            if (!empty($validated['has_crm_access'])) {
+                if ($userId) {
+                    // Обновляем существующего пользователя
+                    $user = User::find($userId);
+                    $userData = [
+                        'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                        'email' => $validated['email'],
+                    ];
+                    if (!empty($validated['password'])) {
+                        $userData['password'] = Hash::make($validated['password']);
+                    }
+                    $user->update($userData);
+
+                    $role = Role::findById($validated['role_id']);
+                    $user->syncRoles([$role]);
+                } else {
+                    // Создаем нового пользователя
+                    $user = User::create([
+                        'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                        'email' => $validated['email'],
+                        'password' => Hash::make($validated['password']),
+                    ]);
+                    $role = Role::findById($validated['role_id']);
+                    $user->assignRole($role);
+                    $userId = $user->id;
+                }
+
+                if (!empty($validated['scopes'])) {
+                    $user->branches()->sync($validated['scopes']['branches'] ?? []);
+                    $user->legalEntities()->sync($validated['scopes']['legal_entities'] ?? []);
+                    $user->businessDirections()->sync($validated['scopes']['business_directions'] ?? []);
+                    $user->warehouses()->sync($validated['scopes']['warehouses'] ?? []);
+                    $user->accounts()->sync($validated['scopes']['accounts'] ?? []);
+                }
+            } else {
+                // Отзываем доступ, если он был
+                if ($userId) {
+                    $user = User::find($userId);
+                    if ($user) {
+                        $user->branches()->detach();
+                        $user->legalEntities()->detach();
+                        $user->businessDirections()->detach();
+                        $user->warehouses()->detach();
+                        $user->accounts()->detach();
+                        $user->delete();
+                    }
+                    $userId = null;
+                }
+            }
+
+            $employee->update([
+                'user_id' => $userId,
+                'branch_id' => $validated['branch_id'],
+                'position_id' => $validated['position_id'],
+                'type' => $validated['type'],
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'middle_name' => $validated['middle_name'] ?? null,
+                'phone' => $validated['phone'],
+                'personal_email' => $validated['personal_email'] ?? null,
+                'birth_date' => $validated['birth_date'] ?? null,
+                'hire_date' => $validated['hire_date'] ?? null,
+                'termination_date' => $validated['termination_date'] ?? null,
+                'passport_data' => $validated['passport_data'] ?? null,
+                'is_active' => $validated['is_active'] ?? true,
+            ]);
+        });
+
+        return redirect()->back()->with('success', 'Данные сотрудника обновлены');
+    }
+
+    public function destroy(Employee $employee)
+    {
+        DB::transaction(function () use ($employee) {
+            if ($employee->user_id) {
+                $user = User::find($employee->user_id);
+                if ($user) {
+                    $user->branches()->detach();
+                    $user->legalEntities()->detach();
+                    $user->businessDirections()->detach();
+                    $user->warehouses()->detach();
+                    $user->accounts()->detach();
+                    $user->delete();
+                }
+            }
+            $employee->delete();
+        });
+
+        return redirect()->back()->with('success', 'Сотрудник удален');
+    }
+}

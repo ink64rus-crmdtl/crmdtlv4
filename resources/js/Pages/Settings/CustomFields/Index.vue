@@ -95,7 +95,7 @@ const deleteField = (field) => {
             Настройки компании
         </template>
 
-        <div class="max-w-7xl mx-auto space-y-6 font-sans text-slate-600">
+        <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
@@ -324,7 +324,7 @@ const deleteField = (field) => {
                             <div class="flex items-center">
                                 <div @click="form.is_required = !form.is_required" :class="[form.is_required ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
                                     <div :class="[form.is_required ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
-                                </div>
+                                clip-path</div>
                                 <label class="ml-3 block text-sm font-medium text-slate-700 dark:text-gray-300 cursor-pointer" @click="form.is_required = !form.is_required">
                                     Обязательное поле (нельзя сохранить карточку без него)
                                 </label>

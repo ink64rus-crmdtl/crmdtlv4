@@ -13,12 +13,20 @@ class Employee extends Model
 
     protected $fillable = [
         'user_id', 'branch_id', 'position_id', 'type', 
-        'first_name', 'last_name', 'phone', 'is_active'
+        'first_name', 'last_name', 'middle_name', 'phone', 'personal_email',
+        'birth_date', 'hire_date', 'termination_date', 'passport_data',
+        'is_active'
     ];
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return [
+            'is_active' => 'boolean',
+            'birth_date' => 'date',
+            'hire_date' => 'date',
+            'termination_date' => 'date',
+            'passport_data' => 'array',
+        ];
     }
 
     protected static function booted(): void

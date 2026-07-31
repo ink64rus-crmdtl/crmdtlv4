@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use App\Services\BranchContext;
+use App\Services\LegalEntityContext;
 use App\Models\Branch;
 
 class SetBranchContext
@@ -15,24 +16,40 @@ class SetBranchContext
         $user = $request->user();
 
         if (tenancy()->initialized && $user) {
-            $branchId = session('current_branch_id');
+            // 1. Обработка Юридического лица
+            $leId = session('current_legal_entity_id');
+            $availableLEs = $user->availableLegalEntities()->where('is_active', true)->pluck('legal_entities.id')->toArray();
 
-            // Получаем список доступных ID филиалов для текущего пользователя (с учетом приоритетов User > Role)
-            $availableBranches = $user->availableBranches()->where('is_active', true)->pluck('branches.id')->toArray();
-
-            // Если филиал в сессии не выбран или недоступен пользователю, берем первый доступный
-            if (!$branchId || !in_array($branchId, $availableBranches)) {
-                $branchId = !empty($availableBranches) ? $availableBranches[0] : null;
-                
-                if ($branchId) {
-                    session(['current_branch_id' => $branchId]);
-                } else {
-                    session()->forget('current_branch_id');
+            if ($leId !== 'all') {
+                if (!$leId || !in_array((int)$leId, $availableLEs)) {
+                    // Если нет доступа к выбранному ЮЛ, сбрасываем на "Все" (или первое доступное)
+                    $leId = 'all';
+                    session(['current_legal_entity_id' => $leId]);
                 }
             }
+            LegalEntityContext::set($leId === 'all' ? null : (int)$leId);
 
-            // Устанавливаем глобальный контекст
-            BranchContext::set($branchId);
+            // 2. Обработка Филиала
+            $branchId = session('current_branch_id');
+            
+            // Получаем список доступных ID филиалов для текущего пользователя (с учетом приоритетов)
+            $availableBranchesQuery = $user->availableBranches()->where('is_active', true);
+            
+            // Если выбрано конкретное ЮЛ, ограничиваем филиалы им
+            if ($leId !== 'all') {
+                $availableBranchesQuery->where('legal_entity_id', (int)$leId);
+            }
+            
+            $availableBranches = $availableBranchesQuery->pluck('branches.id')->toArray();
+
+            if ($branchId !== 'all') {
+                if (!$branchId || !in_array((int)$branchId, $availableBranches)) {
+                    // Если выбранного филиала нет в доступных (или сменилось ЮЛ), сбрасываем на "Все"
+                    $branchId = 'all';
+                    session(['current_branch_id' => $branchId]);
+                }
+            }
+            BranchContext::set($branchId === 'all' ? null : (int)$branchId);
         }
 
         return $next($request);

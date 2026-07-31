@@ -15,6 +15,8 @@ use App\Http\Controllers\Tenant\BusinessDirectionController;
 use App\Http\Controllers\Tenant\WarehouseSettingsController;
 use App\Http\Controllers\Tenant\CustomFieldController;
 use App\Http\Controllers\Tenant\RolePermissionController;
+use App\Http\Controllers\Tenant\PositionController;
+use App\Http\Controllers\Tenant\EmployeeController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -70,8 +72,9 @@ Route::middleware([
         Route::put('/settings/branches/{branch}', [BranchController::class, 'update'])->name('settings.branches.update');
         Route::delete('/settings/branches/{branch}', [BranchController::class, 'destroy'])->name('settings.branches.destroy');
 
-        // Переключение филиала
-        Route::post('/branches/{branch}/switch', [BranchController::class, 'switch'])->name('branches.switch');
+        // Переключение контекста
+        Route::post('/legal-entities/switch/{legalEntity?}', [LegalEntityController::class, 'switch'])->name('legal-entities.switch');
+        Route::post('/branches/switch/{branch?}', [BranchController::class, 'switch'])->name('branches.switch');
 
         // Настройки: Направления бизнеса
         Route::get('/settings/business-directions', [BusinessDirectionController::class, 'index'])->name('settings.business-directions.index');
@@ -94,6 +97,19 @@ Route::middleware([
         Route::post('/settings/roles-permissions/fields', [RolePermissionController::class, 'storeFields'])->name('settings.roles-permissions.fields.store');
         Route::post('/settings/roles-permissions/modules', [RolePermissionController::class, 'storeModules'])->name('settings.roles-permissions.modules.store');
         Route::post('/settings/roles-permissions/scopes', [RolePermissionController::class, 'storeScopes'])->name('settings.roles-permissions.scopes.store');
+
+        // HR: Должности
+        Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');
+        Route::post('/hr/positions', [PositionController::class, 'store'])->name('hr.positions.store');
+        Route::put('/hr/positions/{position}', [PositionController::class, 'update'])->name('hr.positions.update');
+        Route::delete('/hr/positions/{position}', [PositionController::class, 'destroy'])->name('hr.positions.destroy');
+
+        // HR: Сотрудники
+        Route::get('/hr/employees', [EmployeeController::class, 'index'])->name('hr.employees.index');
+        Route::post('/hr/employees', [EmployeeController::class, 'store'])->name('hr.employees.store');
+        Route::get('/hr/employees/{employee}', [EmployeeController::class, 'show'])->name('hr.employees.show');
+        Route::put('/hr/employees/{employee}', [EmployeeController::class, 'update'])->name('hr.employees.update');
+        Route::delete('/hr/employees/{employee}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
     });
 
     require __DIR__.'/auth.php';

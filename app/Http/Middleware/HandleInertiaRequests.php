@@ -7,6 +7,7 @@ use Inertia\Middleware;
 use App\Models\Module;
 use App\Models\Branch;
 use App\Services\BranchContext;
+use App\Services\LegalEntityContext;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -64,11 +65,17 @@ class HandleInertiaRequests extends Middleware
                     })
                     ->values()
                 : [],
-            'branches' => fn () => ($request->user() && tenancy()->initialized)
-                ? $request->user()->availableBranches()->where('is_active', true)->get(['branches.id', 'branches.name'])
+            'legal_entities' => fn () => ($request->user() && tenancy()->initialized)
+                ? $request->user()->availableLegalEntities()->where('is_active', true)->get(['legal_entities.id', 'legal_entities.name'])
                 : [],
+            'branches' => fn () => ($request->user() && tenancy()->initialized)
+                ? $request->user()->availableBranches()->where('is_active', true)->get(['branches.id', 'branches.name', 'branches.legal_entity_id'])
+                : [],
+            'current_legal_entity_id' => fn () => ($request->user() && tenancy()->initialized)
+                ? LegalEntityContext::current() // null means 'all'
+                : null,
             'current_branch_id' => fn () => ($request->user() && tenancy()->initialized)
-                ? BranchContext::current()
+                ? BranchContext::current() // null means 'all'
                 : null,
         ];
     }

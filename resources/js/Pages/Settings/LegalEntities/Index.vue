@@ -75,6 +75,7 @@ const closeModal = () => {
     isModalOpen.value = false;
     editingEntityId.value = null;
     form.reset();
+    form.clearErrors();
 };
 
 const submitEntity = () => {
@@ -153,7 +154,7 @@ const deleteAccount = (account) => {
             Настройки компании
         </template>
 
-        <div class="max-w-7xl mx-auto space-y-6">
+        <div class="w-[99%] mx-auto space-y-6 font-sans text-gray-600 dark:text-gray-400">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
@@ -267,7 +268,9 @@ const deleteAccount = (account) => {
                                     </div>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ countryConfig?.name || tenantCountry }}
+                                    <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        {{ countryConfig?.name || tenantCountry }}
+                                    </span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entity.tax_id || '—' }}</td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
@@ -355,8 +358,12 @@ const deleteAccount = (account) => {
 
                 <!-- Содержимое Вкладки 1: Основная информация -->
                 <form v-if="activeTab === 'main'" @submit.prevent="submitEntity" class="flex flex-col">
-                    <div class="p-6 space-y-4">
+                    <div class="p-6 space-y-5">
                         
+                        <div v-if="form.errors.tax_id" class="p-3 bg-danger/10 border border-danger/20 rounded-md text-sm text-danger font-medium flex items-center gap-2">
+                            <i class="ri-error-warning-line text-lg"></i> {{ form.errors.tax_id }}
+                        </div>
+
                         <!-- Инфо блок юрисдикции -->
                         <div class="flex items-center justify-between bg-info/10 p-3.5 rounded-md border border-info/20">
                             <span class="text-xs font-bold text-info uppercase tracking-wider">Страна юрисдикции:</span>

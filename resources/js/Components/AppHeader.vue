@@ -6,14 +6,30 @@ import { computed } from 'vue';
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
+
+const legalEntities = computed(() => page.props.legal_entities || []);
 const branches = computed(() => page.props.branches || []);
 
 // Принудительно приводим ID к числу для строгого сравнения (===)
+const currentLEId = computed(() => page.props.current_legal_entity_id ? Number(page.props.current_legal_entity_id) : null);
 const currentBranchId = computed(() => page.props.current_branch_id ? Number(page.props.current_branch_id) : null);
 
+const currentLEName = computed(() => {
+    if (!currentLEId.value) return 'Все юрлица';
+    const le = legalEntities.value.find(l => l.id === currentLEId.value);
+    return le ? le.name : 'Все юрлица';
+});
+
 const currentBranchName = computed(() => {
+    if (!currentBranchId.value) return 'Все филиалы';
     const branch = branches.value.find(b => b.id === currentBranchId.value);
-    return branch ? branch.name : 'Выберите филиал';
+    return branch ? branch.name : 'Все филиалы';
+});
+
+// Фильтруем список филиалов в дропдауне по выбранному юрлицу
+const filteredBranches = computed(() => {
+    if (!currentLEId.value) return branches.value;
+    return branches.value.filter(b => b.legal_entity_id === currentLEId.value || b.legal_entity_id === null);
 });
 </script>
 
@@ -28,8 +44,51 @@ const currentBranchName = computed(() => {
             </div>
 
             <div class="flex items-center gap-5">
-                <!-- Переключатель филиалов -->
-                <Dropdown align="right" width="48" v-if="branches.length > 0">
+                
+                <!-- Переключатель Юрлиц (Показываем только если их больше 1) -->
+                <Dropdown align="right" width="48" v-if="legalEntities.length > 1">
+                    <template #trigger>
+                        <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
+                            <i class="ri-bank-line text-primary"></i>
+                            <span>{{ currentLEName }}</span>
+                            <i class="ri-arrow-down-s-line text-secondary"></i>
+                        </button>
+                    </template>
+
+                    <template #content>
+                        <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700/50">
+                            Юридические лица
+                        </div>
+                        
+                        <!-- Пункт "Все юрлица" -->
+                        <DropdownLink 
+                            :href="route('legal-entities.switch')" 
+                            method="post" 
+                            as="button"
+                        >
+                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': currentLEId === null}">
+                                <i class="ri-global-line"></i> Все юрлица
+                                <i v-if="currentLEId === null" class="ri-check-line ml-auto"></i>
+                            </div>
+                        </DropdownLink>
+
+                        <DropdownLink 
+                            v-for="le in legalEntities" 
+                            :key="le.id" 
+                            :href="route('legal-entities.switch', le.id)" 
+                            method="post" 
+                            as="button"
+                        >
+                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': le.id === currentLEId}">
+                                <i class="ri-bank-line"></i> {{ le.name }}
+                                <i v-if="le.id === currentLEId" class="ri-check-line ml-auto"></i>
+                            </div>
+                        </DropdownLink>
+                    </template>
+                </Dropdown>
+
+                <!-- Переключатель Филиалов (Показываем только если их больше 1) -->
+                <Dropdown align="right" width="48" v-if="filteredBranches.length > 1">
                     <template #trigger>
                         <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
                             <i class="ri-store-2-line text-primary"></i>
@@ -42,8 +101,21 @@ const currentBranchName = computed(() => {
                         <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700/50">
                             Доступные филиалы
                         </div>
+
+                        <!-- Пункт "Все филиалы" -->
                         <DropdownLink 
-                            v-for="branch in branches" 
+                            :href="route('branches.switch')" 
+                            method="post" 
+                            as="button"
+                        >
+                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': currentBranchId === null}">
+                                <i class="ri-layout-grid-line"></i> Все филиалы
+                                <i v-if="currentBranchId === null" class="ri-check-line ml-auto"></i>
+                            </div>
+                        </DropdownLink>
+
+                        <DropdownLink 
+                            v-for="branch in filteredBranches" 
                             :key="branch.id" 
                             :href="route('branches.switch', branch.id)" 
                             method="post" 

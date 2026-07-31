@@ -38,9 +38,15 @@ class LegalEntityController extends Controller
         $requisites = $validated['requisites'] ?? [];
         $requisites['country_code'] = $tenantCountry;
 
+        $taxId = $validated['tax_id'] ?? ($requisites['inn'] ?? $requisites['unp'] ?? $requisites['bin_iin'] ?? $requisites['tax_id'] ?? null);
+
+        if ($taxId && LegalEntity::where('tax_id', $taxId)->exists()) {
+            return back()->withErrors(['tax_id' => 'Юрлицо с таким налоговым номером (ИНН) уже существует.']);
+        }
+
         LegalEntity::create([
             'name' => $validated['name'],
-            'tax_id' => $validated['tax_id'] ?? ($requisites['inn'] ?? $requisites['unp'] ?? $requisites['bin_iin'] ?? $requisites['tax_id'] ?? null),
+            'tax_id' => $taxId,
             'requisites' => $requisites,
             'is_active' => $validated['is_active'],
         ]);
@@ -62,9 +68,15 @@ class LegalEntityController extends Controller
         $requisites = $validated['requisites'] ?? [];
         $requisites['country_code'] = $tenantCountry;
 
+        $taxId = $validated['tax_id'] ?? ($requisites['inn'] ?? $requisites['unp'] ?? $requisites['bin_iin'] ?? $requisites['tax_id'] ?? null);
+
+        if ($taxId && LegalEntity::where('tax_id', $taxId)->where('id', '!=', $legalEntity->id)->exists()) {
+            return back()->withErrors(['tax_id' => 'Юрлицо с таким налоговым номером (ИНН) уже существует.']);
+        }
+
         $legalEntity->update([
             'name' => $validated['name'],
-            'tax_id' => $validated['tax_id'] ?? ($requisites['inn'] ?? $requisites['unp'] ?? $requisites['bin_iin'] ?? $requisites['tax_id'] ?? null),
+            'tax_id' => $taxId,
             'requisites' => $requisites,
             'is_active' => $validated['is_active'],
         ]);
@@ -76,6 +88,26 @@ class LegalEntityController extends Controller
     {
         $legalEntity->delete();
 
+        if (session('current_legal_entity_id') == $legalEntity->id) {
+            session(['current_legal_entity_id' => 'all']);
+            session(['current_branch_id' => 'all']);
+        }
+
         return redirect()->back()->with('success', 'Юридическое лицо удалено');
+    }
+
+    public function switch(Request $request, ?LegalEntity $legalEntity = null)
+    {
+        if ($legalEntity && $legalEntity->exists) {
+            session(['current_legal_entity_id' => $legalEntity->id]);
+            // При смене ЮЛ сбрасываем филиал на "Все", чтобы не остаться в несовместимом филиале
+            session(['current_branch_id' => 'all']);
+        } else {
+            session(['current_legal_entity_id' => 'all']);
+            session(['current_branch_id' => 'all']);
+        }
+        
+        session()->save();
+        return redirect()->back();
     }
 }

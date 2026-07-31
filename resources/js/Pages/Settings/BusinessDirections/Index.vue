@@ -5,6 +5,7 @@ import { ref } from 'vue';
 
 const props = defineProps({
     businessDirections: Array,
+    branches: Array,
 });
 
 const isModalOpen = ref(false);
@@ -13,6 +14,7 @@ const editingDirection = ref(null);
 const form = useForm({
     name: '',
     is_active: true,
+    branch_ids: [],
 });
 
 const openModal = (direction = null) => {
@@ -20,9 +22,11 @@ const openModal = (direction = null) => {
     if (direction) {
         form.name = direction.name;
         form.is_active = Boolean(direction.is_active);
+        form.branch_ids = direction.branches ? direction.branches.map(b => b.id) : [];
     } else {
         form.reset();
         form.is_active = true;
+        form.branch_ids = [];
     }
     isModalOpen.value = true;
 };
@@ -60,7 +64,7 @@ const deleteDirection = (direction) => {
             Настройки компании
         </template>
 
-        <div class="max-w-7xl mx-auto space-y-6 font-sans text-slate-600">
+        <div class="w-[99%] mx-auto space-y-6 font-sans text-gray-600 dark:text-gray-400">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
@@ -158,6 +162,7 @@ const deleteDirection = (direction) => {
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Филиалы</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
@@ -169,6 +174,14 @@ const deleteDirection = (direction) => {
                                         <i class="ri-node-tree text-primary"></i>
                                         {{ direction.name }}
                                     </div>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <div class="flex flex-wrap gap-1.5" v-if="direction.branches && direction.branches.length > 0">
+                                        <span v-for="b in direction.branches" :key="b.id" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            <i class="ri-store-2-line"></i> {{ b.name }}
+                                        </span>
+                                    </div>
+                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех филиалах</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span
@@ -198,7 +211,7 @@ const deleteDirection = (direction) => {
                                 </td>
                             </tr>
                             <tr v-if="businessDirections.length === 0">
-                                <td colspan="3" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="4" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Направления еще не добавлены. Нажмите "Добавить направление".
                                 </td>
                             </tr>
@@ -222,7 +235,7 @@ const deleteDirection = (direction) => {
                 </div>
 
                 <form @submit.prevent="submit" class="flex flex-col">
-                    <div class="p-6 space-y-4">
+                    <div class="p-6 space-y-5">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название направления <span class="text-danger">*</span></label>
                             <input 
@@ -234,8 +247,20 @@ const deleteDirection = (direction) => {
                             />
                         </div>
 
+                        <!-- Привязка к филиалам -->
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">В каких филиалах доступно это направление?</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Если не выбрать ни одного, направление будет доступно во всех филиалах по умолчанию.</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label v-for="branch in branches" :key="branch.id" class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" :value="branch.id" v-model="form.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    <span class="ml-2 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ branch.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+
                         <!-- Toggle Switch (Attex Style) -->
-                        <div class="flex items-center pt-2">
+                        <div class="flex items-center pt-4 border-t border-gray-200 dark:border-gray-700">
                             <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
                                 <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                             </div>

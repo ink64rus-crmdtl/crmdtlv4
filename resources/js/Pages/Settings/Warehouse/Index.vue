@@ -23,7 +23,7 @@ const submit = () => {
             Настройки компании
         </template>
 
-        <div class="max-w-7xl mx-auto space-y-6 font-sans text-slate-600">
+        <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">

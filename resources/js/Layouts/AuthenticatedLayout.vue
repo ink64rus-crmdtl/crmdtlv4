@@ -19,7 +19,7 @@ import AppHeader from '@/Components/AppHeader.vue';
             </AppHeader>
 
             <!-- Основной контент страницы -->
-            <main class="flex-1 overflow-x-hidden overflow-y-auto p-6">
+            <main class="flex-1 overflow-x-hidden overflow-y-auto p-1.5">
                 <slot />
             </main>
         </div>

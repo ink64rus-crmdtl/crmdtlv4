@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class BusinessDirection extends Model
 {
@@ -17,4 +18,9 @@ class BusinessDirection extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'branch_business_direction');
+    }
 }

@@ -1,0 +1,808 @@
+<script setup>
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Offcanvas from '@/Components/Offcanvas.vue';
+import { Head, useForm, usePage, Link } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+
+const props = defineProps({
+    employees: Array,
+    branches: Array,
+    positions: Array,
+    roles: Array,
+    scopes: Object,
+    userScopes: Object,
+    tenantCountry: String,
+});
+
+const page = usePage();
+
+const isModalOpen = ref(false);
+const isOffcanvasOpen = ref(false);
+const previewEmployee = ref(null);
+const editingEmployee = ref(null);
+const activeTab = ref('main'); // 'main', 'work', 'crm', 'scopes', 'documents', 'payroll'
+
+const needsMiddleName = computed(() => {
+    return ['RU', 'BY', 'KZ'].includes(props.tenantCountry);
+});
+
+const form = useForm({
+    first_name: '',
+    last_name: '',
+    middle_name: '',
+    phone: '',
+    personal_email: '',
+    birth_date: '',
+    
+    branch_id: '',
+    position_id: '',
+    type: 'staff',
+    hire_date: '',
+    termination_date: '',
+    is_active: true,
+    
+    passport_data: {
+        series: '',
+        number: '',
+        issued_by: '',
+        issue_date: '',
+        department_code: '',
+        registration_address: ''
+    },
+
+    // CRM Access
+    has_crm_access: false,
+    email: '',
+    password: '',
+    role_id: '',
+
+    // Scopes (Индивидуальные доступы)
+    scopes: {
+        branches: [],
+        legal_entities: [],
+        business_directions: [],
+        warehouses: [],
+        accounts: []
+    }
+});
+
+const getLocalizedLabel = (label) => {
+    if (!label) return '';
+    if (typeof label === 'string') {
+        try {
+            label = JSON.parse(label);
+        } catch (e) {
+            return label;
+        }
+    }
+    return label['ru'] || label['en'] || Object.values(label)[0] || '';
+};
+
+const openPreview = (employee) => {
+    previewEmployee.value = employee;
+    isOffcanvasOpen.value = true;
+};
+
+const closePreview = () => {
+    isOffcanvasOpen.value = false;
+    setTimeout(() => {
+        previewEmployee.value = null;
+    }, 300); // Ожидание окончания анимации закрытия
+};
+
+const openModal = (employee = null) => {
+    // Если открываем из режима просмотра - закрываем панель
+    if (isOffcanvasOpen.value) {
+        isOffcanvasOpen.value = false;
+    }
+
+    editingEmployee.value = employee;
+    activeTab.value = 'main';
+    
+    if (employee) {
+        form.first_name = employee.first_name;
+        form.last_name = employee.last_name || '';
+        form.middle_name = employee.middle_name || '';
+        form.phone = employee.phone || '';
+        form.personal_email = employee.personal_email || '';
+        form.birth_date = employee.birth_date ? employee.birth_date.substring(0, 10) : '';
+        
+        form.branch_id = employee.branch_id;
+        form.position_id = employee.position_id || '';
+        form.type = employee.type;
+        form.hire_date = employee.hire_date ? employee.hire_date.substring(0, 10) : '';
+        form.termination_date = employee.termination_date ? employee.termination_date.substring(0, 10) : '';
+        form.is_active = Boolean(employee.is_active);
+
+        form.passport_data = employee.passport_data || {
+            series: '', number: '', issued_by: '', issue_date: '', department_code: '', registration_address: ''
+        };
+
+        if (employee.user_id && employee.user) {
+            form.has_crm_access = true;
+            form.email = employee.user.email;
+            form.password = ''; // Не заполняем пароль при редактировании
+            form.role_id = employee.user.roles && employee.user.roles.length > 0 ? employee.user.roles[0].id : '';
+            
+            // Загружаем индивидуальные доступы
+            const uScopes = props.userScopes[employee.user_id] || {};
+            form.scopes.branches = uScopes.branches || [];
+            form.scopes.legal_entities = uScopes.legal_entities || [];
+            form.scopes.business_directions = uScopes.business_directions || [];
+            form.scopes.warehouses = uScopes.warehouses || [];
+            form.scopes.accounts = uScopes.accounts || [];
+        } else {
+            form.has_crm_access = false;
+            form.email = '';
+            form.password = '';
+            form.role_id = '';
+            form.scopes = { branches: [], legal_entities: [], business_directions: [], warehouses: [], accounts: [] };
+        }
+    } else {
+        form.reset();
+        // Предзаполняем филиал из текущей сессии для избежания "пропажи" сотрудника
+        form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
+        form.type = 'staff';
+        form.is_active = true;
+        form.has_crm_access = false;
+        form.passport_data = { series: '', number: '', issued_by: '', issue_date: '', department_code: '', registration_address: '' };
+        form.scopes = { branches: [], legal_entities: [], business_directions: [], warehouses: [], accounts: [] };
+    }
+    isModalOpen.value = true;
+};
+
+const closeModal = () => {
+    isModalOpen.value = false;
+    editingEmployee.value = null;
+    form.reset();
+    form.clearErrors();
+};
+
+const submit = () => {
+    if (editingEmployee.value) {
+        form.put(route('hr.employees.update', editingEmployee.value.id), {
+            onSuccess: () => closeModal(),
+        });
+    } else {
+        form.post(route('hr.employees.store'), {
+            onSuccess: () => closeModal(),
+        });
+    }
+};
+
+const deleteEmployee = (employee) => {
+    if (confirm(`Удалить сотрудника "${employee.first_name} ${employee.last_name || ''}"? Это также удалит его доступ в CRM.`)) {
+        form.delete(route('hr.employees.destroy', employee.id));
+        if (previewEmployee.value && previewEmployee.value.id === employee.id) {
+            closePreview();
+        }
+    }
+};
+
+const employeeTypes = {
+    'staff': 'В штате',
+    'self_employed': 'Самозанятый',
+    'outsource': 'Аутсорс / Подрядчик'
+};
+</script>
+
+<template>
+    <Head title="Сотрудники" />
+
+    <AuthenticatedLayout>
+        <template #header>
+            Сотрудники и HR
+        </template>
+
+        <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
+            
+            <!-- Header Card (Attex Theme) -->
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
+                <div>
+                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Сотрудники</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Управление персоналом, должностями и индивидуальными правами доступа.
+                    </p>
+                </div>
+                <div class="flex gap-3">
+                    <Link :href="route('hr.positions.index')" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                        Справочник должностей
+                    </Link>
+                    <button
+                        @click="openModal()"
+                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
+                    >
+                        <i class="ri-user-add-line text-base"></i>
+                        Добавить сотрудника
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table Card (Attex Theme) -->
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <div class="overflow-x-auto w-full">
+                    <table class="min-w-full text-left whitespace-nowrap">
+                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                            <tr>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Сотрудник</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность / Тип</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Филиал</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Доступ в CRM</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Клик по строке открывает Offcanvas Быстрого просмотра -->
+                            <tr v-for="employee in employees" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold group-hover:text-primary transition-colors">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                                            {{ employee.first_name.charAt(0) }}
+                                        </div>
+                                        <div>
+                                            <div class="text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors">{{ employee.last_name }} {{ employee.first_name }} {{ employee.middle_name || '' }}</div>
+                                            <div class="text-xs text-gray-500 font-normal mt-0.5">{{ employee.phone || 'Нет телефона' }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <div class="font-medium">{{ employee.position ? getLocalizedLabel(employee.position.name) : 'Без должности' }}</div>
+                                    <div class="text-xs text-gray-500 mt-0.5">{{ employeeTypes[employee.type] }}</div>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        <i class="ri-store-2-line"></i> {{ employee.branch ? employee.branch.name : '—' }}
+                                    </span>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <div v-if="employee.user_id" class="flex flex-col items-start gap-1">
+                                        <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-success/10 text-success">
+                                            <i class="ri-shield-keyhole-line"></i> Есть доступ
+                                        </span>
+                                        <span class="text-xs text-gray-500 font-medium">
+                                            Роль: {{ employee.user.roles && employee.user.roles.length > 0 ? employee.user.roles[0].name : 'Нет роли' }}
+                                        </span>
+                                    </div>
+                                    <span v-else class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                        Нет доступа
+                                    </span>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
+                                    <!-- Важно: @click.stop предотвращает всплытие события клика на строку (которое открывает Preview) -->
+                                    <button 
+                                        @click.stop="openModal(employee)" 
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                        title="Редактировать форму"
+                                    >
+                                        <i class="ri-pencil-line"></i>
+                                    </button>
+                                    <button 
+                                        @click.stop="deleteEmployee(employee)" 
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                        title="Удалить"
+                                    >
+                                        <i class="ri-delete-bin-line"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr v-if="employees.length === 0">
+                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    Сотрудники еще не добавлены. Нажмите "Добавить сотрудника".
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TRI-STATE 1: Offcanvas (Быстрый просмотр) -->
+        <Offcanvas :show="isOffcanvasOpen" @close="closePreview" maxWidth="md">
+            <div class="flex flex-col h-full" v-if="previewEmployee">
+                <!-- Offcanvas Header -->
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-start bg-gray-50/50 dark:bg-gray-800/30">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl shrink-0">
+                            {{ previewEmployee.first_name.charAt(0) }}
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-bold text-gray-800 dark:text-gray-200 leading-tight">
+                                {{ previewEmployee.last_name }} {{ previewEmployee.first_name }}
+                            </h2>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                                {{ previewEmployee.position ? getLocalizedLabel(previewEmployee.position.name) : 'Без должности' }}
+                            </p>
+                        </div>
+                    </div>
+                    <button @click="closePreview" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-lg"></i>
+                    </button>
+                </div>
+
+                <!-- Offcanvas Body -->
+                <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                    
+                    <!-- Статус и Филиал -->
+                    <div class="flex items-center gap-3">
+                        <span :class="[previewEmployee.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-bold tracking-wide uppercase']">
+                            {{ previewEmployee.is_active ? 'Активен' : 'Уволен' }}
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-bold tracking-wide uppercase bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                            <i class="ri-store-2-line"></i> {{ previewEmployee.branch ? previewEmployee.branch.name : '—' }}
+                        </span>
+                    </div>
+
+                    <!-- Контакты -->
+                    <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700/50 space-y-4">
+                        <div>
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Телефон</p>
+                            <a :href="'tel:' + previewEmployee.phone" class="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors flex items-center gap-2">
+                                <i class="ri-phone-line text-gray-400"></i> {{ previewEmployee.phone || 'Не указан' }}
+                            </a>
+                        </div>
+                        <div v-if="previewEmployee.personal_email">
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Личный Email</p>
+                            <a :href="'mailto:' + previewEmployee.personal_email" class="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors flex items-center gap-2">
+                                <i class="ri-mail-line text-gray-400"></i> {{ previewEmployee.personal_email }}
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Системный доступ (CRM) -->
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">Доступ в CRM</h3>
+                        
+                        <div v-if="previewEmployee.user_id" class="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-3">
+                                <i class="ri-shield-check-fill text-success text-xl"></i>
+                                <span class="text-sm font-bold text-gray-800 dark:text-gray-200">Аккаунт активен</span>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-gray-500 dark:text-gray-400">Логин:</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ previewEmployee.user?.email }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-gray-500 dark:text-gray-400">Роль:</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ previewEmployee.user?.roles && previewEmployee.user.roles.length > 0 ? previewEmployee.user.roles[0].name : '—' }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex items-center gap-3">
+                            <i class="ri-shield-keyhole-line text-gray-400 text-xl"></i>
+                            <span class="text-sm text-gray-500 dark:text-gray-400">Доступ в систему не предоставлялся</span>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Offcanvas Footer (Действия) -->
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex justify-between gap-3">
+                    <button 
+                        @click="openModal(previewEmployee)" 
+                        class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm"
+                    >
+                        <i class="ri-pencil-line mr-2"></i> Редактировать
+                    </button>
+                    <Link 
+                        :href="route('hr.employees.show', previewEmployee.id)" 
+                        class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm"
+                    >
+                        Полная карточка <i class="ri-arrow-right-line ml-2"></i>
+                    </Link>
+                </div>
+            </div>
+        </Offcanvas>
+
+        <!-- TRI-STATE 3: Форма редактирования (Focused Modal) -->
+        <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-4xl my-8 mx-auto flex flex-col">
+                
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        {{ editingEmployee ? 'Редактирование данных: ' + form.last_name + ' ' + form.first_name : 'Добавление сотрудника' }}
+                    </h3>
+                    <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Вкладки внутри модалки -->
+                <div class="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 px-6 bg-white dark:bg-[#313a46] custom-scrollbar">
+                    <button
+                        type="button"
+                        @click="activeTab = 'main'"
+                        :class="[activeTab === 'main' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-user-line"></i> Основные данные
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'work'"
+                        :class="[activeTab === 'work' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-briefcase-line"></i> Работа
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'crm'"
+                        :class="[activeTab === 'crm' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-shield-keyhole-line"></i> Доступ в CRM
+                    </button>
+                    <button
+                        v-if="form.has_crm_access"
+                        type="button"
+                        @click="activeTab = 'scopes'"
+                        :class="[activeTab === 'scopes' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-database-2-line"></i> Индивидуальные доступы
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'documents'"
+                        :class="[activeTab === 'documents' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-profile-line"></i> Документы
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'payroll'"
+                        :class="[activeTab === 'payroll' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-money-dollar-circle-line"></i> Зарплата
+                    </button>
+                </div>
+
+                <form @submit.prevent="submit" class="flex flex-col">
+                    
+                    <!-- Вкладка 1: Основные данные -->
+                    <div v-show="activeTab === 'main'" class="p-6 space-y-5">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Фамилия <span class="text-danger">*</span></label>
+                                <input 
+                                    v-model="form.last_name" 
+                                    type="text" 
+                                    required 
+                                    placeholder="Иванов" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                                <span v-if="form.errors.last_name" class="text-xs text-danger mt-1">{{ form.errors.last_name }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя <span class="text-danger">*</span></label>
+                                <input 
+                                    v-model="form.first_name" 
+                                    type="text" 
+                                    required 
+                                    placeholder="Иван" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                                <span v-if="form.errors.first_name" class="text-xs text-danger mt-1">{{ form.errors.first_name }}</span>
+                            </div>
+                            <div v-if="needsMiddleName">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Отчество <span class="text-danger">*</span></label>
+                                <input 
+                                    v-model="form.middle_name" 
+                                    type="text" 
+                                    required
+                                    placeholder="Иванович" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                                <span v-if="form.errors.middle_name" class="text-xs text-danger mt-1">{{ form.errors.middle_name }}</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон <span class="text-danger">*</span></label>
+                                <input 
+                                    v-model="form.phone" 
+                                    type="text" 
+                                    required
+                                    placeholder="+7 (999) 000-00-00" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                                <span v-if="form.errors.phone" class="text-xs text-danger mt-1 block leading-tight">{{ form.errors.phone }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Личный Email</label>
+                                <input 
+                                    v-model="form.personal_email" 
+                                    type="email" 
+                                    placeholder="ivanov@mail.ru" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата рождения</label>
+                                <input 
+                                    v-model="form.birth_date" 
+                                    type="date" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка 2: Работа -->
+                    <div v-show="activeTab === 'work'" class="p-6 space-y-5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основной филиал <span class="text-danger">*</span></label>
+                                <select 
+                                    v-model="form.branch_id" 
+                                    required
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                >
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
+                                    <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
+                                </select>
+                                <span v-if="form.errors.branch_id" class="text-xs text-danger mt-1">{{ form.errors.branch_id }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Должность <span class="text-danger">*</span></label>
+                                <select 
+                                    v-model="form.position_id" 
+                                    required
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                >
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите должность...</option>
+                                    <option v-for="position in positions" :key="position.id" :value="position.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(position.name) }}</option>
+                                </select>
+                                <span v-if="form.errors.position_id" class="text-xs text-danger mt-1">{{ form.errors.position_id }}</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип оформления <span class="text-danger">*</span></label>
+                                <select 
+                                    v-model="form.type" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                >
+                                    <option v-for="(label, key) in employeeTypes" :key="key" :value="key" class="bg-white dark:bg-gray-800">{{ label }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата приема на работу</label>
+                                <input 
+                                    v-model="form.hire_date" 
+                                    type="date" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата увольнения</label>
+                                <input 
+                                    v-model="form.termination_date" 
+                                    type="date" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                        </div>
+
+                        <!-- Toggle Switch -->
+                        <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-4">
+                            <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
+                                <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
+                                Сотрудник активен (работает)
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка 3: Доступ в CRM -->
+                    <div v-show="activeTab === 'crm'" class="p-6 space-y-4">
+                        
+                        <div class="bg-info/10 border border-info/20 rounded-md p-4 mb-4">
+                            <div class="flex items-center">
+                                <div @click="form.has_crm_access = !form.has_crm_access" :class="[form.has_crm_access ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                    <div :class="[form.has_crm_access ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                                </div>
+                                <label class="ml-3 block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.has_crm_access = !form.has_crm_access">
+                                    Предоставить доступ в CRM
+                                </label>
+                            </div>
+                            <p class="text-xs text-info mt-2 ml-12">
+                                Если включено, для сотрудника будет создан аккаунт (логин и пароль) для входа в систему.
+                            </p>
+                        </div>
+
+                        <div v-if="form.has_crm_access" class="space-y-4 animate-fade-in">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email (Логин) <span class="text-danger">*</span></label>
+                                    <input 
+                                        v-model="form.email" 
+                                        type="email" 
+                                        :required="form.has_crm_access"
+                                        placeholder="employee@company.com" 
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                    />
+                                    <span v-if="form.errors.email" class="text-xs text-danger mt-1">{{ form.errors.email }}</span>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Пароль <span v-if="!editingEmployee?.user_id" class="text-danger">*</span></label>
+                                    <input 
+                                        v-model="form.password" 
+                                        type="password" 
+                                        :required="form.has_crm_access && !editingEmployee?.user_id"
+                                        :placeholder="editingEmployee?.user_id ? 'Оставьте пустым, чтобы не менять' : 'Минимум 8 символов'" 
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                    />
+                                    <span v-if="form.errors.password" class="text-xs text-danger mt-1">{{ form.errors.password }}</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Системная Роль (Права доступа) <span class="text-danger">*</span></label>
+                                <select 
+                                    v-model="form.role_id" 
+                                    :required="form.has_crm_access"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                >
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите роль...</option>
+                                    <option v-for="role in roles" :key="role.id" :value="role.id" class="bg-white dark:bg-gray-800">{{ role.name }}</option>
+                                </select>
+                                <span v-if="form.errors.role_id" class="text-xs text-danger mt-1">{{ form.errors.role_id }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка 4: Индивидуальные доступы (Scopes) -->
+                    <div v-show="activeTab === 'scopes'" class="p-6 space-y-6">
+                        <div class="bg-warning/10 border border-warning/20 rounded-md p-4 mb-2">
+                            <p class="text-sm text-warning font-medium">
+                                <i class="ri-information-line mr-1"></i>
+                                Внимание: Галочки, установленные здесь, перекрывают (дополняют) базовые права выбранной Роли. Используйте это для выдачи индивидуальных исключений (например, доступ к дополнительному филиалу).
+                            </p>
+                        </div>
+
+                        <!-- Филиалы -->
+                        <div>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Филиалы</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <label v-for="branch in scopes.branches" :key="branch.id" class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" :value="branch.id" v-model="form.scopes.branches" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    <span class="ml-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ branch.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Юрлица -->
+                        <div>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Юрлица</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <label v-for="entity in scopes.legalEntities" :key="entity.id" class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" :value="entity.id" v-model="form.scopes.legal_entities" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    <span class="ml-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ entity.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Направления -->
+                        <div>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Направления</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <label v-for="dir in scopes.businessDirections" :key="dir.id" class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" :value="dir.id" v-model="form.scopes.business_directions" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    <span class="ml-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ dir.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Склады -->
+                        <div>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Склады</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <label v-for="wh in scopes.warehouses" :key="wh.id" class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" :value="wh.id" v-model="form.scopes.warehouses" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    <span class="ml-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ wh.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Счета -->
+                        <div>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Расчетные счета (Кассы)</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <label v-for="acc in scopes.accounts" :key="acc.id" class="flex items-center cursor-pointer group">
+                                    <input type="checkbox" :value="acc.id" v-model="form.scopes.accounts" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    <span class="ml-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ acc.name }}</span>
+                                </label>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Вкладка 5: Документы (Паспорт) -->
+                    <div v-show="activeTab === 'documents'" class="p-6 space-y-5">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">Паспортные данные</h4>
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Серия</label>
+                                <input 
+                                    v-model="form.passport_data.series" 
+                                    type="text" 
+                                    placeholder="1234" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Номер</label>
+                                <input 
+                                    v-model="form.passport_data.number" 
+                                    type="text" 
+                                    placeholder="567890" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Код подразделения</label>
+                                <input 
+                                    v-model="form.passport_data.department_code" 
+                                    type="text" 
+                                    placeholder="123-456" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Кем выдан</label>
+                                <input 
+                                    v-model="form.passport_data.issued_by" 
+                                    type="text" 
+                                    placeholder="ГУ МВД России..." 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата выдачи</label>
+                                <input 
+                                    v-model="form.passport_data.issue_date" 
+                                    type="date" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Адрес регистрации (прописка)</label>
+                                <textarea 
+                                    v-model="form.passport_data.registration_address" 
+                                    rows="2"
+                                    placeholder="г. Москва, ул. Ленина..." 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                ></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка 6: Зарплата -->
+                    <div v-show="activeTab === 'payroll'" class="p-6 flex flex-col items-center justify-center text-center py-16">
+                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                            <i class="ri-money-dollar-circle-line text-3xl text-gray-400 dark:text-gray-500"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">Настройки мотивации</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md">
+                            Вкладка зарезервирована для модуля расчета заработной платы (оклады, проценты от услуг, KPI). Данный функционал будет доступен в следующих обновлениях.
+                        </p>
+                    </div>
+
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                            Отмена
+                        </button>
+                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                            Сохранить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </AuthenticatedLayout>
+</template>

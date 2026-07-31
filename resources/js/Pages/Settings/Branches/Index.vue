@@ -5,12 +5,14 @@ import { ref } from 'vue';
 
 const props = defineProps({
     branchesList: Array,
+    legalEntities: Array,
 });
 
 const isModalOpen = ref(false);
 const editingBranch = ref(null);
 
 const form = useForm({
+    legal_entity_id: '',
     name: '',
     address: '',
     city: '',
@@ -22,6 +24,7 @@ const form = useForm({
 const openModal = (branch = null) => {
     editingBranch.value = branch;
     if (branch) {
+        form.legal_entity_id = branch.legal_entity_id || '';
         form.name = branch.name;
         form.address = branch.address || '';
         form.city = branch.city || '';
@@ -39,6 +42,7 @@ const closeModal = () => {
     isModalOpen.value = false;
     editingBranch.value = null;
     form.reset();
+    form.clearErrors();
 };
 
 const submit = () => {
@@ -68,7 +72,7 @@ const deleteBranch = (branch) => {
             Настройки компании
         </template>
 
-        <div class="max-w-7xl mx-auto space-y-6">
+        <div class="w-[99%] mx-auto space-y-6">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
@@ -166,6 +170,7 @@ const deleteBranch = (branch) => {
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрлицо</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Адрес</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Телефон</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
@@ -179,6 +184,12 @@ const deleteBranch = (branch) => {
                                         <i class="ri-store-2-line text-primary"></i>
                                         {{ branch.name }}
                                     </div>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <span v-if="branch.legal_entity" class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                        <i class="ri-bank-line"></i> {{ branch.legal_entity.name }}
+                                    </span>
+                                    <span v-else class="text-gray-400 dark:text-gray-500 text-xs">Не привязан</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     {{ branch.city ? branch.city + ', ' : '' }}{{ branch.address || '—' }}
@@ -212,7 +223,7 @@ const deleteBranch = (branch) => {
                                 </td>
                             </tr>
                             <tr v-if="branchesList.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Филиалы еще не добавлены. Нажмите "Добавить филиал".
                                 </td>
                             </tr>
@@ -237,15 +248,29 @@ const deleteBranch = (branch) => {
 
                 <form @submit.prevent="submit" class="flex flex-col">
                     <div class="p-6 space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название филиала <span class="text-danger">*</span></label>
-                            <input 
-                                v-model="form.name" 
-                                type="text" 
-                                required 
-                                placeholder="Центральный детейлинг" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                            />
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название филиала <span class="text-danger">*</span></label>
+                                <input 
+                                    v-model="form.name" 
+                                    type="text" 
+                                    required 
+                                    placeholder="Центральный детейлинг" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                                <span v-if="form.errors.name" class="text-xs text-danger mt-1">{{ form.errors.name }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Юридическое лицо</label>
+                                <select 
+                                    v-model="form.legal_entity_id" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                >
+                                    <option value="" class="bg-white dark:bg-gray-800">Общий филиал (Без привязки)</option>
+                                    <option v-for="le in legalEntities" :key="le.id" :value="le.id" class="bg-white dark:bg-gray-800">{{ le.name }}</option>
+                                </select>
+                                <span v-if="form.errors.legal_entity_id" class="text-xs text-danger mt-1">{{ form.errors.legal_entity_id }}</span>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -293,7 +318,7 @@ const deleteBranch = (branch) => {
                         </div>
 
                         <!-- Toggle Switch (Attex Style) -->
-                        <div class="flex items-center pt-2">
+                        <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
                             <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
                                 <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                             </div>

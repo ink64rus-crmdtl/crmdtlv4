@@ -32,6 +32,7 @@ const routeMap = {
     'dashboard': 'dashboard',
     'settings': 'settings',
     'system': 'system.index',
+    'hr': 'hr.employees.index',
 };
 
 // Защита от ошибок роутинга
