@@ -83,4 +83,61 @@ class BranchController extends Controller
         session()->save();
         return redirect()->back();
     }
+
+    public function bulkDestroy(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['exists:branches,id'],
+        ]);
+
+        Branch::whereIn('id', $validated['ids'])->delete();
+
+        if (in_array(session('current_branch_id'), $validated['ids'])) {
+            session(['current_branch_id' => 'all']);
+        }
+
+        return redirect()->back()->with('success', 'Выбранные филиалы удалены');
+    }
+
+    public function bulkExport(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['exists:branches,id'],
+        ]);
+
+        $items = Branch::with('legalEntity')->whereIn('id', $validated['ids'])->get();
+        
+        $filename = 'branches_export_' . date('Y-m-d_H-i-s') . '.csv';
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+        
+        $callback = function() use($items) {
+            $file = fopen('php://output', 'w');
+            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            
+            fputcsv($file, ['ID', 'Название', 'Юрлицо', 'Город', 'Адрес', 'Телефон', 'Статус'], ';');
+            
+            foreach ($items as $item) {
+                fputcsv($file, [
+                    $item->id,
+                    $item->name,
+                    $item->legalEntity ? $item->legalEntity->name : 'Не привязан',
+                    $item->city,
+                    $item->address,
+                    $item->phone,
+                    $item->is_active ? 'Активно' : 'Неактивно'
+                ], ';');
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }

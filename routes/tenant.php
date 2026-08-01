@@ -64,6 +64,8 @@ Route::middleware([
         Route::post('/settings/legal-entities', [LegalEntityController::class, 'store'])->name('settings.legal-entities.store');
         Route::put('/settings/legal-entities/{legalEntity}', [LegalEntityController::class, 'update'])->name('settings.legal-entities.update');
         Route::delete('/settings/legal-entities/{legalEntity}', [LegalEntityController::class, 'destroy'])->name('settings.legal-entities.destroy');
+        Route::post('/settings/legal-entities/bulk-delete', [LegalEntityController::class, 'bulkDestroy'])->name('settings.legal-entities.bulk-destroy');
+        Route::post('/settings/legal-entities/bulk-export', [LegalEntityController::class, 'bulkExport'])->name('settings.legal-entities.bulk-export');
 
         // Настройки: Счета
         Route::post('/settings/accounts', [AccountController::class, 'store'])->name('settings.accounts.store');
@@ -75,6 +77,8 @@ Route::middleware([
         Route::post('/settings/branches', [BranchController::class, 'store'])->name('settings.branches.store');
         Route::put('/settings/branches/{branch}', [BranchController::class, 'update'])->name('settings.branches.update');
         Route::delete('/settings/branches/{branch}', [BranchController::class, 'destroy'])->name('settings.branches.destroy');
+        Route::post('/settings/branches/bulk-delete', [BranchController::class, 'bulkDestroy'])->name('settings.branches.bulk-destroy');
+        Route::post('/settings/branches/bulk-export', [BranchController::class, 'bulkExport'])->name('settings.branches.bulk-export');
 
         // Переключение контекста
         Route::post('/legal-entities/switch/{legalEntity?}', [LegalEntityController::class, 'switch'])->name('legal-entities.switch');
@@ -85,6 +89,8 @@ Route::middleware([
         Route::post('/settings/business-directions', [BusinessDirectionController::class, 'store'])->name('settings.business-directions.store');
         Route::put('/settings/business-directions/{businessDirection}', [BusinessDirectionController::class, 'update'])->name('settings.business-directions.update');
         Route::delete('/settings/business-directions/{businessDirection}', [BusinessDirectionController::class, 'destroy'])->name('settings.business-directions.destroy');
+        Route::post('/settings/business-directions/bulk-delete', [BusinessDirectionController::class, 'bulkDestroy'])->name('settings.business-directions.bulk-destroy');
+        Route::post('/settings/business-directions/bulk-export', [BusinessDirectionController::class, 'bulkExport'])->name('settings.business-directions.bulk-export');
 
         // Настройки: Склад
         Route::get('/settings/warehouse', [WarehouseSettingsController::class, 'index'])->name('settings.warehouse.index');
@@ -95,6 +101,8 @@ Route::middleware([
         Route::post('/settings/custom-fields', [CustomFieldController::class, 'store'])->name('settings.custom-fields.store');
         Route::put('/settings/custom-fields/{customField}', [CustomFieldController::class, 'update'])->name('settings.custom-fields.update');
         Route::delete('/settings/custom-fields/{customField}', [CustomFieldController::class, 'destroy'])->name('settings.custom-fields.destroy');
+        Route::post('/settings/custom-fields/bulk-delete', [CustomFieldController::class, 'bulkDestroy'])->name('settings.custom-fields.bulk-destroy');
+        Route::post('/settings/custom-fields/bulk-export', [CustomFieldController::class, 'bulkExport'])->name('settings.custom-fields.bulk-export');
 
         // Настройки: Роли и Права (Меню, Поля, Доступ к данным)
         Route::get('/settings/roles-permissions', [RolePermissionController::class, 'index'])->name('settings.roles-permissions.index');
@@ -107,6 +115,8 @@ Route::middleware([
         Route::post('/hr/positions', [PositionController::class, 'store'])->name('hr.positions.store');
         Route::put('/hr/positions/{position}', [PositionController::class, 'update'])->name('hr.positions.update');
         Route::delete('/hr/positions/{position}', [PositionController::class, 'destroy'])->name('hr.positions.destroy');
+        Route::post('/hr/positions/bulk-delete', [PositionController::class, 'bulkDestroy'])->name('hr.positions.bulk-destroy');
+        Route::post('/hr/positions/bulk-export', [PositionController::class, 'bulkExport'])->name('hr.positions.bulk-export');
 
         // HR: Сотрудники
         Route::get('/hr/employees', [EmployeeController::class, 'index'])->name('hr.employees.index');
@@ -114,6 +124,8 @@ Route::middleware([
         Route::get('/hr/employees/{employee}', [EmployeeController::class, 'show'])->name('hr.employees.show');
         Route::put('/hr/employees/{employee}', [EmployeeController::class, 'update'])->name('hr.employees.update');
         Route::delete('/hr/employees/{employee}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
+        Route::post('/hr/employees/bulk-delete', [EmployeeController::class, 'bulkDestroy'])->name('hr.employees.bulk-destroy');
+        Route::post('/hr/employees/bulk-export', [EmployeeController::class, 'bulkExport'])->name('hr.employees.bulk-export');
     });
 
     require __DIR__.'/auth.php';

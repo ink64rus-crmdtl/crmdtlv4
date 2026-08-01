@@ -1,8 +1,9 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
-import { Head, useForm, usePage, Link } from '@inertiajs/vue3';
+import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import axios from 'axios';
 
 const props = defineProps({
     employees: Array,
@@ -28,6 +29,50 @@ const activeTab = ref('main'); // 'main', 'work', 'crm', 'scopes', 'documents', 
 const needsMiddleName = computed(() => {
     return ['RU', 'BY', 'KZ'].includes(props.tenantCountry);
 });
+
+// --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+const selectedIds = ref([]);
+
+const selectAll = computed({
+    get: () => props.employees.length > 0 && selectedIds.value.length === props.employees.length,
+    set: (value) => {
+        if (value) {
+            selectedIds.value = props.employees.map(e => e.id);
+        } else {
+            selectedIds.value = [];
+        }
+    }
+});
+
+const bulkDelete = () => {
+    if (confirm(`Удалить выбранных сотрудников (${selectedIds.value.length})? Это также удалит их доступ в CRM.`)) {
+        router.post(route('hr.employees.bulk-destroy'), { ids: selectedIds.value }, {
+            onSuccess: () => {
+                selectedIds.value = [];
+                if (previewEmployee.value && !props.employees.find(e => e.id === previewEmployee.value.id)) {
+                    closePreview();
+                }
+            }
+        });
+    }
+};
+
+const bulkExport = async () => {
+    try {
+        const response = await axios.post(route('hr.employees.bulk-export'), { ids: selectedIds.value }, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `employees_export_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    } catch (error) {
+        console.error("Export failed", error);
+        alert("Ошибка при экспорте данных");
+    }
+};
+// ----------------------------------------
 
 // --- ДИНАМИЧЕСКИЕ КОЛОНКИ ---
 const activeColumns = computed(() => {
@@ -269,6 +314,22 @@ const employeeTypes = {
                 </div>
             </div>
 
+            <!-- Action Bar (Bulk Actions) -->
+            <div v-if="selectedIds.length > 0" class="bg-primary/10 border border-primary/20 rounded-md p-3 flex justify-between items-center transition-all">
+                <div class="text-sm font-semibold text-primary flex items-center gap-2">
+                    <i class="ri-checkbox-multiple-line text-lg"></i>
+                    Выбрано сотрудников: {{ selectedIds.length }}
+                </div>
+                <div class="flex gap-2">
+                    <button @click="bulkExport" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        <i class="ri-file-excel-2-line mr-1.5 text-success"></i> Экспорт в Excel
+                    </button>
+                    <button @click="bulkDelete" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
+                        <i class="ri-delete-bin-line mr-1.5"></i> Удалить выбранные
+                    </button>
+                </div>
+            </div>
+
             <!-- Table Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
@@ -281,6 +342,9 @@ const employeeTypes = {
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
+                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
+                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                </th>
                                 <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
                                     {{ col.label }}
                                 </th>
@@ -291,6 +355,10 @@ const employeeTypes = {
                             <!-- Клик по строке открывает Offcanvas Быстрого просмотра -->
                             <tr v-for="employee in employees" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
                                 
+                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
+                                    <input type="checkbox" :value="employee.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                </td>
+
                                 <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     
                                     <template v-if="col.key === 'employee_name'">
@@ -376,7 +444,7 @@ const employeeTypes = {
                                 </td>
                             </tr>
                             <tr v-if="employees.length === 0">
-                                <td :colspan="activeColumns.length + 1" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Сотрудники еще не добавлены. Нажмите "Добавить сотрудника".
                                 </td>
                             </tr>

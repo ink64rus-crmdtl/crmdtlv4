@@ -365,4 +365,88 @@ class EmployeeController extends Controller
 
         return redirect()->back()->with('success', 'Сотрудник удален');
     }
+
+    public function bulkDestroy(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['exists:employees,id'],
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            $employees = Employee::whereIn('id', $validated['ids'])->get();
+            foreach ($employees as $employee) {
+                if ($employee->user_id) {
+                    $user = User::find($employee->user_id);
+                    if ($user) {
+                        $user->branches()->detach();
+                        $user->legalEntities()->detach();
+                        $user->businessDirections()->detach();
+                        $user->warehouses()->detach();
+                        $user->accounts()->detach();
+                        $user->delete();
+                    }
+                }
+                $employee->delete();
+            }
+        });
+
+        return redirect()->back()->with('success', 'Выбранные сотрудники удалены');
+    }
+
+    public function bulkExport(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['exists:employees,id'],
+        ]);
+
+        $employees = Employee::with(['branch', 'position', 'user.roles'])->whereIn('id', $validated['ids'])->get();
+        
+        $filename = 'employees_export_' . date('Y-m-d_H-i-s') . '.csv';
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+        
+        $callback = function() use($employees) {
+            $file = fopen('php://output', 'w');
+            // Добавляем BOM для корректного отображения UTF-8 в Excel
+            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            
+            fputcsv($file, ['ID', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Email', 'Филиал', 'Должность', 'Тип', 'Статус'], ';');
+            
+            foreach ($employees as $emp) {
+                $posName = 'Без должности';
+                if ($emp->position) {
+                    $posName = is_array($emp->position->name) ? ($emp->position->name['ru'] ?? current($emp->position->name)) : $emp->position->name;
+                }
+
+                $employeeTypes = [
+                    'staff' => 'В штате',
+                    'self_employed' => 'Самозанятый',
+                    'outsource' => 'Аутсорс / Подрядчик'
+                ];
+
+                fputcsv($file, [
+                    $emp->id,
+                    $emp->last_name,
+                    $emp->first_name,
+                    $emp->middle_name,
+                    $emp->phone,
+                    $emp->personal_email,
+                    $emp->branch ? $emp->branch->name : '',
+                    $posName,
+                    $employeeTypes[$emp->type] ?? $emp->type,
+                    $emp->is_active ? 'Активен' : 'Уволен'
+                ], ';');
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }

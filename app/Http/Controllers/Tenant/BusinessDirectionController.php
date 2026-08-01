@@ -77,4 +77,55 @@ class BusinessDirectionController extends Controller
 
         return redirect()->back()->with('success', 'Направление удалено');
     }
+
+    public function bulkDestroy(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['exists:business_directions,id'],
+        ]);
+
+        BusinessDirection::whereIn('id', $validated['ids'])->delete();
+
+        return redirect()->back()->with('success', 'Выбранные направления удалены');
+    }
+
+    public function bulkExport(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['exists:business_directions,id'],
+        ]);
+
+        $items = BusinessDirection::with('branches')->whereIn('id', $validated['ids'])->get();
+        
+        $filename = 'business_directions_export_' . date('Y-m-d_H-i-s') . '.csv';
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+        
+        $callback = function() use($items) {
+            $file = fopen('php://output', 'w');
+            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            
+            fputcsv($file, ['ID', 'Название', 'Филиалы', 'Статус'], ';');
+            
+            foreach ($items as $item) {
+                $branches = $item->branches->pluck('name')->join(', ');
+                fputcsv($file, [
+                    $item->id,
+                    $item->name,
+                    $branches ?: 'Во всех филиалах',
+                    $item->is_active ? 'Активно' : 'Неактивно'
+                ], ';');
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }

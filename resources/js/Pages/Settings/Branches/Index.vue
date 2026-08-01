@@ -1,8 +1,9 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
-import { Head, useForm, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, useForm, Link, router } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+import axios from 'axios';
 
 const props = defineProps({
     branchesList: Array,
@@ -21,6 +22,47 @@ const form = useForm({
     timezone: 'Europe/Moscow',
     is_active: true,
 });
+
+// --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+const selectedIds = ref([]);
+
+const selectAll = computed({
+    get: () => props.branchesList.length > 0 && selectedIds.value.length === props.branchesList.length,
+    set: (value) => {
+        if (value) {
+            selectedIds.value = props.branchesList.map(b => b.id);
+        } else {
+            selectedIds.value = [];
+        }
+    }
+});
+
+const bulkDelete = () => {
+    if (confirm(`Удалить выбранные филиалы (${selectedIds.value.length})?`)) {
+        router.post(route('settings.branches.bulk-destroy'), { ids: selectedIds.value }, {
+            onSuccess: () => {
+                selectedIds.value = [];
+            }
+        });
+    }
+};
+
+const bulkExport = async () => {
+    try {
+        const response = await axios.post(route('settings.branches.bulk-export'), { ids: selectedIds.value }, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `branches_export_${new Date().toISOString().slice(0,10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    } catch (error) {
+        console.error("Export failed", error);
+        alert("Ошибка при экспорте данных");
+    }
+};
+// ----------------------------------------
 
 const openModal = (branch = null) => {
     editingBranch.value = branch;
@@ -158,7 +200,7 @@ const deleteBranch = (branch) => {
                 <div>
                     <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Филиалы и Локации</h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Управление физическими point обслуживания клиентов
+                        Управление физическими точками обслуживания клиентов
                     </p>
                 </div>
                 <button
@@ -170,12 +212,31 @@ const deleteBranch = (branch) => {
                 </button>
             </div>
 
+            <!-- Action Bar (Bulk Actions) -->
+            <div v-if="selectedIds.length > 0" class="bg-primary/10 border border-primary/20 rounded-md p-3 flex justify-between items-center transition-all">
+                <div class="text-sm font-semibold text-primary flex items-center gap-2">
+                    <i class="ri-checkbox-multiple-line text-lg"></i>
+                    Выбрано филиалов: {{ selectedIds.length }}
+                </div>
+                <div class="flex gap-2">
+                    <button @click="bulkExport" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        <i class="ri-file-excel-2-line mr-1.5 text-success"></i> Экспорт в Excel
+                    </button>
+                    <button @click="bulkDelete" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
+                        <i class="ri-delete-bin-line mr-1.5"></i> Удалить выбранные
+                    </button>
+                </div>
+            </div>
+
             <!-- Table Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
+                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
+                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                </th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрлицо</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Адрес</th>
@@ -186,6 +247,9 @@ const deleteBranch = (branch) => {
                         </thead>
                         <tbody>
                             <tr v-for="branch in branchesList" :key="branch.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
+                                    <input type="checkbox" :value="branch.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">
                                     <div class="flex items-center gap-2">
                                         <i class="ri-store-2-line text-primary"></i>
@@ -230,7 +294,7 @@ const deleteBranch = (branch) => {
                                 </td>
                             </tr>
                             <tr v-if="branchesList.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Филиалы еще не добавлены. Нажмите "Добавить филиал".
                                 </td>
                             </tr>

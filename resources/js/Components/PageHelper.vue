@@ -1,7 +1,7 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 
-defineProps({
+const props = defineProps({
     title: {
         type: String,
         default: 'Информация',
@@ -9,6 +9,22 @@ defineProps({
 });
 
 const isExpanded = ref(true);
+
+onMounted(() => {
+    // Формируем уникальный ключ для localStorage на основе заголовка подсказки
+    const storageKey = `page_helper_state_${props.title}`;
+    
+    // Проверяем, есть ли сохраненное состояние
+    const savedState = localStorage.getItem(storageKey);
+    if (savedState !== null) {
+        isExpanded.value = savedState === 'true';
+    }
+
+    // Следим за изменениями и мгновенно сохраняем в localStorage
+    watch(isExpanded, (newValue) => {
+        localStorage.setItem(storageKey, newValue);
+    });
+});
 </script>
 
 <template>
