@@ -18,6 +18,7 @@ use App\Http\Controllers\Tenant\RolePermissionController;
 use App\Http\Controllers\Tenant\PositionController;
 use App\Http\Controllers\Tenant\EmployeeController;
 use App\Http\Controllers\Tenant\ListViewController;
+use App\Http\Controllers\Tenant\ClientController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -126,6 +127,15 @@ Route::middleware([
         Route::delete('/hr/employees/{employee}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
         Route::post('/hr/employees/bulk-delete', [EmployeeController::class, 'bulkDestroy'])->name('hr.employees.bulk-destroy');
         Route::post('/hr/employees/bulk-export', [EmployeeController::class, 'bulkExport'])->name('hr.employees.bulk-export');
+
+        // CRM: Клиенты
+        Route::get('/crm/clients', [ClientController::class, 'index'])->name('crm.clients.index');
+        Route::post('/crm/clients', [ClientController::class, 'store'])->name('crm.clients.store');
+        Route::get('/crm/clients/{client}', [ClientController::class, 'show'])->name('crm.clients.show');
+        Route::put('/crm/clients/{client}', [ClientController::class, 'update'])->name('crm.clients.update');
+        Route::delete('/crm/clients/{client}', [ClientController::class, 'destroy'])->name('crm.clients.destroy');
+        Route::post('/crm/clients/bulk-delete', [ClientController::class, 'bulkDestroy'])->name('crm.clients.bulk-destroy');
+        Route::post('/crm/clients/bulk-export', [ClientController::class, 'bulkExport'])->name('crm.clients.bulk-export');
     });
 
     require __DIR__.'/auth.php';
