@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 
@@ -227,6 +228,13 @@ const deleteAccount = (account) => {
                     </Link>
                 </nav>
             </div>
+
+            <!-- Page Helper (Система подсказок) -->
+            <PageHelper title="Как устроена структура компании?">
+                <p>В нашей системе <strong>Юридическое лицо</strong> — это исключительно финансовый профиль. Он используется только для привязки расчетных счетов (касс) и подстановки реквизитов в печатные документы (Акты, Заказ-наряды).</p>
+                <p>Вся реальная работа (записи клиентов, склады, сотрудники) привязывается к <strong>Филиалам</strong> (физическим адресам). Вы можете привязать Филиал к конкретному Юрлицу, чтобы документы формировались автоматически.</p>
+                <p class="text-xs mt-2 opacity-80"><i class="ri-error-warning-line align-middle"></i> Примечание: Если у вас несколько юрлиц с абсолютно разными базами клиентов, разными складами и независимыми сотрудниками, мы настоятельно рекомендуем создать для них отдельные аккаунты (Тенанты) во избежание путаницы.</p>
+            </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">

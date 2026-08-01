@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -25,6 +26,7 @@ const entityTypes = {
     'client': 'Клиент',
     'vehicle': 'Автомобиль',
     'work_order': 'Заказ-наряд',
+    'employee': 'Сотрудник',
 };
 
 const fieldTypes = {
@@ -168,6 +170,12 @@ const deleteField = (field) => {
                     </Link>
                 </nav>
             </div>
+
+            <!-- Page Helper (Система подсказок) -->
+            <PageHelper title="Для чего нужны кастомные поля?">
+                <p>Кастомные поля позволяют вам расширять стандартные карточки (Клиентов, Автомобилей, Заказов) под специфику вашего бизнеса без привлечения программистов.</p>
+                <p>Если вы отметите поле как <strong>«Использовать в фильтрах»</strong>, оно появится в панели поиска, и вы сможете легко находить нужные записи (например, отфильтровать всех клиентов по полю «Источник рекламы»).</p>
+            </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-xl shadow-xs dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
@@ -324,7 +332,7 @@ const deleteField = (field) => {
                             <div class="flex items-center">
                                 <div @click="form.is_required = !form.is_required" :class="[form.is_required ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
                                     <div :class="[form.is_required ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
-                                clip-path</div>
+                                </div>
                                 <label class="ml-3 block text-sm font-medium text-slate-700 dark:text-gray-300 cursor-pointer" @click="form.is_required = !form.is_required">
                                     Обязательное поле (нельзя сохранить карточку без него)
                                 </label>

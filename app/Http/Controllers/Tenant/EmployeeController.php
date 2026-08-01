@@ -12,6 +12,9 @@ use App\Models\LegalEntity;
 use App\Models\BusinessDirection;
 use App\Models\Warehouse;
 use App\Models\Account;
+use App\Models\CustomFieldDefinition;
+use App\Models\ListView;
+use App\Services\FieldPermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +27,7 @@ class EmployeeController extends Controller
 {
     public function index(): Response
     {
+        $user = auth()->user();
         $employees = Employee::with(['user.roles', 'branch', 'position'])->orderBy('id', 'desc')->get();
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
         $positions = Position::where('is_active', true)->get(['id', 'name']);
@@ -41,18 +45,62 @@ class EmployeeController extends Controller
         $userScopes = [];
         foreach ($employees as $employee) {
             if ($employee->user_id) {
-                $user = $employee->user;
+                $u = $employee->user;
                 $userScopes[$employee->user_id] = [
-                    'branches' => $user->branches()->pluck('branches.id')->toArray(),
-                    'legal_entities' => $user->legalEntities()->pluck('legal_entities.id')->toArray(),
-                    'business_directions' => $user->businessDirections()->pluck('business_directions.id')->toArray(),
-                    'warehouses' => $user->warehouses()->pluck('warehouses.id')->toArray(),
-                    'accounts' => $user->accounts()->pluck('accounts.id')->toArray(),
+                    'branches' => $u->branches()->pluck('branches.id')->toArray(),
+                    'legal_entities' => $u->legalEntities()->pluck('legal_entities.id')->toArray(),
+                    'business_directions' => $u->businessDirections()->pluck('business_directions.id')->toArray(),
+                    'warehouses' => $u->warehouses()->pluck('warehouses.id')->toArray(),
+                    'accounts' => $u->accounts()->pluck('accounts.id')->toArray(),
                 ];
             }
         }
 
         $tenantCountry = config('tenant.country_code', 'RU');
+
+        // --- ДИНАМИЧЕСКИЕ ТАБЛИЦЫ И ПРАВА ДОСТУПА ---
+        
+        // 1. Формируем базовый список всех возможных колонок
+        $baseColumns = [
+            ['key' => 'employee_name', 'label' => 'Сотрудник', 'type' => 'system', 'is_default' => true],
+            ['key' => 'position_type', 'label' => 'Должность / Тип', 'type' => 'system', 'is_default' => true],
+            ['key' => 'branch', 'label' => 'Филиал', 'type' => 'system', 'is_default' => true],
+            ['key' => 'crm_access', 'label' => 'Доступ в CRM', 'type' => 'system', 'is_default' => true],
+            ['key' => 'phone', 'label' => 'Телефон', 'type' => 'system', 'is_default' => false],
+            ['key' => 'personal_email', 'label' => 'Личный Email', 'type' => 'system', 'is_default' => false],
+            ['key' => 'birth_date', 'label' => 'Дата рождения', 'type' => 'system', 'is_default' => false],
+            ['key' => 'hire_date', 'label' => 'Дата приема', 'type' => 'system', 'is_default' => false],
+            ['key' => 'termination_date', 'label' => 'Дата увольнения', 'type' => 'system', 'is_default' => false],
+        ];
+
+        // 2. Подмешиваем кастомные поля для Сотрудников
+        $customFields = CustomFieldDefinition::where('entity_type', 'employee')->get();
+        foreach ($customFields as $cf) {
+            $baseColumns[] = [
+                'key' => $cf->key,
+                'label' => $cf->label[app()->getLocale()] ?? current($cf->label),
+                'type' => 'custom',
+                'is_default' => $cf->is_visible_in_list,
+            ];
+        }
+
+        // 3. Фильтруем колонки через FieldPermissionService (отсекаем те, к которым нет прав)
+        $allFieldKeys = array_column($baseColumns, 'key');
+        $visibleKeys = FieldPermissionService::visibleFields($user, 'employee', $allFieldKeys);
+
+        $availableColumns = array_values(array_filter($baseColumns, function($col) use ($visibleKeys) {
+            return in_array($col['key'], $visibleKeys);
+        }));
+
+        // 4. Получаем сохраненный вид таблицы для текущего пользователя
+        $listView = ListView::where('entity_type', 'employee')
+            ->where('user_id', $user->id)
+            ->first();
+
+        // Если вида нет, берем дефолтные колонки из доступных
+        $visibleColumns = $listView 
+            ? $listView->visible_columns 
+            : array_values(array_map(fn($c) => $c['key'], array_filter($availableColumns, fn($c) => $c['is_default'])));
 
         return Inertia::render('HR/Employees/Index', [
             'employees' => $employees,
@@ -62,6 +110,10 @@ class EmployeeController extends Controller
             'scopes' => $scopes,
             'userScopes' => $userScopes,
             'tenantCountry' => $tenantCountry,
+            'availableColumns' => $availableColumns,
+            'listView' => [
+                'visible_columns' => $visibleColumns,
+            ],
         ]);
     }
 

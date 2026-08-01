@@ -17,6 +17,7 @@ use App\Http\Controllers\Tenant\CustomFieldController;
 use App\Http\Controllers\Tenant\RolePermissionController;
 use App\Http\Controllers\Tenant\PositionController;
 use App\Http\Controllers\Tenant\EmployeeController;
+use App\Http\Controllers\Tenant\ListViewController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -49,6 +50,9 @@ Route::middleware([
         // Системный раздел (Логи и Дамп)
         Route::get('/system', [SystemController::class, 'index'])->name('system.index');
         Route::get('/dump', [DumpController::class, 'download'])->name('dump');
+
+        // Сохранение настроек таблиц (List Views)
+        Route::post('/list-views', [ListViewController::class, 'store'])->name('list-views.store');
 
         // Главный маршрут настроек (редирект на Юрлица)
         Route::get('/settings', function () {

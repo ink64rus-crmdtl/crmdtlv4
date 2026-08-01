@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref, onMounted } from 'vue';
 
@@ -258,6 +259,12 @@ const handleEditChange = (entityType, fieldKey, roleId) => {
                     </Link>
                 </nav>
             </div>
+
+            <!-- Page Helper (Система подсказок) -->
+            <PageHelper title="Как работает система прав доступа?">
+                <p>Здесь настраиваются <strong>Глобальные политики</strong> для должностей (Ролей). Например, вы можете указать, что все «Менеджеры» видят раздел CRM и имеют доступ к Центральному филиалу.</p>
+                <p>Если конкретному сотруднику нужно дать <strong>Индивидуальное исключение</strong> (например, временно дать доступ к дополнительному филиалу), это делается не здесь, а напрямую в его карточке в разделе <strong>Сотрудники и HR</strong>. Индивидуальные права всегда перекрывают права Роли.</p>
+            </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">

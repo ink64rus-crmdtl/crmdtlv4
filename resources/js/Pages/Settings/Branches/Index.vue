@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -72,7 +73,7 @@ const deleteBranch = (branch) => {
             Настройки компании
         </template>
 
-        <div class="w-[99%] mx-auto space-y-6">
+        <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
             <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
@@ -146,12 +147,18 @@ const deleteBranch = (branch) => {
                 </nav>
             </div>
 
+            <!-- Page Helper (Система подсказок) -->
+            <PageHelper title="Что такое Филиал?">
+                <p><strong>Филиал</strong> — это физическая точка обслуживания (центр вашей операционной деятельности). Именно к филиалу привязываются сотрудники, локальные склады, расписание записей и автомобили в работе.</p>
+                <p>Каждый филиал можно привязать к конкретному Юридическому лицу, чтобы при создании заказ-нарядов и чеков автоматически подставлялись правильные реквизиты.</p>
+            </PageHelper>
+
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
                     <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Филиалы и Локации</h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Управление физическими точками обслуживания клиентов
+                        Управление физическими point обслуживания клиентов
                     </p>
                 </div>
                 <button

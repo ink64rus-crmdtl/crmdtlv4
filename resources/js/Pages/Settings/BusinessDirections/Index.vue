@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
@@ -137,6 +138,12 @@ const deleteDirection = (direction) => {
                     </Link>
                 </nav>
             </div>
+
+            <!-- Page Helper (Система подсказок) -->
+            <PageHelper title="Для чего нужны Направления бизнеса?">
+                <p><strong>Направления</strong> позволяют разделить ваши услуги по логическим блокам (например: «Детейлинг», «Мойка», «Оклейка», «Шиномонтаж»).</p>
+                <p>Вы можете указать, в каких именно филиалах доступно каждое направление. Это поможет отсечь лишние услуги при создании заказ-наряда в конкретном филиале и сделает интерфейс удобнее для администраторов.</p>
+            </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">

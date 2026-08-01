@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -96,6 +97,13 @@ const submit = () => {
                     </Link>
                 </nav>
             </div>
+
+            <!-- Page Helper (Система подсказок) -->
+            <PageHelper title="Как работают режимы склада?">
+                <p><strong>Раздельный:</strong> У каждого филиала свой независимый склад. Остатки не пересекаются. Идеально для независимых студий.</p>
+                <p><strong>Общий:</strong> Единый центральный склад на всю компанию. Все филиалы списывают материалы из одного места.</p>
+                <p><strong>Смешанный:</strong> Комбинация. Расходники хранятся локально на филиалах, а дорогие материалы — на центральном складе.</p>
+            </PageHelper>
 
             <!-- Header Card -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">

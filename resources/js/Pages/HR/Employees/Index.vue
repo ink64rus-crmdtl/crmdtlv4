@@ -12,12 +12,15 @@ const props = defineProps({
     scopes: Object,
     userScopes: Object,
     tenantCountry: String,
+    availableColumns: Array,
+    listView: Object,
 });
 
 const page = usePage();
 
 const isModalOpen = ref(false);
 const isOffcanvasOpen = ref(false);
+const isColumnsModalOpen = ref(false);
 const previewEmployee = ref(null);
 const editingEmployee = ref(null);
 const activeTab = ref('main'); // 'main', 'work', 'crm', 'scopes', 'documents', 'payroll'
@@ -25,6 +28,54 @@ const activeTab = ref('main'); // 'main', 'work', 'crm', 'scopes', 'documents', 
 const needsMiddleName = computed(() => {
     return ['RU', 'BY', 'KZ'].includes(props.tenantCountry);
 });
+
+// --- ДИНАМИЧЕСКИЕ КОЛОНКИ ---
+const activeColumns = computed(() => {
+    const visibleKeys = props.listView?.visible_columns || [];
+    return visibleKeys.map(key => props.availableColumns.find(c => c.key === key)).filter(Boolean);
+});
+
+const columnsForm = useForm({
+    entity_type: 'employee',
+    visible_columns: [],
+});
+
+const openColumnsModal = () => {
+    columnsForm.visible_columns = [...(props.listView?.visible_columns || [])];
+    isColumnsModalOpen.value = true;
+};
+
+const closeColumnsModal = () => {
+    isColumnsModalOpen.value = false;
+};
+
+const saveColumns = () => {
+    columnsForm.post(route('list-views.store'), {
+        onSuccess: () => closeColumnsModal(),
+    });
+};
+
+const toggleColumn = (key) => {
+    const index = columnsForm.visible_columns.indexOf(key);
+    if (index > -1) {
+        columnsForm.visible_columns.splice(index, 1);
+    } else {
+        columnsForm.visible_columns.push(key);
+    }
+};
+
+const moveColumn = (index, direction) => {
+    if (direction === 'up' && index > 0) {
+        const temp = columnsForm.visible_columns[index];
+        columnsForm.visible_columns[index] = columnsForm.visible_columns[index - 1];
+        columnsForm.visible_columns[index - 1] = temp;
+    } else if (direction === 'down' && index < columnsForm.visible_columns.length - 1) {
+        const temp = columnsForm.visible_columns[index];
+        columnsForm.visible_columns[index] = columnsForm.visible_columns[index + 1];
+        columnsForm.visible_columns[index + 1] = temp;
+    }
+};
+// ---------------------------
 
 const form = useForm({
     first_name: '',
@@ -220,53 +271,92 @@ const employeeTypes = {
 
             <!-- Table Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Список сотрудников</h3>
+                    <button @click="openColumnsModal()" class="text-xs font-medium text-gray-500 hover:text-primary transition-colors flex items-center gap-1">
+                        <i class="ri-layout-column-line"></i> Настроить столбцы
+                    </button>
+                </div>
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Сотрудник</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность / Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Филиал</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Доступ в CRM</th>
+                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                                    {{ col.label }}
+                                </th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
                         <tbody>
                             <!-- Клик по строке открывает Offcanvas Быстрого просмотра -->
                             <tr v-for="employee in employees" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold group-hover:text-primary transition-colors">
-                                    <div class="flex items-center gap-3">
-                                        <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
-                                            {{ employee.first_name.charAt(0) }}
+                                
+                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    
+                                    <template v-if="col.key === 'employee_name'">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                                                {{ employee.first_name.charAt(0) }}
+                                            </div>
+                                            <div>
+                                                <div class="text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors font-semibold">{{ employee.last_name }} {{ employee.first_name }} {{ employee.middle_name || '' }}</div>
+                                                <div class="text-xs text-gray-500 font-normal mt-0.5">{{ employee.phone || 'Нет телефона' }}</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div class="text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors">{{ employee.last_name }} {{ employee.first_name }} {{ employee.middle_name || '' }}</div>
-                                            <div class="text-xs text-gray-500 font-normal mt-0.5">{{ employee.phone || 'Нет телефона' }}</div>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'position_type'">
+                                        <div class="font-medium">{{ employee.position ? getLocalizedLabel(employee.position.name) : 'Без должности' }}</div>
+                                        <div class="text-xs text-gray-500 mt-0.5">{{ employeeTypes[employee.type] }}</div>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'branch'">
+                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            <i class="ri-store-2-line"></i> {{ employee.branch ? employee.branch.name : '—' }}
+                                        </span>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'crm_access'">
+                                        <div v-if="employee.user_id" class="flex flex-col items-start gap-1">
+                                            <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-success/10 text-success">
+                                                <i class="ri-shield-keyhole-line"></i> Есть доступ
+                                            </span>
+                                            <span class="text-xs text-gray-500 font-medium">
+                                                Роль: {{ employee.user?.roles && employee.user.roles.length > 0 ? employee.user.roles[0].name : 'Нет роли' }}
+                                            </span>
                                         </div>
-                                    </div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-medium">{{ employee.position ? getLocalizedLabel(employee.position.name) : 'Без должности' }}</div>
-                                    <div class="text-xs text-gray-500 mt-0.5">{{ employeeTypes[employee.type] }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
-                                        <i class="ri-store-2-line"></i> {{ employee.branch ? employee.branch.name : '—' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <div v-if="employee.user_id" class="flex flex-col items-start gap-1">
-                                        <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-success/10 text-success">
-                                            <i class="ri-shield-keyhole-line"></i> Есть доступ
+                                        <span v-else class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                            Нет доступа
                                         </span>
-                                        <span class="text-xs text-gray-500 font-medium">
-                                            Роль: {{ employee.user.roles && employee.user.roles.length > 0 ? employee.user.roles[0].name : 'Нет роли' }}
-                                        </span>
-                                    </div>
-                                    <span v-else class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                                        Нет доступа
-                                    </span>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'phone'">
+                                        {{ employee.phone || '—' }}
+                                    </template>
+
+                                    <template v-else-if="col.key === 'personal_email'">
+                                        {{ employee.personal_email || '—' }}
+                                    </template>
+
+                                    <template v-else-if="col.key === 'birth_date'">
+                                        {{ employee.birth_date || '—' }}
+                                    </template>
+
+                                    <template v-else-if="col.key === 'hire_date'">
+                                        {{ employee.hire_date || '—' }}
+                                    </template>
+
+                                    <template v-else-if="col.key === 'termination_date'">
+                                        {{ employee.termination_date || '—' }}
+                                    </template>
+
+                                    <template v-else>
+                                        <!-- Placeholder для кастомных полей (значения будут добавлены позже) -->
+                                        <span class="text-gray-400">—</span>
+                                    </template>
+
                                 </td>
+
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
                                     <!-- Важно: @click.stop предотвращает всплытие события клика на строку (которое открывает Preview) -->
                                     <button 
@@ -286,12 +376,66 @@ const employeeTypes = {
                                 </td>
                             </tr>
                             <tr v-if="employees.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td :colspan="activeColumns.length + 1" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Сотрудники еще не добавлены. Нажмите "Добавить сотрудника".
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно настройки колонок -->
+        <div v-if="isColumnsModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Настройка столбцов
+                    </h3>
+                    <button @click="closeColumnsModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Выберите столбцы для отображения и настройте их порядок.</p>
+                    
+                    <!-- Список выбранных колонок (с сортировкой) -->
+                    <div class="space-y-2 mb-6">
+                        <h4 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-2">Отображаемые столбцы</h4>
+                        <div v-for="(key, index) in columnsForm.visible_columns" :key="key" class="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2">
+                            <div class="flex items-center gap-2">
+                                <i class="ri-draggable text-gray-400"></i>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    {{ availableColumns.find(c => c.key === key)?.label || key }}
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button type="button" @click="moveColumn(index, 'up')" :disabled="index === 0" class="text-gray-400 hover:text-primary disabled:opacity-30"><i class="ri-arrow-up-s-line text-lg"></i></button>
+                                <button type="button" @click="moveColumn(index, 'down')" :disabled="index === columnsForm.visible_columns.length - 1" class="text-gray-400 hover:text-primary disabled:opacity-30"><i class="ri-arrow-down-s-line text-lg"></i></button>
+                                <button type="button" @click="toggleColumn(key)" class="text-danger hover:text-danger/80 ml-2"><i class="ri-close-circle-line text-lg"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Список доступных колонок -->
+                    <div class="space-y-2">
+                        <h4 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-2">Доступные столбцы</h4>
+                        <div class="grid grid-cols-1 gap-2">
+                            <label v-for="col in availableColumns.filter(c => !columnsForm.visible_columns.includes(c.key))" :key="col.key" class="flex items-center cursor-pointer group p-2 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded border border-transparent hover:border-gray-200 dark:hover:border-gray-700 transition-colors">
+                                <input type="checkbox" :checked="false" @change="toggleColumn(col.key)" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                <span class="ml-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-200 transition-colors">{{ col.label }}</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                    <button type="button" @click="closeColumnsModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                        Отмена
+                    </button>
+                    <button type="button" @click="saveColumns()" :disabled="columnsForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                        Сохранить вид
+                    </button>
                 </div>
             </div>
         </div>
