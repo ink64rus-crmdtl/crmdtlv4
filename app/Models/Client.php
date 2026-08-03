@@ -14,11 +14,20 @@ class Client extends Model
 
     protected $fillable = [
         'branch_id',
+        'client_group_id',
         'is_lead',
         'type',
         'name',
+        'alias',
         'phone',
+        'phone_2',
         'email',
+        'source',
+        'birth_date',
+        'comment',
+        'balance',
+        'bonus_points',
+        'requisites',
         'discount_percent',
     ];
 
@@ -27,6 +36,10 @@ class Client extends Model
         return [
             'is_lead' => 'boolean',
             'discount_percent' => 'integer',
+            'balance' => 'integer',
+            'bonus_points' => 'integer',
+            'birth_date' => 'date',
+            'requisites' => 'array',
         ];
     }
 
@@ -38,6 +51,11 @@ class Client extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(ClientGroup::class, 'client_group_id');
     }
 
     public function vehicles(): HasMany

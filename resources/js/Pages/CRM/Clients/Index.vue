@@ -9,9 +9,12 @@ import axios from 'axios';
 const props = defineProps({
     clients: Array,
     branches: Array,
+    clientGroups: Array,
     customFieldDefs: Array,
     availableColumns: Array,
     listView: Object,
+    tenantCountry: String,
+    countryConfig: Object,
 });
 
 const page = usePage();
@@ -19,8 +22,11 @@ const page = usePage();
 const isModalOpen = ref(false);
 const isOffcanvasOpen = ref(false);
 const isColumnsModalOpen = ref(false);
+const isGroupModalOpen = ref(false);
+
 const previewClient = ref(null);
 const editingClient = ref(null);
+const activeTab = ref('main'); // 'main', 'contacts', 'requisites', 'settings'
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
@@ -114,15 +120,63 @@ const moveColumn = (index, direction) => {
 };
 // ---------------------------
 
+// --- ДОБАВЛЕНИЕ ГРУППЫ НА ЛЕТУ ---
+const groupForm = useForm({
+    name: '',
+    color: 'gray',
+});
+
+const groupColors = [
+    { value: 'gray', label: 'Серый', class: 'bg-gray-100 text-gray-700' },
+    { value: 'blue', label: 'Синий', class: 'bg-blue-100 text-blue-700' },
+    { value: 'green', label: 'Зеленый', class: 'bg-green-100 text-green-700' },
+    { value: 'red', label: 'Красный', class: 'bg-red-100 text-red-700' },
+    { value: 'yellow', label: 'Желтый', class: 'bg-yellow-100 text-yellow-700' },
+    { value: 'purple', label: 'Фиолетовый', class: 'bg-purple-100 text-purple-700' },
+];
+
+const openGroupModal = () => {
+    groupForm.reset();
+    isGroupModalOpen.value = true;
+};
+
+const closeGroupModal = () => {
+    isGroupModalOpen.value = false;
+    groupForm.reset();
+};
+
+const submitGroup = () => {
+    groupForm.post(route('crm.client-groups.store'), {
+        onSuccess: () => {
+            closeGroupModal();
+            // После успешного добавления, новая группа будет последней в списке props.clientGroups
+            // Мы можем автоматически выбрать её, но так как Inertia обновляет props асинхронно, 
+            // это требует watch. Оставим просто закрытие модалки.
+        },
+    });
+};
+// ---------------------------------
+
 const form = useForm({
     branch_id: '',
+    client_group_id: '',
     is_lead: false,
     type: 'b2c',
     name: '',
+    alias: '',
     phone: '',
+    phone_2: '',
     email: '',
+    source: '',
+    birth_date: '',
+    comment: '',
     discount_percent: 0,
+    requisites: {},
     custom_fields: {},
+});
+
+const currentCountrySchema = computed(() => {
+    return props.countryConfig?.requisite_schema || [];
 });
 
 const getLocalizedLabel = (label) => {
@@ -155,17 +209,24 @@ const openModal = (client = null) => {
     }
 
     editingClient.value = client;
+    activeTab.value = 'main';
     
     if (client) {
         form.branch_id = client.branch_id;
+        form.client_group_id = client.client_group_id || '';
         form.is_lead = Boolean(client.is_lead);
         form.type = client.type;
         form.name = client.name;
+        form.alias = client.alias || '';
         form.phone = client.phone || '';
+        form.phone_2 = client.phone_2 || '';
         form.email = client.email || '';
+        form.source = client.source || '';
+        form.birth_date = client.birth_date ? client.birth_date.substring(0, 10) : '';
+        form.comment = client.comment || '';
         form.discount_percent = client.discount_percent || 0;
+        form.requisites = client.requisites || {};
         
-        // Инициализация кастомных полей
         const cf = {};
         props.customFieldDefs.forEach(def => {
             cf[def.key] = client.custom_fields && client.custom_fields[def.key] !== undefined 
@@ -179,6 +240,7 @@ const openModal = (client = null) => {
         form.is_lead = false;
         form.type = 'b2c';
         form.discount_percent = 0;
+        form.requisites = {};
         
         const cf = {};
         props.customFieldDefs.forEach(def => {
@@ -215,6 +277,10 @@ const deleteClient = (client) => {
             closePreview();
         }
     }
+};
+
+const formatMoney = (amount) => {
+    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format(amount / 100);
 };
 </script>
 
@@ -302,14 +368,28 @@ const deleteClient = (client) => {
                                             <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
                                                 {{ client.name.charAt(0) }}
                                             </div>
-                                            <div class="font-semibold group-hover:text-primary transition-colors">
-                                                {{ client.name }}
+                                            <div>
+                                                <div class="font-semibold group-hover:text-primary transition-colors">
+                                                    {{ client.name }}
+                                                </div>
+                                                <div v-if="client.alias" class="text-xs text-gray-500 font-normal mt-0.5">«{{ client.alias }}»</div>
                                             </div>
                                         </div>
                                     </template>
 
+                                    <template v-else-if="col.key === 'client_group'">
+                                        <span v-if="client.group" :class="[`bg-${client.group.color}-100 text-${client.group.color}-700 dark:bg-${client.group.color}-900/30 dark:text-${client.group.color}-400`, 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
+                                            {{ client.group.name }}
+                                        </span>
+                                        <span v-else class="text-xs text-gray-400">—</span>
+                                    </template>
+
                                     <template v-else-if="col.key === 'phone'">
                                         {{ client.phone || '—' }}
+                                    </template>
+
+                                    <template v-else-if="col.key === 'phone_2'">
+                                        {{ client.phone_2 || '—' }}
                                     </template>
 
                                     <template v-else-if="col.key === 'email'">
@@ -327,6 +407,20 @@ const deleteClient = (client) => {
                                         <span :class="[client.is_lead ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
                                             {{ client.is_lead ? 'Лид' : 'Клиент' }}
                                         </span>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'source'">
+                                        {{ client.source || '—' }}
+                                    </template>
+
+                                    <template v-else-if="col.key === 'balance'">
+                                        <span :class="client.balance < 0 ? 'text-danger font-semibold' : 'text-success font-semibold'">
+                                            {{ formatMoney(client.balance) }}
+                                        </span>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'bonus_points'">
+                                        <span class="text-warning font-semibold"><i class="ri-star-fill"></i> {{ client.bonus_points }}</span>
                                     </template>
 
                                     <template v-else-if="col.key === 'discount_percent'">
@@ -350,7 +444,7 @@ const deleteClient = (client) => {
                                     <button 
                                         @click.stop="openModal(client)" 
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать"
+                                        title="Редактировать форму"
                                     >
                                         <i class="ri-pencil-line"></i>
                                     </button>
@@ -436,12 +530,16 @@ const deleteClient = (client) => {
                             {{ previewClient.name.charAt(0) }}
                         </div>
                         <div>
-                            <h2 class="text-lg font-bold text-gray-800 dark:text-gray-200 leading-tight">
+                            <h2 class="text-lg font-bold text-gray-800 dark:text-gray-200 leading-tight flex items-center gap-2">
                                 {{ previewClient.name }}
+                                <span v-if="previewClient.alias" class="text-sm font-normal text-gray-500">«{{ previewClient.alias }}»</span>
                             </h2>
-                            <p class="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5">
+                            <p class="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 flex items-center gap-2">
                                 <i :class="previewClient.type === 'b2b' ? 'ri-building-line' : 'ri-user-line'"></i>
                                 {{ previewClient.type === 'b2b' ? 'Юридическое лицо' : 'Физическое лицо' }}
+                                <span v-if="previewClient.group" :class="[`bg-${previewClient.group.color}-100 text-${previewClient.group.color}-700 dark:bg-${previewClient.group.color}-900/30 dark:text-${previewClient.group.color}-400`, 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold ml-1']">
+                                    {{ previewClient.group.name }}
+                                </span>
                             </p>
                         </div>
                     </div>
@@ -453,12 +551,28 @@ const deleteClient = (client) => {
                 <!-- Offcanvas Body -->
                 <div class="flex-1 overflow-y-auto p-6 space-y-6">
                     
+                    <!-- KPI Мини-Дашборд -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 border border-gray-100 dark:border-gray-700/50">
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Баланс</p>
+                            <p :class="[previewClient.balance < 0 ? 'text-danger' : 'text-success', 'text-lg font-bold']">
+                                {{ formatMoney(previewClient.balance) }}
+                            </p>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 border border-gray-100 dark:border-gray-700/50">
+                            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Бонусы</p>
+                            <p class="text-lg font-bold text-warning flex items-center gap-1">
+                                <i class="ri-star-fill text-sm"></i> {{ previewClient.bonus_points }}
+                            </p>
+                        </div>
+                    </div>
+
                     <!-- Статус и Скидка -->
                     <div class="flex items-center gap-3">
                         <span :class="[previewClient.is_lead ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success', 'inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-bold tracking-wide uppercase']">
                             {{ previewClient.is_lead ? 'Лид' : 'Постоянный клиент' }}
                         </span>
-                        <span class="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-bold tracking-wide uppercase bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                        <span v-if="previewClient.discount_percent > 0" class="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-bold tracking-wide uppercase bg-info/10 text-info">
                             <i class="ri-percent-line"></i> Скидка: {{ previewClient.discount_percent }}%
                         </span>
                     </div>
@@ -466,9 +580,15 @@ const deleteClient = (client) => {
                     <!-- Контакты -->
                     <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700/50 space-y-4">
                         <div>
-                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Телефон</p>
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Основной телефон</p>
                             <a :href="'tel:' + previewClient.phone" class="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors flex items-center gap-2">
                                 <i class="ri-phone-line text-gray-400"></i> {{ previewClient.phone || 'Не указан' }}
+                            </a>
+                        </div>
+                        <div v-if="previewClient.phone_2">
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Доп. телефон</p>
+                            <a :href="'tel:' + previewClient.phone_2" class="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors flex items-center gap-2">
+                                <i class="ri-phone-line text-gray-400"></i> {{ previewClient.phone_2 }}
                             </a>
                         </div>
                         <div v-if="previewClient.email">
@@ -477,30 +597,24 @@ const deleteClient = (client) => {
                                 <i class="ri-mail-line text-gray-400"></i> {{ previewClient.email }}
                             </a>
                         </div>
-                        <div>
-                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Филиал регистрации</p>
-                            <p class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                                <i class="ri-store-2-line text-gray-400"></i> {{ previewClient.branch ? previewClient.branch.name : '—' }}
-                            </p>
-                        </div>
-                    </div>
-
-                    <!-- Кастомные поля (если есть) -->
-                    <div v-if="customFieldDefs.length > 0" class="space-y-3">
-                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">Дополнительная информация</h3>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div v-for="def in customFieldDefs" :key="def.id">
-                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">{{ getLocalizedLabel(def.label) }}</p>
-                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                    <template v-if="def.type === 'checkbox'">
-                                        {{ previewClient.custom_fields && previewClient.custom_fields[def.key] == '1' ? 'Да' : 'Нет' }}
-                                    </template>
-                                    <template v-else>
-                                        {{ previewClient.custom_fields && previewClient.custom_fields[def.key] ? previewClient.custom_fields[def.key] : '—' }}
-                                    </template>
+                        <div class="grid grid-cols-2 gap-4 pt-2">
+                            <div>
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Источник</p>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ previewClient.source || '—' }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Филиал</p>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                                    <i class="ri-store-2-line text-gray-400"></i> {{ previewClient.branch ? previewClient.branch.name : '—' }}
                                 </p>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Комментарий -->
+                    <div v-if="previewClient.comment" class="bg-warning/5 border border-warning/20 rounded-md p-4">
+                        <p class="text-xs font-semibold text-warning uppercase tracking-wider mb-1">Комментарий</p>
+                        <p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ previewClient.comment }}</p>
                     </div>
 
                 </div>
@@ -525,7 +639,7 @@ const deleteClient = (client) => {
 
         <!-- TRI-STATE 3: Форма редактирования (Focused Modal) -->
         <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl lg:max-w-3xl my-8 mx-auto flex flex-col">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col">
                 
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
@@ -536,10 +650,71 @@ const deleteClient = (client) => {
                     </button>
                 </div>
 
+                <!-- Вкладки внутри модалки -->
+                <div class="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 px-6 bg-white dark:bg-[#313a46] custom-scrollbar">
+                    <button
+                        type="button"
+                        @click="activeTab = 'main'"
+                        :class="[activeTab === 'main' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-user-line"></i> Основные данные
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'contacts'"
+                        :class="[activeTab === 'contacts' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-contacts-book-2-line"></i> Контакты
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'requisites'"
+                        :class="[activeTab === 'requisites' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-file-list-3-line"></i> Реквизиты
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'settings'"
+                        :class="[activeTab === 'settings' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-settings-3-line"></i> Настройки и Поля
+                    </button>
+                </div>
+
                 <form @submit.prevent="submit" class="flex flex-col">
-                    <div class="p-6 space-y-5">
-                        
-                        <!-- Основные поля -->
+                    
+                    <!-- Вкладка 1: Основные данные -->
+                    <div v-show="activeTab === 'main'" class="p-6 space-y-5">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип клиента <span class="text-danger">*</span></label>
+                                <select 
+                                    v-model="form.type" 
+                                    required
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                >
+                                    <option value="b2c" class="bg-white dark:bg-gray-800">Физическое лицо</option>
+                                    <option value="b2b" class="bg-white dark:bg-gray-800">Юридическое лицо (B2B)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа / Роль</label>
+                                <div class="flex gap-2">
+                                    <select 
+                                        v-model="form.client_group_id" 
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                    >
+                                        <option value="" class="bg-white dark:bg-gray-800">Без группы</option>
+                                        <option v-for="group in clientGroups" :key="group.id" :value="group.id" class="bg-white dark:bg-gray-800">{{ group.name }}</option>
+                                    </select>
+                                    <button type="button" @click="openGroupModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Добавить группу">
+                                        <i class="ri-add-line text-gray-600 dark:text-gray-300"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя / Название <span class="text-danger">*</span></label>
@@ -553,21 +728,31 @@ const deleteClient = (client) => {
                                 <span v-if="form.errors.name" class="text-xs text-danger mt-1">{{ form.errors.name }}</span>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип клиента <span class="text-danger">*</span></label>
-                                <select 
-                                    v-model="form.type" 
-                                    required
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
-                                >
-                                    <option value="b2c" class="bg-white dark:bg-gray-800">Физическое лицо</option>
-                                    <option value="b2b" class="bg-white dark:bg-gray-800">Юридическое лицо (B2B)</option>
-                                </select>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Псевдоним (Кратко)</label>
+                                <input 
+                                    v-model="form.alias" 
+                                    type="text" 
+                                    placeholder="Иван BMW" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
                             </div>
                         </div>
 
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата рождения / основания</label>
+                            <input 
+                                v-model="form.birth_date" 
+                                type="date" 
+                                class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Вкладка 2: Контакты -->
+                    <div v-show="activeTab === 'contacts'" class="p-6 space-y-5">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основной телефон</label>
                                 <input 
                                     v-model="form.phone" 
                                     type="text" 
@@ -575,6 +760,18 @@ const deleteClient = (client) => {
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
                                 />
                             </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дополнительный телефон</label>
+                                <input 
+                                    v-model="form.phone_2" 
+                                    type="text" 
+                                    placeholder="+7 (999) 111-11-11" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
                                 <input 
@@ -584,20 +781,97 @@ const deleteClient = (client) => {
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
                                 />
                             </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник привлечения</label>
+                                <input 
+                                    v-model="form.source" 
+                                    type="text" 
+                                    placeholder="Авито, 2GIS, Рекомендация..." 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                />
+                            </div>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал <span class="text-danger">*</span></label>
-                                <select 
-                                    v-model="form.branch_id" 
-                                    required
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
-                                >
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
-                                    <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
-                                </select>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал регистрации <span class="text-danger">*</span></label>
+                            <select 
+                                v-model="form.branch_id" 
+                                required
+                                class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                            >
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
+                                <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Вкладка 3: Реквизиты -->
+                    <div v-show="activeTab === 'requisites'" class="p-6 space-y-5">
+                        
+                        <!-- Для B2C (Физлицо) - Паспорт -->
+                        <template v-if="form.type === 'b2c'">
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">Паспортные данные</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Серия</label>
+                                    <input v-model="form.requisites.passport_series" type="text" placeholder="1234" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Номер</label>
+                                    <input v-model="form.requisites.passport_number" type="text" placeholder="567890" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Код подразделения</label>
+                                    <input v-model="form.requisites.passport_code" type="text" placeholder="123-456" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                </div>
                             </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="sm:col-span-2">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Кем выдан</label>
+                                    <input v-model="form.requisites.passport_issued_by" type="text" placeholder="ГУ МВД России..." class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата выдачи</label>
+                                    <input v-model="form.requisites.passport_date" type="date" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Адрес регистрации (прописка)</label>
+                                    <textarea v-model="form.requisites.passport_address" rows="2" placeholder="г. Москва, ул. Ленина..." class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"></textarea>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- Для B2B (Юрлицо) - Динамическая схема -->
+                        <template v-else>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">Реквизиты компании</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div v-for="field in currentCountrySchema" :key="field.key" :class="field.type === 'textarea' ? 'sm:col-span-2' : ''">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                        {{ field.label }}
+                                    </label>
+                                    <textarea
+                                        v-if="field.type === 'textarea'"
+                                        v-model="form.requisites[field.key]"
+                                        :placeholder="field.placeholder"
+                                        rows="2"
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                    ></textarea>
+                                    <input
+                                        v-else
+                                        v-model="form.requisites[field.key]"
+                                        :type="field.type"
+                                        :placeholder="field.placeholder"
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                    />
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Вкладка 4: Настройки и Поля -->
+                    <div v-show="activeTab === 'settings'" class="p-6 space-y-5">
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Персональная скидка (%)</label>
                                 <input 
@@ -606,6 +880,17 @@ const deleteClient = (client) => {
                                     min="0" max="100"
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
                                 />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Начальный баланс (₽)</label>
+                                <input 
+                                    v-model="form.balance" 
+                                    type="number" 
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
+                                />
+                                <p class="text-xs text-gray-500 mt-1">Отрицательный — долг, положительный — депозит.</p>
                             </div>
                         </div>
 
@@ -616,6 +901,16 @@ const deleteClient = (client) => {
                             <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_lead = !form.is_lead">
                                 Это Лид (потенциальный клиент)
                             </label>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Комментарий менеджера</label>
+                            <textarea 
+                                v-model="form.comment" 
+                                rows="3"
+                                placeholder="Особые приметы, договоренности..." 
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                            ></textarea>
                         </div>
 
                         <!-- Кастомные поля (EAV) -->
@@ -671,5 +966,41 @@ const deleteClient = (client) => {
                 </form>
             </div>
         </div>
+
+        <!-- Модальное окно добавления Группы (z-index выше основной модалки) -->
+        <div v-if="isGroupModalOpen" class="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-2xl dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-sm flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новая группа</h3>
+                    <button @click="closeGroupModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <form @submit.prevent="submitGroup" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
+                            <input v-model="groupForm.name" type="text" required placeholder="Например: VIP" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 focus:ring-0" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет метки</label>
+                            <div class="flex flex-wrap gap-2">
+                                <label v-for="color in groupColors" :key="color.value" class="cursor-pointer">
+                                    <input type="radio" v-model="groupForm.color" :value="color.value" class="sr-only" />
+                                    <span :class="[color.class, groupForm.color === color.value ? 'ring-2 ring-offset-1 ring-gray-400 dark:ring-gray-500' : '', 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider transition-all']">
+                                        {{ color.label }}
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeGroupModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="groupForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </AuthenticatedLayout>
 </template>
