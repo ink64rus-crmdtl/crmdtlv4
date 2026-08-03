@@ -1,6 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
+import SettingsNav from '@/Components/SettingsNav.vue';
+import BulkActions from '@/Components/BulkActions.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import axios from 'axios';
@@ -142,76 +144,7 @@ const deleteField = (field) => {
         <div class="w-[99%] mx-auto space-y-6 font-sans text-gray-600 dark:text-gray-400">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
-            <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
-                <nav class="-mb-px flex space-x-8 overflow-x-auto">
-                    <Link
-                        :href="route('settings.legal-entities.index')"
-                        :class="[
-                            route().current('settings.legal-entities.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Юридические лица
-                    </Link>
-                    <Link
-                        :href="route('settings.branches.index')"
-                        :class="[
-                            route().current('settings.branches.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Филиалы
-                    </Link>
-                    <Link
-                        :href="route('settings.business-directions.index')"
-                        :class="[
-                            route().current('settings.business-directions.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Направления
-                    </Link>
-                    <Link
-                        :href="route('settings.warehouse.index')"
-                        :class="[
-                            route().current('settings.warehouse.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Склад
-                    </Link>
-                    <Link
-                        :href="route('settings.custom-fields.index')"
-                        :class="[
-                            route().current('settings.custom-fields.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Кастомные поля
-                    </Link>
-                    <Link
-                        :href="route('settings.roles-permissions.index')"
-                        :class="[
-                            route().current('settings.roles-permissions.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Роли и Права
-                    </Link>
-                </nav>
-            </div>
+            <SettingsNav />
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Для чего нужны кастомные поля?">
@@ -220,93 +153,88 @@ const deleteField = (field) => {
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
-            <div class="bg-white border border-gray-200/80 rounded-xl shadow-xs dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
-                    <h1 class="text-xl font-bold text-slate-800 dark:text-gray-200 tracking-tight">Конструктор полей</h1>
-                    <p class="text-sm text-slate-500 dark:text-gray-400 mt-1">
+                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Конструктор полей</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Добавляйте собственные поля в карточки клиентов, автомобилей и заказов
                     </p>
                 </div>
                 <button
                     @click="openModal()"
-                    class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600/90 transition-colors shadow-xs"
+                    class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
                 >
-                    <i class="ri-add-line"></i>
+                    <i class="ri-add-line text-base"></i>
                     Добавить поле
                 </button>
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
-            <div v-if="selectedIds.length > 0" class="bg-primary/10 border border-primary/20 rounded-md p-3 flex justify-between items-center transition-all">
-                <div class="text-sm font-semibold text-primary flex items-center gap-2">
-                    <i class="ri-checkbox-multiple-line text-lg"></i>
-                    Выбрано полей: {{ selectedIds.length }}
-                </div>
-                <div class="flex gap-2">
-                    <button @click="bulkExport" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
-                        <i class="ri-file-excel-2-line mr-1.5 text-success"></i> Экспорт в Excel
-                    </button>
-                    <button @click="bulkDelete" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
-                        <i class="ri-delete-bin-line mr-1.5"></i> Удалить выбранные
-                    </button>
-                </div>
-            </div>
+            <BulkActions 
+                v-if="selectedIds.length > 0" 
+                :selectedCount="selectedIds.length" 
+                noun="полей" 
+                @export="bulkExport" 
+                @delete="bulkDelete" 
+            />
 
             <!-- Table Card (Attex Theme) -->
-            <div class="bg-white border border-gray-200/80 rounded-xl shadow-xs dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-slate-50/50 dark:bg-gray-800/50">
+                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
                                 <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
-                                <th class="py-3 px-6 text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Раздел</th>
-                                <th class="py-3 px-6 text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название поля</th>
-                                <th class="py-3 px-6 text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Настройки</th>
-                                <th class="py-3 px-6 text-xs font-bold text-slate-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Раздел</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название поля</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Настройки</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-200 dark:divide-gray-700 text-slate-600 dark:text-gray-300">
-                            <tr v-for="field in customFields" :key="field.id" class="hover:bg-slate-50/80 dark:hover:bg-gray-800/30 transition-colors">
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
+                            <tr v-for="field in customFields" :key="field.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="field.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
-                                <td class="py-4 px-6 text-sm font-semibold text-slate-800 dark:text-gray-200">
+                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
                                     {{ entityTypes[field.entity_type] || field.entity_type }}
                                 </td>
-                                <td class="py-4 px-6 text-sm font-bold text-slate-800 dark:text-gray-200">
+                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">
                                     {{ getLabel(field.label) }}
-                                    <div class="text-xs font-normal text-slate-400 mt-0.5">{{ field.key }}</div>
+                                    <div class="text-xs font-normal text-gray-500 mt-0.5">{{ field.key }}</div>
                                 </td>
                                 <td class="py-4 px-6 text-sm">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-700 dark:bg-gray-700 dark:text-gray-300 border border-slate-200 dark:border-gray-600">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
                                         {{ fieldTypes[field.type] || field.type }}
                                     </span>
                                 </td>
                                 <td class="py-4 px-6 text-sm space-x-2">
-                                    <span v-if="field.is_required" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200" title="Обязательное">Обзяз.</span>
-                                    <span v-if="field.is_filterable" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200" title="Можно фильтровать">Фильтр</span>
-                                    <span v-if="field.is_visible_in_list" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title="Видно в таблице">В списке</span>
+                                    <span v-if="field.is_required" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger border border-danger/20" title="Обязательное">Обяз.</span>
+                                    <span v-if="field.is_filterable" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info border border-info/20" title="Можно фильтровать">Фильтр</span>
+                                    <span v-if="field.is_visible_in_list" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success border border-success/20" title="Видно в таблице">В списке</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-right space-x-2">
                                     <button 
                                         @click="openModal(field)" 
-                                        class="rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors bg-indigo-600 text-white hover:bg-indigo-600/90"
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                        title="Редактировать"
                                     >
-                                        Редактировать
+                                        <i class="ri-pencil-line"></i>
                                     </button>
                                     <button 
                                         @click="deleteField(field)" 
-                                        class="rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors bg-rose-600 text-white hover:bg-rose-600/90"
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                        title="Удалить"
                                     >
-                                        Удалить
+                                        <i class="ri-delete-bin-line"></i>
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="customFields.length === 0">
-                                <td colspan="6" class="py-12 px-6 text-center text-sm text-slate-400 dark:text-gray-500">
+                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Кастомные поля еще не созданы. Нажмите "Добавить поле".
                                 </td>
                             </tr>
@@ -318,13 +246,13 @@ const deleteField = (field) => {
 
         <!-- Модальное окно (Attex Standard: 50% width) -->
         <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-xl shadow-2xl dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl lg:max-w-3xl my-8 mx-auto flex flex-col">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl lg:max-w-3xl my-8 mx-auto flex flex-col">
                 
-                <div class="border-b border-gray-200 dark:border-gray-700 py-4 px-6 flex justify-between items-center bg-slate-900 text-white">
-                    <h3 class="text-base font-bold tracking-tight">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                         {{ editingField ? 'Редактирование поля' : 'Новое кастомное поле' }}
                     </h3>
-                    <button @click="closeModal()" class="text-slate-400 hover:text-white transition-colors focus:outline-none">
+                    <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                         <i class="ri-close-line text-xl"></i>
                     </button>
                 </div>
@@ -334,20 +262,20 @@ const deleteField = (field) => {
                         
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Раздел (Сущность) <span class="text-rose-500">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Раздел (Сущность) <span class="text-danger">*</span></label>
                                 <select 
                                     v-model="form.entity_type" 
                                     :disabled="!!editingField"
-                                    class="block w-full rounded-md border border-slate-300 dark:border-gray-700 bg-transparent py-2.5 px-3 text-sm text-slate-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400"
                                 >
                                     <option v-for="(name, key) in entityTypes" :key="key" :value="key" class="bg-white dark:bg-gray-800">{{ name }}</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Тип поля <span class="text-rose-500">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип поля <span class="text-danger">*</span></label>
                                 <select 
                                     v-model="form.type" 
-                                    class="block w-full rounded-md border border-slate-300 dark:border-gray-700 bg-transparent py-2.5 px-3 text-sm text-slate-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                 >
                                     <option v-for="(name, key) in fieldTypes" :key="key" :value="key" class="bg-white dark:bg-gray-800">{{ name }}</option>
                                 </select>
@@ -356,77 +284,77 @@ const deleteField = (field) => {
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Название поля (Лейбл) <span class="text-rose-500">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название поля (Лейбл) <span class="text-danger">*</span></label>
                                 <input 
                                     v-model="form.label" 
                                     type="text" 
                                     required 
                                     placeholder="Например: Источник рекламы" 
-                                    class="block w-full rounded-md border border-slate-300 dark:border-gray-700 bg-transparent py-2.5 px-3 text-sm text-slate-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 placeholder-slate-400" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
                                 />
                             </div>
                             <div>
-                                <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Системный ключ (опционально)</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Системный ключ (опционально)</label>
                                 <input 
                                     v-model="form.key" 
                                     type="text" 
                                     :disabled="!!editingField"
                                     placeholder="ad_source" 
-                                    class="block w-full rounded-md border border-slate-300 dark:border-gray-700 bg-transparent py-2.5 px-3 text-sm text-slate-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 placeholder-slate-400 disabled:bg-slate-100 disabled:text-slate-500" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400" 
                                 />
-                                <p class="text-xs text-slate-500 mt-1">Оставьте пустым для автогенерации</p>
+                                <p class="text-xs text-gray-500 mt-1">Оставьте пустым для автогенерации</p>
                             </div>
                         </div>
 
                         <div v-if="form.type === 'select'">
-                            <label class="block text-sm font-semibold text-slate-700 dark:text-gray-300 mb-1.5">Варианты выбора <span class="text-rose-500">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Варианты выбора <span class="text-danger">*</span></label>
                             <textarea 
                                 v-model="form.options" 
                                 required
                                 rows="2"
                                 placeholder="Instagram, 2GIS, Рекомендация, Проезжал мимо" 
-                                class="block w-full rounded-md border border-slate-300 dark:border-gray-700 bg-transparent py-2.5 px-3 text-sm text-slate-800 dark:text-gray-200 focus:border-indigo-500 focus:ring-indigo-500 placeholder-slate-400"
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             ></textarea>
-                            <p class="text-xs text-slate-500 mt-1">Введите варианты через запятую</p>
+                            <p class="text-xs text-gray-500 mt-1">Введите варианты через запятую</p>
                         </div>
 
-                        <div class="border-t border-slate-200 dark:border-gray-700 pt-4 space-y-3">
-                            <h4 class="text-sm font-bold text-slate-800 dark:text-gray-200 mb-3">Настройки отображения</h4>
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4 space-y-3">
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3">Настройки отображения</h4>
                             
-                            <div class="flex items-center">
+                            <div class="flex items-center pt-2">
                                 <div @click="form.is_required = !form.is_required" :class="[form.is_required ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
                                     <div :class="[form.is_required ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                                 </div>
-                                <label class="ml-3 block text-sm font-medium text-slate-700 dark:text-gray-300 cursor-pointer" @click="form.is_required = !form.is_required">
+                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_required = !form.is_required">
                                     Обязательное поле (нельзя сохранить карточку без него)
                                 </label>
                             </div>
 
-                            <div class="flex items-center">
+                            <div class="flex items-center pt-2">
                                 <div @click="form.is_filterable = !form.is_filterable" :class="[form.is_filterable ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
                                     <div :class="[form.is_filterable ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                                 </div>
-                                <label class="ml-3 block text-sm font-medium text-slate-700 dark:text-gray-300 cursor-pointer" @click="form.is_filterable = !form.is_filterable">
+                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_filterable = !form.is_filterable">
                                     Использовать в фильтрах (поиск по этому полю)
                                 </label>
                             </div>
 
-                            <div class="flex items-center">
+                            <div class="flex items-center pt-2">
                                 <div @click="form.is_visible_in_list = !form.is_visible_in_list" :class="[form.is_visible_in_list ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
                                     <div :class="[form.is_visible_in_list ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                                 </div>
-                                <label class="ml-3 block text-sm font-medium text-slate-700 dark:text-gray-300 cursor-pointer" @click="form.is_visible_in_list = !form.is_visible_in_list">
+                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_visible_in_list = !form.is_visible_in_list">
                                     Показывать колонку в общей таблице списка
                                 </label>
                             </div>
                         </div>
                     </div>
 
-                    <div class="flex justify-end gap-3 border-t border-slate-200 dark:border-gray-700 py-4 px-6 bg-slate-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="rounded px-4 py-2 text-sm font-medium transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200">
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
                             Отмена
                         </button>
-                        <button type="submit" :disabled="form.processing" class="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-600/90 transition-colors shadow-xs disabled:opacity-50">
+                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
                             Сохранить поле
                         </button>
                     </div>

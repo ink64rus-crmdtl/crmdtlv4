@@ -19,6 +19,9 @@ use App\Http\Controllers\Tenant\PositionController;
 use App\Http\Controllers\Tenant\EmployeeController;
 use App\Http\Controllers\Tenant\ListViewController;
 use App\Http\Controllers\Tenant\ClientController;
+use App\Http\Controllers\Tenant\VehicleController;
+use App\Http\Controllers\Tenant\DictionaryController;
+use App\Http\Controllers\Tenant\CrmSettingsController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -111,6 +114,20 @@ Route::middleware([
         Route::post('/settings/roles-permissions/modules', [RolePermissionController::class, 'storeModules'])->name('settings.roles-permissions.modules.store');
         Route::post('/settings/roles-permissions/scopes', [RolePermissionController::class, 'storeScopes'])->name('settings.roles-permissions.scopes.store');
 
+        // Настройки: Справочники (Марки и Модели)
+        Route::get('/settings/dictionaries', [DictionaryController::class, 'index'])->name('settings.dictionaries.index');
+        Route::post('/settings/dictionaries/makes', [DictionaryController::class, 'storeMake'])->name('settings.dictionaries.makes.store');
+        Route::put('/settings/dictionaries/makes/{make}', [DictionaryController::class, 'updateMake'])->name('settings.dictionaries.makes.update');
+        Route::delete('/settings/dictionaries/makes/{make}', [DictionaryController::class, 'destroyMake'])->name('settings.dictionaries.makes.destroy');
+        Route::post('/settings/dictionaries/models', [DictionaryController::class, 'storeModel'])->name('settings.dictionaries.models.store');
+        Route::put('/settings/dictionaries/models/{model}', [DictionaryController::class, 'updateModel'])->name('settings.dictionaries.models.update');
+        Route::delete('/settings/dictionaries/models/{model}', [DictionaryController::class, 'destroyModel'])->name('settings.dictionaries.models.destroy');
+        Route::post('/settings/dictionaries/import', [DictionaryController::class, 'importCsv'])->name('settings.dictionaries.import');
+
+        // Настройки: CRM (Строгая валидация и т.д.)
+        Route::get('/settings/crm', [CrmSettingsController::class, 'index'])->name('settings.crm.index');
+        Route::post('/settings/crm', [CrmSettingsController::class, 'store'])->name('settings.crm.store');
+
         // HR: Должности
         Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');
         Route::post('/hr/positions', [PositionController::class, 'store'])->name('hr.positions.store');
@@ -137,6 +154,15 @@ Route::middleware([
         Route::delete('/crm/clients/{client}', [ClientController::class, 'destroy'])->name('crm.clients.destroy');
         Route::post('/crm/clients/bulk-delete', [ClientController::class, 'bulkDestroy'])->name('crm.clients.bulk-destroy');
         Route::post('/crm/clients/bulk-export', [ClientController::class, 'bulkExport'])->name('crm.clients.bulk-export');
+
+        // CRM: Автомобили
+        Route::get('/crm/vehicles', [VehicleController::class, 'index'])->name('crm.vehicles.index');
+        Route::post('/crm/vehicles', [VehicleController::class, 'store'])->name('crm.vehicles.store');
+        Route::get('/crm/vehicles/{vehicle}', [VehicleController::class, 'show'])->name('crm.vehicles.show');
+        Route::put('/crm/vehicles/{vehicle}', [VehicleController::class, 'update'])->name('crm.vehicles.update');
+        Route::delete('/crm/vehicles/{vehicle}', [VehicleController::class, 'destroy'])->name('crm.vehicles.destroy');
+        Route::post('/crm/vehicles/bulk-delete', [VehicleController::class, 'bulkDestroy'])->name('crm.vehicles.bulk-destroy');
+        Route::post('/crm/vehicles/bulk-export', [VehicleController::class, 'bulkExport'])->name('crm.vehicles.bulk-export');
     });
 
     require __DIR__.'/auth.php';

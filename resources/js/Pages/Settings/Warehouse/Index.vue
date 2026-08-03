@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
+import SettingsNav from '@/Components/SettingsNav.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -27,76 +28,7 @@ const submit = () => {
         <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
             
             <!-- Навигация по настройкам (Attex Tabs) -->
-            <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
-                <nav class="-mb-px flex space-x-8 overflow-x-auto">
-                    <Link
-                        :href="route('settings.legal-entities.index')"
-                        :class="[
-                            route().current('settings.legal-entities.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Юридические лица
-                    </Link>
-                    <Link
-                        :href="route('settings.branches.index')"
-                        :class="[
-                            route().current('settings.branches.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Филиалы
-                    </Link>
-                    <Link
-                        :href="route('settings.business-directions.index')"
-                        :class="[
-                            route().current('settings.business-directions.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Направления
-                    </Link>
-                    <Link
-                        :href="route('settings.warehouse.index')"
-                        :class="[
-                            route().current('settings.warehouse.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Склад
-                    </Link>
-                    <Link
-                        :href="route('settings.custom-fields.index')"
-                        :class="[
-                            route().current('settings.custom-fields.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Кастомные поля
-                    </Link>
-                    <Link
-                        :href="route('settings.roles-permissions.index')"
-                        :class="[
-                            route().current('settings.roles-permissions.index')
-                                ? 'border-primary text-primary'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
-                        ]"
-                    >
-                        Роли и Права
-                    </Link>
-                </nav>
-            </div>
+            <SettingsNav />
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Как работают режимы склада?">

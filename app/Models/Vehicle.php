@@ -12,8 +12,8 @@ class Vehicle extends Model
 
     protected $fillable = [
         'client_id',
-        'make',
-        'model',
+        'vehicle_make_id',
+        'vehicle_model_id',
         'plate_number',
         'vin',
         'year',
@@ -29,5 +29,15 @@ class Vehicle extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function make(): BelongsTo
+    {
+        return $this->belongsTo(VehicleMake::class, 'vehicle_make_id');
+    }
+
+    public function vehicleModel(): BelongsTo
+    {
+        return $this->belongsTo(VehicleModel::class, 'vehicle_model_id');
     }
 }

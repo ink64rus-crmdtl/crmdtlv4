@@ -1,12 +1,17 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import DataTableToolbar from '@/Components/DataTableToolbar.vue';
+import Pagination from '@/Components/Pagination.vue';
+import BulkActions from '@/Components/BulkActions.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch, reactive } from 'vue';
+import debounce from 'lodash/debounce';
 import axios from 'axios';
 
 const props = defineProps({
-    employees: Array,
+    employees: Object,
+    filters: Object,
     branches: Array,
     positions: Array,
     roles: Array,
@@ -14,6 +19,7 @@ const props = defineProps({
     userScopes: Object,
     tenantCountry: String,
     availableColumns: Array,
+    customFieldDefs: Array,
     listView: Object,
 });
 
@@ -30,14 +36,49 @@ const needsMiddleName = computed(() => {
     return ['RU', 'BY', 'KZ'].includes(props.tenantCountry);
 });
 
+// --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
+const search = ref(props.filters?.search || '');
+
+const initialFilters = {
+    branch_id: props.filters?.filters?.branch_id || '',
+    position_id: props.filters?.filters?.position_id || '',
+    type: props.filters?.filters?.type || '',
+    is_active: props.filters?.filters?.is_active || '',
+};
+if (props.customFieldDefs) {
+    props.customFieldDefs.filter(f => f.is_filterable).forEach(def => {
+        initialFilters['cf_' + def.key] = props.filters?.filters?.['cf_' + def.key] || '';
+    });
+}
+
+const filtersForm = reactive(initialFilters);
+const isFiltersOpen = ref(false);
+
+const fetchFiltered = debounce(() => {
+    router.get(route('hr.employees.index'), {
+        search: search.value,
+        filters: filtersForm,
+    }, { preserveState: true, preserveScroll: true });
+}, 300);
+
+watch(search, () => fetchFiltered());
+watch(filtersForm, () => fetchFiltered(), { deep: true });
+
+const resetFilters = () => {
+    Object.keys(filtersForm).forEach(key => {
+        filtersForm[key] = '';
+    });
+};
+// ------------------------------------
+
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
 
 const selectAll = computed({
-    get: () => props.employees.length > 0 && selectedIds.value.length === props.employees.length,
+    get: () => props.employees.data.length > 0 && selectedIds.value.length === props.employees.data.length,
     set: (value) => {
         if (value) {
-            selectedIds.value = props.employees.map(e => e.id);
+            selectedIds.value = props.employees.data.map(e => e.id);
         } else {
             selectedIds.value = [];
         }
@@ -49,7 +90,7 @@ const bulkDelete = () => {
         router.post(route('hr.employees.bulk-destroy'), { ids: selectedIds.value }, {
             onSuccess: () => {
                 selectedIds.value = [];
-                if (previewEmployee.value && !props.employees.find(e => e.id === previewEmployee.value.id)) {
+                if (previewEmployee.value && !props.employees.data.find(e => e.id === previewEmployee.value.id)) {
                     closePreview();
                 }
             }
@@ -300,44 +341,39 @@ const employeeTypes = {
                         Управление персоналом, должностями и индивидуальными правами доступа.
                     </p>
                 </div>
-                <div class="flex gap-3">
-                    <Link :href="route('hr.positions.index')" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
-                        Справочник должностей
-                    </Link>
-                    <button
-                        @click="openModal()"
-                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
-                    >
-                        <i class="ri-user-add-line text-base"></i>
-                        Добавить сотрудника
-                    </button>
-                </div>
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
-            <div v-if="selectedIds.length > 0" class="bg-primary/10 border border-primary/20 rounded-md p-3 flex justify-between items-center transition-all">
-                <div class="text-sm font-semibold text-primary flex items-center gap-2">
-                    <i class="ri-checkbox-multiple-line text-lg"></i>
-                    Выбрано сотрудников: {{ selectedIds.length }}
-                </div>
-                <div class="flex gap-2">
-                    <button @click="bulkExport" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
-                        <i class="ri-file-excel-2-line mr-1.5 text-success"></i> Экспорт в Excel
-                    </button>
-                    <button @click="bulkDelete" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
-                        <i class="ri-delete-bin-line mr-1.5"></i> Удалить выбранные
-                    </button>
-                </div>
-            </div>
+            <BulkActions 
+                v-if="selectedIds.length > 0" 
+                :selectedCount="selectedIds.length" 
+                noun="сотрудников" 
+                @export="bulkExport" 
+                @delete="bulkDelete" 
+            />
 
             <!-- Table Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
-                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Список сотрудников</h3>
-                    <button @click="openColumnsModal()" class="text-xs font-medium text-gray-500 hover:text-primary transition-colors flex items-center gap-1">
-                        <i class="ri-layout-column-line"></i> Настроить столбцы
-                    </button>
-                </div>
+                <DataTableToolbar
+                    v-model="search"
+                    :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
+                    @open-filters="isFiltersOpen = true"
+                    @open-columns="openColumnsModal"
+                    placeholder="Поиск по имени, телефону, email..."
+                >
+                    <template #actions>
+                        <Link :href="route('hr.positions.index')" class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                            Справочник должностей
+                        </Link>
+                        <button
+                            @click="openModal()"
+                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
+                        >
+                            <i class="ri-user-add-line text-base"></i>
+                            Добавить сотрудника
+                        </button>
+                    </template>
+                </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -353,7 +389,7 @@ const employeeTypes = {
                         </thead>
                         <tbody>
                             <!-- Клик по строке открывает Offcanvas Быстрого просмотра -->
-                            <tr v-for="employee in employees" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
+                            <tr v-for="employee in employees.data" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
                                 
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
                                     <input type="checkbox" :value="employee.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
@@ -419,14 +455,21 @@ const employeeTypes = {
                                     </template>
 
                                     <template v-else>
-                                        <!-- Placeholder для кастомных полей (значения будут добавлены позже) -->
-                                        <span class="text-gray-400">—</span>
+                                        <!-- Кастомные поля -->
+                                        {{ employee.custom_fields && employee.custom_fields[col.key] !== undefined && employee.custom_fields[col.key] !== null && employee.custom_fields[col.key] !== '' ? employee.custom_fields[col.key] : '—' }}
                                     </template>
 
                                 </td>
 
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <!-- Важно: @click.stop предотвращает всплытие события клика на строку (которое открывает Preview) -->
+                                    <Link 
+                                        :href="route('hr.employees.show', employee.id)" 
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
+                                        title="Полная карточка"
+                                        @click.stop
+                                    >
+                                        <i class="ri-eye-line"></i>
+                                    </Link>
                                     <button 
                                         @click.stop="openModal(employee)" 
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
@@ -443,14 +486,15 @@ const employeeTypes = {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="employees.length === 0">
+                            <tr v-if="employees.data.length === 0">
                                 <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Сотрудники еще не добавлены. Нажмите "Добавить сотрудника".
+                                    Сотрудники не найдены.
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+                <Pagination :meta="employees" />
             </div>
         </div>
 
@@ -507,6 +551,82 @@ const employeeTypes = {
                 </div>
             </div>
         </div>
+
+        <!-- Offcanvas Фильтры -->
+        <Offcanvas :show="isFiltersOpen" @close="isFiltersOpen = false" maxWidth="sm">
+            <div class="flex flex-col h-full">
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Фильтры</h3>
+                    <button @click="isFiltersOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал</label>
+                        <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все филиалы</option>
+                            <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Должность</label>
+                        <select v-model="filtersForm.position_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все должности</option>
+                            <option v-for="pos in positions" :key="pos.id" :value="pos.id">{{ getLocalizedLabel(pos.name) }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип оформления</label>
+                        <select v-model="filtersForm.type" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все типы</option>
+                            <option v-for="(label, key) in employeeTypes" :key="key" :value="key">{{ label }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статус</label>
+                        <select v-model="filtersForm.is_active" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все статусы</option>
+                            <option value="1">Активен</option>
+                            <option value="0">Уволен</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Кастомные фильтры -->
+                    <template v-if="customFieldDefs">
+                        <template v-for="def in customFieldDefs.filter(f => f.is_filterable)" :key="def.id">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ getLocalizedLabel(def.label) }}</label>
+                                <template v-if="def.type === 'select'">
+                                    <select v-model="filtersForm['cf_' + def.key]" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                        <option value="">Все</option>
+                                        <option v-for="opt in def.options" :key="opt" :value="opt">{{ opt }}</option>
+                                    </select>
+                                </template>
+                                <template v-else-if="def.type === 'checkbox'">
+                                    <select v-model="filtersForm['cf_' + def.key]" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                        <option value="">Все</option>
+                                        <option value="1">Да</option>
+                                        <option value="0">Нет</option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <input :type="def.type === 'number' ? 'number' : (def.type === 'date' ? 'date' : 'text')" v-model="filtersForm['cf_' + def.key]" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                </template>
+                            </div>
+                        </template>
+                    </template>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">
+                    <button @click="resetFilters" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        Сбросить
+                    </button>
+                    <button @click="isFiltersOpen = false" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">
+                        Применить
+                    </button>
+                </div>
+            </div>
+        </Offcanvas>
 
         <!-- TRI-STATE 1: Offcanvas (Быстрый просмотр) -->
         <Offcanvas :show="isOffcanvasOpen" @close="closePreview" maxWidth="md">

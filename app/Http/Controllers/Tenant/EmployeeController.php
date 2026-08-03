@@ -13,8 +13,10 @@ use App\Models\BusinessDirection;
 use App\Models\Warehouse;
 use App\Models\Account;
 use App\Models\CustomFieldDefinition;
+use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Services\FieldPermissionService;
+use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -28,7 +30,25 @@ class EmployeeController extends Controller
     public function index(): Response
     {
         $user = auth()->user();
-        $employees = Employee::with(['user.roles', 'branch', 'position'])->orderBy('id', 'desc')->get();
+        
+        $query = Employee::with(['user.roles', 'branch', 'position']);
+        
+        // Применяем серверную фильтрацию и поиск
+        $query = QueryFilterService::apply(
+            $query, 
+            request()->all(), 
+            ['first_name', 'last_name', 'phone', 'personal_email'], 
+            'employee'
+        );
+
+        // Сортировка по умолчанию
+        if (!request()->has('sort_by')) {
+            $query->orderBy('id', 'desc');
+        }
+
+        // Пагинация вместо ->get()
+        $employees = $query->paginate(15)->withQueryString();
+        
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
         $positions = Position::where('is_active', true)->get(['id', 'name']);
         $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
@@ -41,7 +61,7 @@ class EmployeeController extends Controller
             'accounts' => Account::where('is_active', true)->get(['id', 'name']),
         ];
 
-        // Подгружаем индивидуальные доступы для пользователей, чтобы передать на фронт
+        // Подгружаем индивидуальные доступы для пользователей
         $userScopes = [];
         foreach ($employees as $employee) {
             if ($employee->user_id) {
@@ -84,7 +104,25 @@ class EmployeeController extends Controller
             ];
         }
 
-        // 3. Фильтруем колонки через FieldPermissionService (отсекаем те, к которым нет прав)
+        // 3. Загружаем значения кастомных полей
+        $cfValues = CustomFieldValue::where('entity_type', 'employee')
+            ->whereIn('entity_id', $employees->getCollection()->pluck('id'))
+            ->get();
+
+        // 4. Мапим значения кастомных полей внутрь объектов
+        $employees->getCollection()->transform(function ($employee) use ($cfValues, $customFields) {
+            $employeeData = $employee->toArray();
+            $employeeData['custom_fields'] = [];
+            
+            foreach ($customFields as $def) {
+                $val = $cfValues->where('entity_id', $employee->id)->where('custom_field_definition_id', $def->id)->first();
+                $employeeData['custom_fields'][$def->key] = $val ? ($val->value_text ?? $val->value_number ?? $val->value_date ?? $val->value) : null;
+            }
+            
+            return $employeeData;
+        });
+
+        // 5. Фильтруем колонки через FieldPermissionService
         $allFieldKeys = array_column($baseColumns, 'key');
         $visibleKeys = FieldPermissionService::visibleFields($user, 'employee', $allFieldKeys);
 
@@ -92,18 +130,18 @@ class EmployeeController extends Controller
             return in_array($col['key'], $visibleKeys);
         }));
 
-        // 4. Получаем сохраненный вид таблицы для текущего пользователя
+        // 6. Получаем сохраненный вид таблицы для текущего пользователя
         $listView = ListView::where('entity_type', 'employee')
             ->where('user_id', $user->id)
             ->first();
 
-        // Если вида нет, берем дефолтные колонки из доступных
         $visibleColumns = $listView 
             ? $listView->visible_columns 
             : array_values(array_map(fn($c) => $c['key'], array_filter($availableColumns, fn($c) => $c['is_default'])));
 
         return Inertia::render('HR/Employees/Index', [
             'employees' => $employees,
+            'filters' => request()->all(),
             'branches' => $branches,
             'positions' => $positions,
             'roles' => $roles,
@@ -111,6 +149,7 @@ class EmployeeController extends Controller
             'userScopes' => $userScopes,
             'tenantCountry' => $tenantCountry,
             'availableColumns' => $availableColumns,
+            'customFieldDefs' => $customFields,
             'listView' => [
                 'visible_columns' => $visibleColumns,
             ],
@@ -122,6 +161,8 @@ class EmployeeController extends Controller
         $employee->load(['user.roles', 'branch', 'position']);
         
         $resolvedScopes = [];
+        $userScopes = [];
+        
         if ($employee->user_id) {
             $user = $employee->user;
             $resolvedScopes = [
@@ -131,11 +172,40 @@ class EmployeeController extends Controller
                 'warehouses' => $user->warehouses()->get(['warehouses.id', 'warehouses.name']),
                 'accounts' => $user->accounts()->get(['accounts.id', 'accounts.name']),
             ];
+            
+            $userScopes[$employee->user_id] = [
+                'branches' => $user->branches()->pluck('branches.id')->toArray(),
+                'legal_entities' => $user->legalEntities()->pluck('legal_entities.id')->toArray(),
+                'business_directions' => $user->businessDirections()->pluck('business_directions.id')->toArray(),
+                'warehouses' => $user->warehouses()->pluck('warehouses.id')->toArray(),
+                'accounts' => $user->accounts()->pluck('accounts.id')->toArray(),
+            ];
         }
+
+        // Данные для модального окна редактирования
+        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $positions = Position::where('is_active', true)->get(['id', 'name']);
+        $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
+        
+        $scopes = [
+            'branches' => $branches,
+            'legalEntities' => LegalEntity::where('is_active', true)->get(['id', 'name']),
+            'businessDirections' => BusinessDirection::where('is_active', true)->get(['id', 'name']),
+            'warehouses' => Warehouse::where('is_active', true)->get(['id', 'name']),
+            'accounts' => Account::where('is_active', true)->get(['id', 'name']),
+        ];
+
+        $tenantCountry = config('tenant.country_code', 'RU');
 
         return Inertia::render('HR/Employees/Show', [
             'employee' => $employee,
             'resolvedScopes' => $resolvedScopes,
+            'branches' => $branches,
+            'positions' => $positions,
+            'roles' => $roles,
+            'scopes' => $scopes,
+            'userScopes' => $userScopes,
+            'tenantCountry' => $tenantCountry,
         ]);
     }
 

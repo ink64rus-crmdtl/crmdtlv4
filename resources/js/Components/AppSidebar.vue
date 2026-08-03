@@ -34,6 +34,7 @@ const routeMap = {
     'system': 'system.index',
     'hr': 'hr.employees.index',
     'crm': 'crm.clients.index',
+    'dictionaries': 'settings.dictionaries.index',
 };
 
 // Защита от ошибок роутинга

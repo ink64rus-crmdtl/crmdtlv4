@@ -19,6 +19,7 @@ class ModuleSeeder extends Seeder
             ['key' => 'hr', 'label' => ['en' => 'HR', 'ru' => 'Сотрудники'], 'icon' => 'ri-team-line', 'is_core' => true, 'sort_order' => 60, 'required_permission' => 'view_hr'],
             ['key' => 'communications', 'label' => ['en' => 'Communications', 'ru' => 'Общение'], 'icon' => 'ri-chat-3-line', 'is_core' => true, 'sort_order' => 70, 'required_permission' => 'view_communications'],
             ['key' => 'documents', 'label' => ['en' => 'Documents', 'ru' => 'Документы'], 'icon' => 'ri-file-text-line', 'is_core' => true, 'sort_order' => 80, 'required_permission' => 'view_documents'],
+            ['key' => 'dictionaries', 'label' => ['en' => 'Dictionaries', 'ru' => 'Справочники'], 'icon' => 'ri-book-2-line', 'is_core' => true, 'sort_order' => 85, 'required_permission' => 'view_settings'],
             ['key' => 'settings', 'label' => ['en' => 'Settings', 'ru' => 'Настройки'], 'icon' => 'ri-settings-3-line', 'is_core' => true, 'sort_order' => 90, 'required_permission' => 'view_settings'],
             ['key' => 'system', 'label' => ['en' => 'System', 'ru' => 'Система'], 'icon' => 'ri-server-line', 'is_core' => true, 'sort_order' => 100, 'required_permission' => 'view_system'],
         ];

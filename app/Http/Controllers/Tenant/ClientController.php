@@ -11,6 +11,7 @@ use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
+use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -22,8 +23,25 @@ class ClientController extends Controller
     {
         $user = auth()->user();
         
-        // Получаем клиентов с их филиалами и группами
-        $clients = Client::with(['branch', 'group'])->orderBy('id', 'desc')->get();
+        // Базовый запрос с подгрузкой связей
+        $query = Client::with(['branch', 'group']);
+        
+        // Применяем серверную фильтрацию и поиск
+        $query = QueryFilterService::apply(
+            $query, 
+            request()->all(), 
+            ['name', 'phone', 'email', 'alias'], 
+            'client'
+        );
+
+        // Сортировка по умолчанию, если не задана иная
+        if (!request()->has('sort_by')) {
+            $query->orderBy('id', 'desc');
+        }
+
+        // Пагинация вместо ->get()
+        $clients = $query->paginate(15)->withQueryString();
+        
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
         $clientGroups = ClientGroup::orderBy('name')->get();
 
@@ -58,13 +76,13 @@ class ClientController extends Controller
             ];
         }
 
-        // 3. Загружаем значения кастомных полей для всех клиентов одним запросом
+        // 3. Загружаем значения кастомных полей только для клиентов на текущей странице
         $cfValues = CustomFieldValue::where('entity_type', 'client')
-            ->whereIn('entity_id', $clients->pluck('id'))
+            ->whereIn('entity_id', $clients->getCollection()->pluck('id'))
             ->get();
 
         // 4. Мапим значения кастомных полей внутрь объектов клиентов для удобства Vue
-        $clients->transform(function ($client) use ($cfValues, $customFieldDefs) {
+        $clients->getCollection()->transform(function ($client) use ($cfValues, $customFieldDefs) {
             $clientData = $client->toArray();
             $clientData['custom_fields'] = [];
             
@@ -96,6 +114,7 @@ class ClientController extends Controller
 
         return Inertia::render('CRM/Clients/Index', [
             'clients' => $clients,
+            'filters' => request()->all(),
             'branches' => $branches,
             'clientGroups' => $clientGroups,
             'customFieldDefs' => $customFieldDefs,
@@ -110,7 +129,8 @@ class ClientController extends Controller
 
     public function show(Client $client): Response
     {
-        $client->load(['branch', 'group', 'vehicles']);
+        // Загружаем автомобили вместе с марками и моделями
+        $client->load(['branch', 'group', 'vehicles.make', 'vehicles.vehicleModel']);
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'client')->where('entity_id', $client->id)->get();
@@ -127,11 +147,18 @@ class ClientController extends Controller
         $tenantCountry = config('tenant.country_code', 'RU');
         $countryConfig = CountryConfigService::getForCountry($tenantCountry);
 
+        // Данные для модального окна редактирования
+        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $clientGroups = ClientGroup::orderBy('name')->get();
+
         return Inertia::render('CRM/Clients/Show', [
             'client' => $client,
             'customFieldsData' => $customFieldsData,
             'tenantCountry' => $tenantCountry,
             'countryConfig' => $countryConfig,
+            'branches' => $branches,
+            'clientGroups' => $clientGroups,
+            'customFieldDefs' => $customFieldDefs,
         ]);
     }
 

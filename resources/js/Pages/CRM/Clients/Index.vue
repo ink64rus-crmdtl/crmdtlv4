@@ -2,12 +2,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import PageHelper from '@/Components/PageHelper.vue';
+import DataTableToolbar from '@/Components/DataTableToolbar.vue';
+import Pagination from '@/Components/Pagination.vue';
+import BulkActions from '@/Components/BulkActions.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch, reactive } from 'vue';
+import debounce from 'lodash/debounce';
 import axios from 'axios';
 
 const props = defineProps({
-    clients: Array,
+    clients: Object,
+    filters: Object,
     branches: Array,
     clientGroups: Array,
     customFieldDefs: Array,
@@ -28,14 +33,46 @@ const previewClient = ref(null);
 const editingClient = ref(null);
 const activeTab = ref('main'); // 'main', 'contacts', 'requisites', 'settings'
 
+// --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
+const search = ref(props.filters?.search || '');
+
+const initialFilters = {
+    type: props.filters?.filters?.type || '',
+    is_lead: props.filters?.filters?.is_lead || '',
+    client_group_id: props.filters?.filters?.client_group_id || '',
+};
+props.customFieldDefs.filter(f => f.is_filterable).forEach(def => {
+    initialFilters['cf_' + def.key] = props.filters?.filters?.['cf_' + def.key] || '';
+});
+
+const filtersForm = reactive(initialFilters);
+const isFiltersOpen = ref(false);
+
+const fetchFiltered = debounce(() => {
+    router.get(route('crm.clients.index'), {
+        search: search.value,
+        filters: filtersForm,
+    }, { preserveState: true, preserveScroll: true });
+}, 300);
+
+watch(search, () => fetchFiltered());
+watch(filtersForm, () => fetchFiltered(), { deep: true });
+
+const resetFilters = () => {
+    Object.keys(filtersForm).forEach(key => {
+        filtersForm[key] = '';
+    });
+};
+// ------------------------------------
+
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
 
 const selectAll = computed({
-    get: () => props.clients.length > 0 && selectedIds.value.length === props.clients.length,
+    get: () => props.clients.data.length > 0 && selectedIds.value.length === props.clients.data.length,
     set: (value) => {
         if (value) {
-            selectedIds.value = props.clients.map(c => c.id);
+            selectedIds.value = props.clients.data.map(c => c.id);
         } else {
             selectedIds.value = [];
         }
@@ -47,7 +84,7 @@ const bulkDelete = () => {
         router.post(route('crm.clients.bulk-destroy'), { ids: selectedIds.value }, {
             onSuccess: () => {
                 selectedIds.value = [];
-                if (previewClient.value && !props.clients.find(c => c.id === previewClient.value.id)) {
+                if (previewClient.value && !props.clients.data.find(c => c.id === previewClient.value.id)) {
                     closePreview();
                 }
             }
@@ -149,9 +186,6 @@ const submitGroup = () => {
     groupForm.post(route('crm.client-groups.store'), {
         onSuccess: () => {
             closeGroupModal();
-            // После успешного добавления, новая группа будет последней в списке props.clientGroups
-            // Мы можем автоматически выбрать её, но так как Inertia обновляет props асинхронно, 
-            // это требует watch. Оставим просто закрытие модалки.
         },
     });
 };
@@ -294,53 +328,66 @@ const formatMoney = (amount) => {
 
         <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
             
+            <!-- Навигация по CRM (Attex Tabs) -->
+            <div class="border-b border-gray-200 dark:border-gray-700 mb-6">
+                <nav class="-mb-px flex space-x-8 overflow-x-auto">
+                    <Link
+                        :href="route('crm.clients.index')"
+                        :class="[
+                            route().current('crm.clients.*')
+                                ? 'border-primary text-primary'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
+                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
+                        ]"
+                    >
+                        Клиенты
+                    </Link>
+                    <Link
+                        :href="route('crm.vehicles.index')"
+                        :class="[
+                            route().current('crm.vehicles.*')
+                                ? 'border-primary text-primary'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600',
+                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors'
+                        ]"
+                    >
+                        Автомобили
+                    </Link>
+                </nav>
+            </div>
+
             <PageHelper title="База клиентов">
                 <p>Здесь хранится единая база всех ваших клиентов (как физических, так и юридических лиц). Вы можете настраивать отображаемые колонки таблицы, использовать массовые операции и добавлять собственные поля (через раздел Настройки -> Кастомные поля).</p>
             </PageHelper>
 
-            <!-- Header Card -->
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
-                <div>
-                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Клиенты</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Управление клиентской базой
-                    </p>
-                </div>
-                <div class="flex gap-3">
-                    <button
-                        @click="openModal()"
-                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
-                    >
-                        <i class="ri-user-add-line text-base"></i>
-                        Добавить клиента
-                    </button>
-                </div>
-            </div>
-
             <!-- Action Bar (Bulk Actions) -->
-            <div v-if="selectedIds.length > 0" class="bg-primary/10 border border-primary/20 rounded-md p-3 flex justify-between items-center transition-all">
-                <div class="text-sm font-semibold text-primary flex items-center gap-2">
-                    <i class="ri-checkbox-multiple-line text-lg"></i>
-                    Выбрано клиентов: {{ selectedIds.length }}
-                </div>
-                <div class="flex gap-2">
-                    <button @click="bulkExport" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
-                        <i class="ri-file-excel-2-line mr-1.5 text-success"></i> Экспорт в Excel
-                    </button>
-                    <button @click="bulkDelete" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
-                        <i class="ri-delete-bin-line mr-1.5"></i> Удалить выбранных
-                    </button>
-                </div>
-            </div>
+            <BulkActions 
+                v-if="selectedIds.length > 0" 
+                :selectedCount="selectedIds.length" 
+                noun="клиентов" 
+                @export="bulkExport" 
+                @delete="bulkDelete" 
+            />
 
             <!-- Table Card -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
-                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Список клиентов</h3>
-                    <button @click="openColumnsModal()" class="text-xs font-medium text-gray-500 hover:text-primary transition-colors flex items-center gap-1">
-                        <i class="ri-layout-column-line"></i> Настроить столбцы
-                    </button>
-                </div>
+                <DataTableToolbar
+                    v-model="search"
+                    :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
+                    @open-filters="isFiltersOpen = true"
+                    @open-columns="openColumnsModal"
+                    placeholder="Поиск по имени, телефону, email..."
+                >
+                    <template #actions>
+                        <button
+                            @click="openModal()"
+                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
+                        >
+                            <i class="ri-user-add-line text-base"></i>
+                            Добавить клиента
+                        </button>
+                    </template>
+                </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -355,7 +402,7 @@ const formatMoney = (amount) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="client in clients" :key="client.id" @click="openPreview(client)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
+                            <tr v-for="client in clients.data" :key="client.id" @click="openPreview(client)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
                                 
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
                                     <input type="checkbox" :value="client.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
@@ -441,6 +488,14 @@ const formatMoney = (amount) => {
                                 </td>
 
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
+                                    <Link 
+                                        :href="route('crm.clients.show', client.id)" 
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
+                                        title="Полная карточка"
+                                        @click.stop
+                                    >
+                                        <i class="ri-eye-line"></i>
+                                    </Link>
                                     <button 
                                         @click.stop="openModal(client)" 
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
@@ -457,14 +512,15 @@ const formatMoney = (amount) => {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="clients.length === 0">
+                            <tr v-if="clients.data.length === 0">
                                 <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Клиенты еще не добавлены. Нажмите "Добавить клиента".
+                                    Клиенты не найдены.
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+                <Pagination :meta="clients" />
             </div>
         </div>
 
@@ -956,10 +1012,10 @@ const formatMoney = (amount) => {
                     </div>
 
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
                             Отмена
                         </button>
-                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
                             Сохранить
                         </button>
                     </div>
@@ -1001,6 +1057,74 @@ const formatMoney = (amount) => {
                 </form>
             </div>
         </div>
+
+        <!-- Offcanvas Фильтры -->
+        <Offcanvas :show="isFiltersOpen" @close="isFiltersOpen = false" maxWidth="sm">
+            <div class="flex flex-col h-full">
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Фильтры</h3>
+                    <button @click="isFiltersOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип клиента</label>
+                        <select v-model="filtersForm.type" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все типы</option>
+                            <option value="b2c">Физическое лицо</option>
+                            <option value="b2b">Юридическое лицо</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статус</label>
+                        <select v-model="filtersForm.is_lead" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все статусы</option>
+                            <option value="1">Лид</option>
+                            <option value="0">Постоянный клиент</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа</label>
+                        <select v-model="filtersForm.client_group_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все группы</option>
+                            <option v-for="group in clientGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Кастомные фильтры -->
+                    <template v-for="def in customFieldDefs.filter(f => f.is_filterable)" :key="def.id">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ getLocalizedLabel(def.label) }}</label>
+                            <template v-if="def.type === 'select'">
+                                <select v-model="filtersForm['cf_' + def.key]" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                    <option value="">Все</option>
+                                    <option v-for="opt in def.options" :key="opt" :value="opt">{{ opt }}</option>
+                                </select>
+                            </template>
+                            <template v-else-if="def.type === 'checkbox'">
+                                <select v-model="filtersForm['cf_' + def.key]" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                    <option value="">Все</option>
+                                    <option value="1">Да</option>
+                                    <option value="0">Нет</option>
+                                </select>
+                            </template>
+                            <template v-else>
+                                <input :type="def.type === 'number' ? 'number' : (def.type === 'date' ? 'date' : 'text')" v-model="filtersForm['cf_' + def.key]" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            </template>
+                        </div>
+                    </template>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">
+                    <button @click="resetFilters" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        Сбросить
+                    </button>
+                    <button @click="isFiltersOpen = false" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">
+                        Применить
+                    </button>
+                </div>
+            </div>
+        </Offcanvas>
 
     </AuthenticatedLayout>
 </template>
