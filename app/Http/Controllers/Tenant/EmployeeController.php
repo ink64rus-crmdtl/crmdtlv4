@@ -17,6 +17,7 @@ use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
+use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -471,52 +472,8 @@ class EmployeeController extends Controller
             'ids.*' => ['exists:employees,id'],
         ]);
 
-        $employees = Employee::with(['branch', 'position', 'user.roles'])->whereIn('id', $validated['ids'])->get();
-        
-        $filename = 'employees_export_' . date('Y-m-d_H-i-s') . '.csv';
-        $headers = [
-            "Content-type"        => "text/csv",
-            "Content-Disposition" => "attachment; filename=$filename",
-            "Pragma"              => "no-cache",
-            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
-            "Expires"             => "0"
-        ];
-        
-        $callback = function() use($employees) {
-            $file = fopen('php://output', 'w');
-            // Добавляем BOM для корректного отображения UTF-8 в Excel
-            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            
-            fputcsv($file, ['ID', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Email', 'Филиал', 'Должность', 'Тип', 'Статус'], ';');
-            
-            foreach ($employees as $emp) {
-                $posName = 'Без должности';
-                if ($emp->position) {
-                    $posName = is_array($emp->position->name) ? ($emp->position->name['ru'] ?? current($emp->position->name)) : $emp->position->name;
-                }
+        ExportEntitiesJob::dispatch('employees', $validated['ids'], auth()->id());
 
-                $employeeTypes = [
-                    'staff' => 'В штате',
-                    'self_employed' => 'Самозанятый',
-                    'outsource' => 'Аутсорс / Подрядчик'
-                ];
-
-                fputcsv($file, [
-                    $emp->id,
-                    $emp->last_name,
-                    $emp->first_name,
-                    $emp->middle_name,
-                    $emp->phone,
-                    $emp->personal_email,
-                    $emp->branch ? $emp->branch->name : '',
-                    $posName,
-                    $employeeTypes[$emp->type] ?? $emp->type,
-                    $emp->is_active ? 'Активен' : 'Уволен'
-                ], ';');
-            }
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
+        return redirect()->back()->with('success', 'Экспорт запущен. Вы получите уведомление, когда файл будет готов.');
     }
 }

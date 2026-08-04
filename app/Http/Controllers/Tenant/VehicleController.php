@@ -13,6 +13,7 @@ use App\Models\ListView;
 use App\Models\Setting;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
+use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -280,39 +281,9 @@ class VehicleController extends Controller
             'ids.*' => ['exists:vehicles,id'],
         ]);
 
-        $vehicles = Vehicle::with(['client', 'make', 'vehicleModel'])->whereIn('id', $validated['ids'])->get();
-        
-        $filename = 'vehicles_export_' . date('Y-m-d_H-i-s') . '.csv';
-        $headers = [
-            "Content-type"        => "text/csv",
-            "Content-Disposition" => "attachment; filename=$filename",
-            "Pragma"              => "no-cache",
-            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
-            "Expires"             => "0"
-        ];
-        
-        $callback = function() use($vehicles) {
-            $file = fopen('php://output', 'w');
-            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            
-            fputcsv($file, ['ID', 'Марка', 'Модель', 'Госномер', 'VIN', 'Год', 'Владелец', 'Телефон владельца'], ';');
-            
-            foreach ($vehicles as $vehicle) {
-                fputcsv($file, [
-                    $vehicle->id,
-                    $vehicle->make ? $vehicle->make->name : '',
-                    $vehicle->vehicleModel ? $vehicle->vehicleModel->name : '',
-                    $vehicle->plate_number,
-                    $vehicle->vin,
-                    $vehicle->year,
-                    $vehicle->client ? $vehicle->client->name : 'Неизвестно',
-                    $vehicle->client ? $vehicle->client->phone : ''
-                ], ';');
-            }
-            fclose($file);
-        };
+        ExportEntitiesJob::dispatch('vehicles', $validated['ids'], auth()->id());
 
-        return response()->stream($callback, 200, $headers);
+        return redirect()->back()->with('success', 'Экспорт запущен. Вы получите уведомление, когда файл будет готов.');
     }
 
     private function saveCustomFields(Vehicle $vehicle, array $customFieldsData)

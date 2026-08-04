@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\CustomFieldDefinition;
+use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -112,54 +113,8 @@ class CustomFieldController extends Controller
             'ids.*' => ['exists:custom_field_definitions,id'],
         ]);
 
-        $items = CustomFieldDefinition::whereIn('id', $validated['ids'])->get();
-        
-        $filename = 'custom_fields_export_' . date('Y-m-d_H-i-s') . '.csv';
-        $headers = [
-            "Content-type"        => "text/csv",
-            "Content-Disposition" => "attachment; filename=$filename",
-            "Pragma"              => "no-cache",
-            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
-            "Expires"             => "0"
-        ];
-        
-        $callback = function() use($items) {
-            $file = fopen('php://output', 'w');
-            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            
-            fputcsv($file, ['ID', 'Сущность', 'Ключ', 'Название', 'Тип', 'Обязательное', 'Фильтруемое', 'В списке'], ';');
-            
-            $entityTypes = [
-                'client' => 'Клиент',
-                'vehicle' => 'Автомобиль',
-                'work_order' => 'Заказ-наряд',
-                'employee' => 'Сотрудник',
-            ];
+        ExportEntitiesJob::dispatch('custom_fields', $validated['ids'], auth()->id());
 
-            $fieldTypes = [
-                'text' => 'Текст',
-                'number' => 'Число',
-                'date' => 'Дата',
-                'select' => 'Выпадающий список',
-                'checkbox' => 'Галочка (Да/Нет)',
-            ];
-
-            foreach ($items as $item) {
-                $label = is_array($item->label) ? ($item->label['ru'] ?? current($item->label)) : $item->label;
-                fputcsv($file, [
-                    $item->id,
-                    $entityTypes[$item->entity_type] ?? $item->entity_type,
-                    $item->key,
-                    $label,
-                    $fieldTypes[$item->type] ?? $item->type,
-                    $item->is_required ? 'Да' : 'Нет',
-                    $item->is_filterable ? 'Да' : 'Нет',
-                    $item->is_visible_in_list ? 'Да' : 'Нет'
-                ], ';');
-            }
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
+        return redirect()->back()->with('success', 'Экспорт запущен. Вы получите уведомление, когда файл будет готов.');
     }
 }

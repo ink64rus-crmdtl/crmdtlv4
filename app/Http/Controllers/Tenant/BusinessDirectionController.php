@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessDirection;
 use App\Models\Branch;
+use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -97,35 +98,8 @@ class BusinessDirectionController extends Controller
             'ids.*' => ['exists:business_directions,id'],
         ]);
 
-        $items = BusinessDirection::with('branches')->whereIn('id', $validated['ids'])->get();
-        
-        $filename = 'business_directions_export_' . date('Y-m-d_H-i-s') . '.csv';
-        $headers = [
-            "Content-type"        => "text/csv",
-            "Content-Disposition" => "attachment; filename=$filename",
-            "Pragma"              => "no-cache",
-            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
-            "Expires"             => "0"
-        ];
-        
-        $callback = function() use($items) {
-            $file = fopen('php://output', 'w');
-            fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            
-            fputcsv($file, ['ID', 'Название', 'Филиалы', 'Статус'], ';');
-            
-            foreach ($items as $item) {
-                $branches = $item->branches->pluck('name')->join(', ');
-                fputcsv($file, [
-                    $item->id,
-                    $item->name,
-                    $branches ?: 'Во всех филиалах',
-                    $item->is_active ? 'Активно' : 'Неактивно'
-                ], ';');
-            }
-            fclose($file);
-        };
+        ExportEntitiesJob::dispatch('business_directions', $validated['ids'], auth()->id());
 
-        return response()->stream($callback, 200, $headers);
+        return redirect()->back()->with('success', 'Экспорт запущен. Вы получите уведомление, когда файл будет готов.');
     }
 }
