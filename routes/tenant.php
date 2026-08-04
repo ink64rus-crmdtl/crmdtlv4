@@ -23,6 +23,7 @@ use App\Http\Controllers\Tenant\VehicleController;
 use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
 use App\Http\Controllers\Tenant\NotificationController;
+use App\Http\Controllers\Tenant\LookupController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -129,6 +130,11 @@ Route::middleware([
         Route::put('/settings/dictionaries/models/{model}', [DictionaryController::class, 'updateModel'])->name('settings.dictionaries.models.update');
         Route::delete('/settings/dictionaries/models/{model}', [DictionaryController::class, 'destroyModel'])->name('settings.dictionaries.models.destroy');
         Route::post('/settings/dictionaries/import', [DictionaryController::class, 'importCsv'])->name('settings.dictionaries.import');
+
+        // Настройки: Универсальные справочники (Lookups)
+        Route::post('/settings/lookups', [LookupController::class, 'store'])->name('settings.lookups.store');
+        Route::put('/settings/lookups/{lookup}', [LookupController::class, 'update'])->name('settings.lookups.update');
+        Route::delete('/settings/lookups/{lookup}', [LookupController::class, 'destroy'])->name('settings.lookups.destroy');
 
         // Настройки: CRM (Строгая валидация и т.д.)
         Route::get('/settings/crm', [CrmSettingsController::class, 'index'])->name('settings.crm.index');

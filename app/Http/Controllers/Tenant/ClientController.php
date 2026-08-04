@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
 use App\Models\ListView;
+use App\Models\Lookup;
 use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
@@ -45,6 +46,7 @@ class ClientController extends Controller
         
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
         $clientGroups = ClientGroup::orderBy('name')->get();
+        $lookups = Lookup::whereIn('type', ['client_source', 'client_role'])->where('is_active', true)->get()->groupBy('type');
 
         $tenantCountry = config('tenant.country_code', 'RU');
         $countryConfig = CountryConfigService::getForCountry($tenantCountry);
@@ -118,6 +120,7 @@ class ClientController extends Controller
             'filters' => request()->all(),
             'branches' => $branches,
             'clientGroups' => $clientGroups,
+            'lookups' => $lookups,
             'customFieldDefs' => $customFieldDefs,
             'availableColumns' => $availableColumns,
             'listView' => [
@@ -151,6 +154,7 @@ class ClientController extends Controller
         // Данные для модального окна редактирования
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
         $clientGroups = ClientGroup::orderBy('name')->get();
+        $lookups = Lookup::whereIn('type', ['client_source', 'client_role'])->where('is_active', true)->get()->groupBy('type');
 
         return Inertia::render('CRM/Clients/Show', [
             'client' => $client,
@@ -159,6 +163,7 @@ class ClientController extends Controller
             'countryConfig' => $countryConfig,
             'branches' => $branches,
             'clientGroups' => $clientGroups,
+            'lookups' => $lookups,
             'customFieldDefs' => $customFieldDefs,
         ]);
     }
@@ -170,6 +175,7 @@ class ClientController extends Controller
             'client_group_id' => ['nullable', 'exists:client_groups,id'],
             'is_lead' => ['boolean'],
             'type' => ['required', 'string', 'in:b2c,b2b'],
+            'role' => ['nullable', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],
@@ -189,6 +195,7 @@ class ClientController extends Controller
                 'client_group_id' => $validated['client_group_id'] ?? null,
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
+                'role' => $validated['role'] ?? null,
                 'name' => $validated['name'],
                 'alias' => $validated['alias'] ?? null,
                 'phone' => $validated['phone'] ?? null,
@@ -216,6 +223,7 @@ class ClientController extends Controller
             'client_group_id' => ['nullable', 'exists:client_groups,id'],
             'is_lead' => ['boolean'],
             'type' => ['required', 'string', 'in:b2c,b2b'],
+            'role' => ['nullable', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],
@@ -235,6 +243,7 @@ class ClientController extends Controller
                 'client_group_id' => $validated['client_group_id'] ?? null,
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
+                'role' => $validated['role'] ?? null,
                 'name' => $validated['name'],
                 'alias' => $validated['alias'] ?? null,
                 'phone' => $validated['phone'] ?? null,

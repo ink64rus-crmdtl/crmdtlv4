@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\LegalEntity;
 use App\Services\CountryConfigService;
+use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,12 +15,26 @@ class LegalEntityController extends Controller
 {
     public function index(): Response
     {
-        $legalEntities = LegalEntity::with('accounts')->orderBy('id', 'desc')->get();
+        $query = LegalEntity::with('accounts');
+        
+        $query = QueryFilterService::apply(
+            $query,
+            request()->all(),
+            ['name', 'tax_id']
+        );
+
+        if (!request()->has('sort_by')) {
+            $query->orderBy('id', 'desc');
+        }
+
+        $legalEntities = $query->paginate(15)->withQueryString();
+        
         $tenantCountry = config('tenant.country_code', 'RU');
         $countryConfig = CountryConfigService::getForCountry($tenantCountry);
 
         return Inertia::render('Settings/LegalEntities/Index', [
             'legalEntities' => $legalEntities,
+            'filters' => request()->all(),
             'tenantCountry' => $tenantCountry,
             'countryConfig' => $countryConfig,
         ]);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\LegalEntity;
+use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,11 +15,25 @@ class BranchController extends Controller
 {
     public function index(): Response
     {
-        $branchesList = Branch::with('legalEntity')->orderBy('id', 'desc')->get();
+        $query = Branch::with('legalEntity');
+        
+        $query = QueryFilterService::apply(
+            $query,
+            request()->all(),
+            ['name', 'city', 'address', 'phone']
+        );
+
+        if (!request()->has('sort_by')) {
+            $query->orderBy('id', 'desc');
+        }
+
+        $branchesList = $query->paginate(15)->withQueryString();
+        
         $legalEntities = LegalEntity::where('is_active', true)->get(['id', 'name']);
 
         return Inertia::render('Settings/Branches/Index', [
             'branchesList' => $branchesList,
+            'filters' => request()->all(),
             'legalEntities' => $legalEntities,
         ]);
     }

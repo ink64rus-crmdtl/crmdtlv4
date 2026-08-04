@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\CustomFieldDefinition;
+use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -14,10 +15,23 @@ class CustomFieldController extends Controller
 {
     public function index(): Response
     {
-        $customFields = CustomFieldDefinition::orderBy('entity_type')->orderBy('sort_order')->get();
+        $query = CustomFieldDefinition::query();
+        
+        $query = QueryFilterService::apply(
+            $query,
+            request()->all(),
+            ['label', 'key', 'entity_type']
+        );
+
+        if (!request()->has('sort_by')) {
+            $query->orderBy('entity_type')->orderBy('sort_order');
+        }
+
+        $customFields = $query->paginate(15)->withQueryString();
 
         return Inertia::render('Settings/CustomFields/Index', [
             'customFields' => $customFields,
+            'filters' => request()->all(),
         ]);
     }
 

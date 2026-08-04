@@ -3,12 +3,16 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import DataTableToolbar from '@/Components/DataTableToolbar.vue';
+import Pagination from '@/Components/Pagination.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 
 const props = defineProps({
-    legalEntities: Array,
+    legalEntities: Object,
+    filters: Object,
     tenantCountry: String,
     countryConfig: Object,
 });
@@ -20,7 +24,7 @@ const activeTab = ref('main'); // 'main' or 'accounts'
 // Реактивное вычисление текущего юрлица для мгновенного обновления счетов
 const editingEntity = computed(() => {
     if (!editingEntityId.value) return null;
-    return props.legalEntities.find(e => e.id === editingEntityId.value) || null;
+    return props.legalEntities.data.find(e => e.id === editingEntityId.value) || null;
 });
 
 // Состояние под-модалки счетов
@@ -46,14 +50,26 @@ const accountForm = useForm({
     is_active: true,
 });
 
+// --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
+const search = ref(props.filters?.search || '');
+
+const fetchFiltered = useDebounceFn(() => {
+    router.get(route('settings.legal-entities.index'), {
+        search: search.value,
+    }, { preserveState: true, preserveScroll: true });
+}, 300);
+
+watch(search, () => fetchFiltered());
+// ------------------------------------
+
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
 
 const selectAll = computed({
-    get: () => props.legalEntities.length > 0 && selectedIds.value.length === props.legalEntities.length,
+    get: () => props.legalEntities.data.length > 0 && selectedIds.value.length === props.legalEntities.data.length,
     set: (value) => {
         if (value) {
-            selectedIds.value = props.legalEntities.map(e => e.id);
+            selectedIds.value = props.legalEntities.data.map(e => e.id);
         } else {
             selectedIds.value = [];
         }
@@ -219,13 +235,6 @@ const deleteAccount = (account) => {
                         Управление юридическими лицами компании и их банковскими счетами
                     </p>
                 </div>
-                <button
-                    @click="openModal()"
-                    class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
-                >
-                    <i class="ri-add-line text-base"></i>
-                    Добавить юрлицо
-                </button>
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
@@ -239,6 +248,21 @@ const deleteAccount = (account) => {
 
             <!-- Table Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <DataTableToolbar
+                    v-model="search"
+                    :has-filters="false"
+                    placeholder="Поиск по названию или ИНН..."
+                >
+                    <template #actions>
+                        <button
+                            @click="openModal()"
+                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
+                        >
+                            <i class="ri-add-line text-base"></i>
+                            Добавить юрлицо
+                        </button>
+                    </template>
+                </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -255,7 +279,7 @@ const deleteAccount = (account) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="entity in legalEntities" :key="entity.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="entity in legalEntities.data" :key="entity.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="entity.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
@@ -303,7 +327,7 @@ const deleteAccount = (account) => {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="legalEntities.length === 0">
+                            <tr v-if="legalEntities.data.length === 0">
                                 <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Юридические лица еще не добавлены. Нажмите "Добавить юрлицо".
                                 </td>
@@ -311,6 +335,7 @@ const deleteAccount = (account) => {
                         </tbody>
                     </table>
                 </div>
+                <Pagination :meta="legalEntities" />
             </div>
         </div>
 

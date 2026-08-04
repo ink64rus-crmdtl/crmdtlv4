@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessDirection;
 use App\Models\Branch;
+use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,11 +16,25 @@ class BusinessDirectionController extends Controller
 {
     public function index(): Response
     {
-        $businessDirections = BusinessDirection::with('branches')->orderBy('id', 'desc')->get();
+        $query = BusinessDirection::with('branches');
+        
+        $query = QueryFilterService::apply(
+            $query,
+            request()->all(),
+            ['name']
+        );
+
+        if (!request()->has('sort_by')) {
+            $query->orderBy('id', 'desc');
+        }
+
+        $businessDirections = $query->paginate(15)->withQueryString();
+        
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
 
         return Inertia::render('Settings/BusinessDirections/Index', [
             'businessDirections' => $businessDirections,
+            'filters' => request()->all(),
             'branches' => $branches,
         ]);
     }

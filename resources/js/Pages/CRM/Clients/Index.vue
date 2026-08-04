@@ -5,6 +5,7 @@ import PageHelper from '@/Components/PageHelper.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import CreatableSelect from '@/Components/CreatableSelect.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -15,6 +16,7 @@ const props = defineProps({
     filters: Object,
     branches: Array,
     clientGroups: Array,
+    lookups: Object,
     customFieldDefs: Array,
     availableColumns: Array,
     listView: Object,
@@ -196,6 +198,7 @@ const form = useForm({
     client_group_id: '',
     is_lead: false,
     type: 'b2c',
+    role: '',
     name: '',
     alias: '',
     phone: '',
@@ -250,6 +253,7 @@ const openModal = (client = null) => {
         form.client_group_id = client.client_group_id || '';
         form.is_lead = Boolean(client.is_lead);
         form.type = client.type;
+        form.role = client.role || '';
         form.name = client.name;
         form.alias = client.alias || '';
         form.phone = client.phone || '';
@@ -273,6 +277,7 @@ const openModal = (client = null) => {
         form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
         form.is_lead = false;
         form.type = 'b2c';
+        form.role = '';
         form.discount_percent = 0;
         form.requisites = {};
         
@@ -742,7 +747,7 @@ const formatMoney = (amount) => {
                     
                     <!-- Вкладка 1: Основные данные -->
                     <div v-show="activeTab === 'main'" class="p-6 space-y-5">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип клиента <span class="text-danger">*</span></label>
                                 <select 
@@ -755,7 +760,16 @@ const formatMoney = (amount) => {
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа / Роль</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
+                                <CreatableSelect 
+                                    v-model="form.role" 
+                                    :options="lookups.client_role?.map(l => l.value) || []" 
+                                    lookupType="client_role" 
+                                    placeholder="Выберите роль..." 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа</label>
                                 <div class="flex gap-2">
                                     <select 
                                         v-model="form.client_group_id" 
@@ -839,11 +853,11 @@ const formatMoney = (amount) => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник привлечения</label>
-                                <input 
+                                <CreatableSelect 
                                     v-model="form.source" 
-                                    type="text" 
+                                    :options="lookups.client_source?.map(l => l.value) || []" 
+                                    lookupType="client_source" 
                                     placeholder="Авито, 2GIS, Рекомендация..." 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
                                 />
                             </div>
                         </div>

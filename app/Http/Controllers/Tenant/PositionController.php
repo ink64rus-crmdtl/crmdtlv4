@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Position;
+use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,10 +14,23 @@ class PositionController extends Controller
 {
     public function index(): Response
     {
-        $positions = Position::orderBy('id', 'desc')->get();
+        $query = Position::query();
+        
+        $query = QueryFilterService::apply(
+            $query,
+            request()->all(),
+            ['name']
+        );
+
+        if (!request()->has('sort_by')) {
+            $query->orderBy('id', 'desc');
+        }
+
+        $positions = $query->paginate(15)->withQueryString();
 
         return Inertia::render('HR/Positions/Index', [
             'positions' => $positions,
+            'filters' => request()->all(),
         ]);
     }
 

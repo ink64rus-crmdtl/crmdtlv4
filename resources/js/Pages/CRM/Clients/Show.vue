@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import CreatableSelect from '@/Components/CreatableSelect.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -10,6 +11,7 @@ const props = defineProps({
     countryConfig: Object,
     branches: Array,
     clientGroups: Array,
+    lookups: Object,
     customFieldDefs: Array,
 });
 
@@ -21,6 +23,7 @@ const clientForm = useForm({
     client_group_id: '',
     is_lead: false,
     type: 'b2c',
+    role: '',
     name: '',
     alias: '',
     phone: '',
@@ -40,6 +43,7 @@ const openClientModal = () => {
     clientForm.client_group_id = client.client_group_id || '';
     clientForm.is_lead = Boolean(client.is_lead);
     clientForm.type = client.type;
+    clientForm.role = client.role || '';
     clientForm.name = client.name;
     clientForm.alias = client.alias || '';
     clientForm.phone = client.phone || '';
@@ -454,7 +458,7 @@ const currentCountrySchema = computed(() => {
                     
                     <!-- Вкладка 1: Основные данные -->
                     <div v-show="activeClientTab === 'main'" class="p-6 space-y-5">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип клиента <span class="text-danger">*</span></label>
                                 <select 
@@ -467,7 +471,16 @@ const currentCountrySchema = computed(() => {
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа / Роль</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
+                                <CreatableSelect 
+                                    v-model="clientForm.role" 
+                                    :options="lookups.client_role?.map(l => l.value) || []" 
+                                    lookupType="client_role" 
+                                    placeholder="Выберите роль..." 
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа</label>
                                 <select 
                                     v-model="clientForm.client_group_id" 
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
@@ -546,11 +559,11 @@ const currentCountrySchema = computed(() => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник привлечения</label>
-                                <input 
+                                <CreatableSelect 
                                     v-model="clientForm.source" 
-                                    type="text" 
+                                    :options="lookups.client_source?.map(l => l.value) || []" 
+                                    lookupType="client_source" 
                                     placeholder="Авито, 2GIS, Рекомендация..." 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
                                 />
                             </div>
                         </div>

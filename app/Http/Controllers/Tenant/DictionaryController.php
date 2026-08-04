@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
+use App\Models\Lookup;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -14,9 +15,11 @@ class DictionaryController extends Controller
     public function index(): Response
     {
         $makes = VehicleMake::with('models')->orderBy('name')->get();
+        $lookups = Lookup::orderBy('value')->get()->groupBy('type');
 
         return Inertia::render('Settings/Dictionaries/Index', [
             'makes' => $makes,
+            'lookups' => $lookups,
         ]);
     }
 

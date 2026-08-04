@@ -1,12 +1,16 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import DataTableToolbar from '@/Components/DataTableToolbar.vue';
+import Pagination from '@/Components/Pagination.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 
 const props = defineProps({
-    positions: Array,
+    positions: Object,
+    filters: Object,
 });
 
 const isModalOpen = ref(false);
@@ -17,14 +21,26 @@ const form = useForm({
     is_active: true,
 });
 
+// --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
+const search = ref(props.filters?.search || '');
+
+const fetchFiltered = useDebounceFn(() => {
+    router.get(route('hr.positions.index'), {
+        search: search.value,
+    }, { preserveState: true, preserveScroll: true });
+}, 300);
+
+watch(search, () => fetchFiltered());
+// ------------------------------------
+
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
 
 const selectAll = computed({
-    get: () => props.positions.length > 0 && selectedIds.value.length === props.positions.length,
+    get: () => props.positions.data.length > 0 && selectedIds.value.length === props.positions.data.length,
     set: (value) => {
         if (value) {
-            selectedIds.value = props.positions.map(p => p.id);
+            selectedIds.value = props.positions.data.map(p => p.id);
         } else {
             selectedIds.value = [];
         }
@@ -125,18 +141,6 @@ const deletePosition = (position) => {
                         Управление списком должностей для сотрудников компании.
                     </p>
                 </div>
-                <div class="flex gap-3">
-                    <a :href="route('hr.employees.index')" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
-                        К списку сотрудников
-                    </a>
-                    <button
-                        @click="openModal()"
-                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5"
-                    >
-                        <i class="ri-add-line text-base"></i>
-                        Добавить должность
-                    </button>
-                </div>
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
@@ -150,6 +154,24 @@ const deletePosition = (position) => {
 
             <!-- Table Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <DataTableToolbar
+                    v-model="search"
+                    :has-filters="false"
+                    placeholder="Поиск по названию..."
+                >
+                    <template #actions>
+                        <a :href="route('hr.employees.index')" class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                            К списку сотрудников
+                        </a>
+                        <button
+                            @click="openModal()"
+                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
+                        >
+                            <i class="ri-add-line text-base"></i>
+                            Добавить должность
+                        </button>
+                    </template>
+                </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -163,7 +185,7 @@ const deletePosition = (position) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="position in positions" :key="position.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="position in positions.data" :key="position.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="position.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
@@ -200,7 +222,7 @@ const deletePosition = (position) => {
                                     </button>
                                 </td>
                             </tr>
-                            <tr v-if="positions.length === 0">
+                            <tr v-if="positions.data.length === 0">
                                 <td colspan="4" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Должности еще не добавлены. Нажмите "Добавить должность".
                                 </td>
@@ -208,6 +230,7 @@ const deletePosition = (position) => {
                         </tbody>
                     </table>
                 </div>
+                <Pagination :meta="positions" />
             </div>
         </div>
 
