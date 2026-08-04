@@ -22,6 +22,7 @@ use App\Http\Controllers\Tenant\ClientController;
 use App\Http\Controllers\Tenant\VehicleController;
 use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
+use App\Http\Controllers\Tenant\NotificationController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -51,6 +52,11 @@ Route::middleware([
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
         
+        // Уведомления и экспорт
+        Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+        Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
+        Route::get('/exports/download/{filename}', [NotificationController::class, 'downloadExport'])->name('exports.download');
+
         // Системный раздел (Логи и Дамп)
         Route::get('/system', [SystemController::class, 'index'])->name('system.index');
         Route::get('/dump', [DumpController::class, 'download'])->name('dump');
