@@ -6,7 +6,7 @@ import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
-import debounce from 'lodash/debounce';
+import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 
 const props = defineProps({
@@ -54,7 +54,7 @@ if (props.customFieldDefs) {
 const filtersForm = reactive(initialFilters);
 const isFiltersOpen = ref(false);
 
-const fetchFiltered = debounce(() => {
+const fetchFiltered = useDebounceFn(() => {
     router.get(route('hr.employees.index'), {
         search: search.value,
         filters: filtersForm,
@@ -542,10 +542,10 @@ const employeeTypes = {
                     </div>
                 </div>
                 <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                    <button type="button" @click="closeColumnsModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                    <button type="button" @click="closeColumnsModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
                         Отмена
                     </button>
-                    <button type="button" @click="saveColumns()" :disabled="columnsForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                    <button type="button" @click="saveColumns()" :disabled="columnsForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
                         Сохранить вид
                     </button>
                 </div>

@@ -7,7 +7,7 @@ import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
-import debounce from 'lodash/debounce';
+import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 
 const props = defineProps({
@@ -48,7 +48,7 @@ props.customFieldDefs.filter(f => f.is_filterable).forEach(def => {
 const filtersForm = reactive(initialFilters);
 const isFiltersOpen = ref(false);
 
-const fetchFiltered = debounce(() => {
+const fetchFiltered = useDebounceFn(() => {
     router.get(route('crm.clients.index'), {
         search: search.value,
         filters: filtersForm,
@@ -566,10 +566,10 @@ const formatMoney = (amount) => {
                     </div>
                 </div>
                 <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                    <button type="button" @click="closeColumnsModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
+                    <button type="button" @click="closeColumnsModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
                         Отмена
                     </button>
-                    <button type="button" @click="saveColumns()" :disabled="columnsForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                    <button type="button" @click="saveColumns()" :disabled="columnsForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
                         Сохранить вид
                     </button>
                 </div>
@@ -1010,49 +1010,9 @@ const formatMoney = (amount) => {
                         </div>
 
                     </div>
-
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
-                            Отмена
-                        </button>
-                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
-                            Сохранить
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Модальное окно добавления Группы (z-index выше основной модалки) -->
-        <div v-if="isGroupModalOpen" class="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-2xl dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-sm flex flex-col">
-                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новая группа</h3>
-                    <button @click="closeGroupModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
-                        <i class="ri-close-line text-xl"></i>
-                    </button>
-                </div>
-                <form @submit.prevent="submitGroup" class="flex flex-col">
-                    <div class="p-6 space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
-                            <input v-model="groupForm.name" type="text" required placeholder="Например: VIP" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 focus:ring-0" />
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет метки</label>
-                            <div class="flex flex-wrap gap-2">
-                                <label v-for="color in groupColors" :key="color.value" class="cursor-pointer">
-                                    <input type="radio" v-model="groupForm.color" :value="color.value" class="sr-only" />
-                                    <span :class="[color.class, groupForm.color === color.value ? 'ring-2 ring-offset-1 ring-gray-400 dark:ring-gray-500' : '', 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider transition-all']">
-                                        {{ color.label }}
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeGroupModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                        <button type="submit" :disabled="groupForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
                     </div>
                 </form>
             </div>

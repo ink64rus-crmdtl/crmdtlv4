@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\UserScopeCachingService;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -32,6 +33,10 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
 
         $request->session()->regenerate();
+
+        if (tenancy()->initialized && $request->user()) {
+            UserScopeCachingService::cacheScopes($request->user());
+        }
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

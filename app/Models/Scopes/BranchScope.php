@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Scope;
 use App\Services\BranchContext;
 use App\Services\LegalEntityContext;
+use App\Services\UserScopeCachingService;
 
 class BranchScope implements Scope
 {
@@ -23,9 +24,7 @@ class BranchScope implements Scope
             // отдаем записи по всем филиалам этого Юрлица, доступным пользователю
             if (auth()->check()) {
                 $user = auth()->user();
-                $availableBranches = $user->isAdmin() 
-                    ? \App\Models\Branch::where('legal_entity_id', $legalEntityId)->pluck('id')
-                    : $user->availableBranches()->where('legal_entity_id', $legalEntityId)->pluck('branches.id');
+                $availableBranches = $user->availableBranches()->where('legal_entity_id', $legalEntityId)->pluck('id')->toArray();
                 
                 $builder->whereIn($model->getTable() . '.branch_id', $availableBranches);
             }
@@ -33,8 +32,10 @@ class BranchScope implements Scope
             // Если выбрано "Все Юрлица" и "Все Филиалы"
             // Отдаем записи по всем филиалам, доступным пользователю (ABAC)
             if (auth()->check() && !auth()->user()->isAdmin()) {
-                $availableBranches = auth()->user()->availableBranches()->pluck('branches.id');
-                $builder->whereIn($model->getTable() . '.branch_id', $availableBranches);
+                $ids = UserScopeCachingService::getScopes(auth()->user(), 'branches');
+                if (!in_array('*', $ids)) {
+                    $builder->whereIn($model->getTable() . '.branch_id', $ids);
+                }
             }
         }
     }
