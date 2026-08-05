@@ -13,6 +13,7 @@ const props = defineProps({
     serviceCategories: { type: Array, default: () => [] },
     productCategories: { type: Array, default: () => [] },
     businessDirections: { type: Array, default: () => [] },
+    pricingBasis: { type: String, default: 'none' },
 });
 
 const activeTab = ref('makes'); // 'makes', 'models', 'service_categories', 'product_categories', 'import', or lookup key
@@ -140,29 +141,22 @@ const moveStatus = (lookup, direction) => {
     }, { preserveScroll: true, preserveState: true });
 };
 
-const existingBodyTypes = computed(() => {
-    const types = new Set();
-    (props.makes || []).forEach(make => {
-        if (make.models) {
-            make.models.forEach(model => {
-                if (model.body_type) types.add(model.body_type);
-            });
-        }
-    });
-    return Array.from(types).sort();
-});
+// Подсказки берутся из справочника (lookups), а не из уже введённых значений моделей —
+// иначе значение, добавленное в Справочниках, но ещё не использованное ни в одной модели,
+// не появлялось бы в подсказках при заполнении формы модели.
+const existingBodyTypes = computed(() => (props.lookups['vehicle_body'] || []).map(l => l.value).sort());
 
-const existingCategories = computed(() => {
-    const categories = new Set();
-    (props.makes || []).forEach(make => {
-        if (make.models) {
-            make.models.forEach(model => {
-                if (model.category) categories.add(model.category);
-            });
-        }
-    });
-    return Array.from(categories).sort();
-});
+const existingCategories = computed(() => (props.lookups['vehicle_class'] || []).map(l => l.value).sort());
+
+const pricingBasisLabels = {
+    vehicle_body: 'Типы кузова',
+    vehicle_class: 'Классы автомобилей',
+};
+
+const pricingImpactFor = (tabKey) => {
+    if (tabKey !== 'vehicle_body' && tabKey !== 'vehicle_class') return null;
+    return props.pricingBasis === tabKey;
+};
 
 const openMakeModal = (make = null) => {
     editingMake.value = make;
@@ -557,10 +551,37 @@ const getLocalizedLabel = (label) => {
                         <!-- Универсальные справочники -->
                         <div v-show="Object.keys(lookupTypes).includes(activeTab) && activeTab !== 'work_order_status'" class="flex flex-col">
                             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
-                                <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ lookupTypes[activeTab] }}</h3>
+                                <div class="flex items-center gap-3">
+                                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ lookupTypes[activeTab] }}</h3>
+                                    <Link
+                                        v-if="pricingImpactFor(activeTab) !== null"
+                                        :href="route('settings.crm.index')"
+                                        :class="[
+                                            pricingImpactFor(activeTab) ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+                                            'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium hover:opacity-80 transition-opacity'
+                                        ]"
+                                        :title="pricingImpactFor(activeTab) ? 'Настроить в Настройки → CRM' : 'Включить в Настройки → CRM'"
+                                    >
+                                        <i :class="pricingImpactFor(activeTab) ? 'ri-price-tag-3-fill' : 'ri-price-tag-3-line'"></i>
+                                        {{ pricingImpactFor(activeTab) ? 'Влияет на цену' : 'Не используется для цены' }}
+                                    </Link>
+                                </div>
                                 <button @click="openLookupModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm">
                                     <i class="ri-add-line"></i> Добавить запись
                                 </button>
+                            </div>
+                            <div v-if="pricingImpactFor(activeTab) !== null" class="px-6 py-3 bg-info/5 border-b border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
+                                <i class="ri-information-line text-info mr-1"></i>
+                                <template v-if="pricingImpactFor(activeTab)">
+                                    Этот список используется для ценообразования: в прайс-листе услуг для каждого значения можно задать отдельную цену, она подставится в заказ-наряд по автомобилю клиента.
+                                </template>
+                                <template v-else-if="pricingBasis === 'none'">
+                                    Этот список можно использовать для ценообразования услуг (отдельная цена на каждое значение). Сейчас ценообразование по кузову/классу выключено — включить можно в
+                                </template>
+                                <template v-else>
+                                    Этот список можно использовать для ценообразования услуг (отдельная цена на каждое значение). Сейчас за это отвечает список «{{ pricingBasisLabels[pricingBasis] }}» — влиять может только один список одновременно, переключить можно в
+                                </template>
+                                <Link v-if="!pricingImpactFor(activeTab)" :href="route('settings.crm.index')" class="text-primary hover:underline font-medium">Настройки → CRM</Link>.
                             </div>
                             <div class="overflow-x-auto w-full">
                                 <table class="min-w-full text-left whitespace-nowrap">

@@ -60,13 +60,14 @@ class ServiceController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'price' => ['required', 'numeric', 'min:0'],
             'prices' => ['nullable', 'array'],
+            'prices.*' => ['nullable', 'numeric', 'min:0'],
             'duration_minutes' => ['required', 'integer', 'min:0'],
             'is_active' => ['boolean'],
         ]);
 
         Service::create([
-            'service_category_id' => $validated['service_category_id'],
-            'business_direction_id' => $validated['business_direction_id'],
+            'service_category_id' => $validated['service_category_id'] ?? null,
+            'business_direction_id' => $validated['business_direction_id'] ?? null,
             'name' => [app()->getLocale() => $validated['name']],
             'price' => (int) round($validated['price'] * 100),
             'prices' => $validated['prices'] ?? null,
@@ -85,6 +86,7 @@ class ServiceController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'price' => ['required', 'numeric', 'min:0'],
             'prices' => ['nullable', 'array'],
+            'prices.*' => ['nullable', 'numeric', 'min:0'],
             'duration_minutes' => ['required', 'integer', 'min:0'],
             'is_active' => ['boolean'],
         ]);
@@ -93,8 +95,8 @@ class ServiceController extends Controller
         $name[app()->getLocale()] = $validated['name'];
 
         $service->update([
-            'service_category_id' => $validated['service_category_id'],
-            'business_direction_id' => $validated['business_direction_id'],
+            'service_category_id' => $validated['service_category_id'] ?? null,
+            'business_direction_id' => $validated['business_direction_id'] ?? null,
             'name' => $name,
             'price' => (int) round($validated['price'] * 100),
             'prices' => $validated['prices'] ?? null,

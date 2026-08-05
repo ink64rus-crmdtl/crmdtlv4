@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Lookup;
 use App\Models\WorkOrder;
+use App\Models\VehicleModel;
+use App\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -88,6 +90,25 @@ class LookupController extends Controller
 
         if ($lookup->type === 'work_order_status' && WorkOrder::where('status', $lookup->value)->exists()) {
             return redirect()->back()->withErrors(['error' => 'Статус используется в заказ-нарядах и не может быть удалён.']);
+        }
+
+        if ($lookup->type === 'vehicle_body' || $lookup->type === 'vehicle_class') {
+            $column = $lookup->type === 'vehicle_body' ? 'body_type' : 'category';
+
+            if (VehicleModel::where($column, $lookup->value)->exists()) {
+                return redirect()->back()->withErrors(['error' => 'Значение используется в моделях автомобилей и не может быть удалено.']);
+            }
+
+            // Ключи JSON-матрицы цен — произвольные строки из справочника, поэтому сравниваем
+            // в PHP, а не через JSON_CONTAINS_PATH (значение lookup нельзя безопасно подставить
+            // в JSON-путь на уровне SQL — оно не экранируется от кавычек).
+            $usedInPrices = Service::whereNotNull('prices')
+                ->get(['id', 'prices'])
+                ->contains(fn (Service $service) => array_key_exists($lookup->value, $service->prices ?? []));
+
+            if ($usedInPrices) {
+                return redirect()->back()->withErrors(['error' => 'Для этого значения задана цена в прайс-листе — сначала уберите её из услуг.']);
+            }
         }
 
         $lookup->delete();

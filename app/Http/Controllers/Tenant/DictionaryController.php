@@ -9,6 +9,7 @@ use App\Models\Lookup;
 use App\Models\ServiceCategory;
 use App\Models\ProductCategory;
 use App\Models\BusinessDirection;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -22,6 +23,7 @@ class DictionaryController extends Controller
         $serviceCategories = ServiceCategory::with('businessDirection')->orderBy('id')->get();
         $productCategories = ProductCategory::orderBy('id')->get();
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
+        $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
 
         return Inertia::render('Settings/Dictionaries/Index', [
             'makes' => $makes,
@@ -29,6 +31,7 @@ class DictionaryController extends Controller
             'serviceCategories' => $serviceCategories,
             'productCategories' => $productCategories,
             'businessDirections' => $businessDirections,
+            'pricingBasis' => $pricingBasis,
         ]);
     }
 

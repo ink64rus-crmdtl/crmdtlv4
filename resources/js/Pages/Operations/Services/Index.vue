@@ -108,6 +108,14 @@ const formatMoney = (amount) => {
     return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format(amount / 100);
 };
 
+// Когда включено ценообразование по справочнику — в таблице появляется отдельная
+// колонка на каждое его значение (плюс колонка "База" как фолбэк), вместо одной
+// скрытой за модалкой "Базовой цены".
+const matrixLookups = computed(() => props.lookups?.[props.pricingBasis] || []);
+const matrixActive = computed(() => props.pricingBasis !== 'none' && matrixLookups.value.length > 0);
+const matrixBasisLabel = computed(() => props.pricingBasis === 'vehicle_body' ? 'Тип кузова' : 'Класс авто');
+const totalColumns = computed(() => 7 + (matrixActive.value ? matrixLookups.value.length + 1 : 1));
+
 const openModal = (service = null) => {
     editingService.value = service;
     pricesInput.value = {};
@@ -238,7 +246,7 @@ const submitCategory = () => {
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
+                            <tr v-if="!matrixActive">
                                 <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
@@ -250,6 +258,27 @@ const submitCategory = () => {
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
+                            <!-- Динамические колонки цены: одна на каждое значение активного справочника (Настройки → CRM → База ценообразования) -->
+                            <template v-else>
+                                <tr>
+                                    <th rowspan="2" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center align-bottom">
+                                        <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    </th>
+                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Категория</th>
+                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Направление</th>
+                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Название услуги</th>
+                                    <th :colspan="matrixLookups.length + 1" class="py-2 px-6 text-xs font-bold text-info uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-center bg-info/5">
+                                        Цена: {{ matrixBasisLabel }}
+                                    </th>
+                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right align-bottom">Нормо-время</th>
+                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Статус</th>
+                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right align-bottom">Действия</th>
+                                </tr>
+                                <tr>
+                                    <th class="py-2 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right" title="Используется, если для конкретного значения цена не задана">База</th>
+                                    <th v-for="lookup in matrixLookups" :key="lookup.id" class="py-2 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">{{ lookup.value }}</th>
+                                </tr>
+                            </template>
                         </thead>
                         <tbody>
                             <tr v-for="service in services.data" :key="service.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
@@ -271,15 +300,18 @@ const submitCategory = () => {
                                 <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
                                     {{ getLocalizedLabel(service.name) }}
                                 </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    <div v-if="pricingBasis !== 'none' && service.prices && Object.keys(service.prices).length > 0">
-                                        <span class="text-xs text-info font-medium mr-2">Матрица цен</span>
-                                        {{ formatMoney(service.price) }}
-                                    </div>
-                                    <div v-else>
-                                        {{ formatMoney(service.price) }}
-                                    </div>
+                                <td v-if="!matrixActive" class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                    {{ formatMoney(service.price) }}
                                 </td>
+                                <template v-else>
+                                    <td class="py-4 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                        {{ formatMoney(service.price) }}
+                                    </td>
+                                    <td v-for="lookup in matrixLookups" :key="lookup.id" class="py-4 px-4 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                        <span v-if="service.prices && service.prices[lookup.value] !== undefined" class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(service.prices[lookup.value]) }}</span>
+                                        <span v-else class="text-gray-400" title="Цена не задана — используется базовая">= база</span>
+                                    </td>
+                                </template>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">
                                     {{ service.duration_minutes }} мин
                                 </td>
@@ -294,7 +326,7 @@ const submitCategory = () => {
                                 </td>
                             </tr>
                             <tr v-if="services.data.length === 0">
-                                <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td :colspan="totalColumns" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Услуги еще не добавлены.
                                 </td>
                             </tr>
