@@ -85,6 +85,78 @@ class AppointmentController extends Controller
         ]);
     }
 
+    /**
+     * JSON-фид для FullCalendar (Фаза 9.1). Возвращает записи, пересекающие видимый
+     * диапазон календаря, с временем уже переведённым в пояс филиала (виджет
+     * настроен на timeZone:'local' — отображает переданные строки как есть,
+     * без повторной конвертации браузером). Диапазон запроса намеренно расширен
+     * на сутки в обе стороны — FullCalendar присылает границы без метки часового
+     * пояса, а сами записи могут быть в разных поясах у разных филиалов тенанта.
+     */
+    public function calendarEvents(Request $request)
+    {
+        $validated = $request->validate([
+            'start' => ['required', 'date'],
+            'end' => ['required', 'date'],
+        ]);
+
+        $rangeStart = Carbon::parse($validated['start'])->subDay();
+        $rangeEnd = Carbon::parse($validated['end'])->addDay();
+
+        $appointments = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'items'])
+            ->where('start_at', '<', $rangeEnd)
+            ->where('end_at', '>', $rangeStart)
+            ->get();
+
+        $statusColors = Lookup::where('type', 'appointment_status')->pluck('color', 'value');
+        $colorMap = [
+            'info' => '#0dcaf0', 'primary' => '#7c3aed', 'success' => '#16a34a',
+            'danger' => '#dc2626', 'warning' => '#f59e0b', 'gray' => '#9ca3af',
+        ];
+
+        $events = $appointments->map(function (Appointment $appointment) use ($statusColors, $colorMap) {
+            $tz = TimezoneResolver::forBranch($appointment->branch_id);
+            $startLocal = $appointment->start_at->copy()->setTimezone($tz);
+            $endLocal = $appointment->end_at->copy()->setTimezone($tz);
+            $color = $colorMap[$statusColors[$appointment->status] ?? 'gray'] ?? '#9ca3af';
+
+            $title = $appointment->client?->name ?: 'Без клиента';
+            if ($appointment->vehicle?->plate_number) {
+                $title .= ' — ' . $appointment->vehicle->plate_number;
+            }
+
+            return [
+                'id' => $appointment->id,
+                'title' => $title,
+                'start' => $startLocal->format('Y-m-d\TH:i:s'),
+                'end' => $endLocal->format('Y-m-d\TH:i:s'),
+                'color' => $color,
+                'extendedProps' => [
+                    'appointment' => [
+                        'id' => $appointment->id,
+                        'branch_id' => $appointment->branch_id,
+                        'client_id' => $appointment->client_id,
+                        'vehicle_id' => $appointment->vehicle_id,
+                        'employee_id' => $appointment->employee_id,
+                        'status' => $appointment->status,
+                        'comment' => $appointment->comment,
+                        'start_at_local' => $startLocal->format('Y-m-d\TH:i'),
+                        'end_at_local' => $endLocal->format('Y-m-d\TH:i'),
+                        'items' => $appointment->items->map(fn ($item) => [
+                            'itemable_type' => $item->itemable_type,
+                            'itemable_id' => $item->itemable_id,
+                            'name' => $item->name,
+                            'quantity' => $item->quantity,
+                            'price' => $item->price,
+                        ]),
+                    ],
+                ],
+            ];
+        });
+
+        return response()->json($events);
+    }
+
     public function store(Request $request)
     {
         $validated = $this->validateAppointment($request);

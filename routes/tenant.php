@@ -229,6 +229,7 @@ Route::middleware([
 
         // Operations: Записи (Фаза 9.2)
         Route::get('/operations/appointments', [AppointmentController::class, 'index'])->name('operations.appointments.index');
+        Route::get('/operations/appointments/calendar-events', [AppointmentController::class, 'calendarEvents'])->name('operations.appointments.calendar-events');
         Route::post('/operations/appointments', [AppointmentController::class, 'store'])->name('operations.appointments.store');
         Route::put('/operations/appointments/{appointment}', [AppointmentController::class, 'update'])->name('operations.appointments.update');
         Route::delete('/operations/appointments/{appointment}', [AppointmentController::class, 'destroy'])->name('operations.appointments.destroy');

@@ -7,9 +7,15 @@ import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
+import FullCalendar from '@fullcalendar/vue3';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import ruLocale from '@fullcalendar/core/locales/ru';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import axios from 'axios';
 
 const props = defineProps({
     appointments: Object,
@@ -183,6 +189,60 @@ const deleteAppointment = (appointment) => {
 const changeStatus = (appointment, status) => {
     router.patch(route('operations.appointments.status.update', appointment.id), { status });
 };
+
+// --- ВИД: СПИСОК / КАЛЕНДАРЬ (Фаза 9.1) ---
+const viewMode = ref('list'); // 'list' | 'calendar'
+
+const toLocalDateTimeInput = (date) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+// Бэкенд отдаёт время уже в поясе филиала записи, поэтому виджет настроен на
+// timeZone:'local' — просто показывает переданные строки как есть, без
+// повторной конвертации под часовой пояс браузера.
+const fetchCalendarEvents = (fetchInfo, successCallback, failureCallback) => {
+    axios.get(route('operations.appointments.calendar-events'), {
+        params: { start: fetchInfo.startStr, end: fetchInfo.endStr },
+    })
+        .then(response => successCallback(response.data))
+        .catch(error => failureCallback(error));
+};
+
+const onCalendarEventClick = (info) => {
+    openModal(info.event.extendedProps.appointment);
+};
+
+const onCalendarDateClick = (info) => {
+    openModal();
+    const hasTime = info.dateStr.includes('T');
+    const startDate = hasTime ? new Date(info.dateStr) : new Date(info.dateStr + 'T09:00:00');
+    const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // по умолчанию час
+
+    form.start_at = toLocalDateTimeInput(startDate);
+    form.end_at = toLocalDateTimeInput(endDate);
+};
+
+const calendarOptions = {
+    plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
+    initialView: 'timeGridWeek',
+    headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek,timeGridDay',
+    },
+    locales: [ruLocale],
+    locale: 'ru',
+    firstDay: 1,
+    height: 'auto',
+    slotMinTime: '07:00:00',
+    slotMaxTime: '22:00:00',
+    nowIndicator: true,
+    timeZone: 'local',
+    events: fetchCalendarEvents,
+    eventClick: onCalendarEventClick,
+    dateClick: onCalendarDateClick,
+};
 </script>
 
 <template>
@@ -203,29 +263,55 @@ const changeStatus = (appointment, status) => {
             </PageHelper>
 
             <BulkActions
-                v-if="selectedIds.length > 0"
+                v-if="viewMode === 'list' && selectedIds.length > 0"
                 :selectedCount="selectedIds.length"
                 noun="записей"
                 @delete="bulkDelete"
             />
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-3 justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+                        <button
+                            type="button"
+                            @click="viewMode = 'list'"
+                            :class="viewMode === 'list' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                        >
+                            <i class="ri-list-check"></i> Список
+                        </button>
+                        <button
+                            type="button"
+                            @click="viewMode = 'calendar'"
+                            :class="viewMode === 'calendar' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                        >
+                            <i class="ri-calendar-line"></i> Календарь
+                        </button>
+                    </div>
+                    <button
+                        @click="openModal()"
+                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
+                    >
+                        <i class="ri-add-line text-base"></i>
+                        Новая запись
+                    </button>
+                </div>
+
+                <!-- Вид: Календарь -->
+                <div v-if="viewMode === 'calendar'" class="p-4">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Клик по записи — открыть на редактирование. Клик по пустому времени — создать новую запись с предзаполненным временем.</p>
+                    <FullCalendar :options="calendarOptions" />
+                </div>
+
+                <!-- Вид: Список -->
+                <template v-else>
                 <DataTableToolbar
                     v-model="search"
                     :has-filters="false"
                     @open-columns="isColumnsModalOpen = true"
                     placeholder="Поиск по комментарию..."
-                >
-                    <template #actions>
-                        <button
-                            @click="openModal()"
-                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
-                        >
-                            <i class="ri-add-line text-base"></i>
-                            Новая запись
-                        </button>
-                    </template>
-                </DataTableToolbar>
+                />
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -302,6 +388,7 @@ const changeStatus = (appointment, status) => {
                     </table>
                 </div>
                 <Pagination :meta="appointments" />
+                </template>
             </div>
         </div>
 
