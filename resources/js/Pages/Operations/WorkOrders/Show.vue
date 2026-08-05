@@ -4,6 +4,7 @@ import PageHelper from '@/Components/PageHelper.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import Modal from '@/Components/Modal.vue';
 import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
+import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
@@ -616,8 +617,8 @@ const formatMoney = (amount) => {
         <div class="w-[99%] mx-auto flex flex-col lg:flex-row gap-6 font-sans text-slate-600">
             
             <!-- Левая колонка: About (Свойства сущности) -->
-            <div class="w-full lg:w-1/4 space-y-6 flex-shrink-0">
-                
+            <CollapsiblePanel storage-key="show-card-left" side="left">
+
                 <!-- Статус и Базовая инфа -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex flex-col items-center text-center">
                     <div class="w-20 h-20 rounded bg-primary/10 flex items-center justify-center text-primary font-bold text-3xl mb-4">
@@ -704,10 +705,10 @@ const formatMoney = (amount) => {
                         </div>
                     </div>
                 </div>
-            </div>
+            </CollapsiblePanel>
 
             <!-- Центральная колонка: Работы и Таймлайн -->
-            <div class="w-full lg:w-2/4 space-y-6">
+            <div class="w-full lg:flex-1 lg:min-w-0 space-y-6">
                 
                 <!-- Вкладки (Работы / История) -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col h-full min-h-[600px]">
@@ -847,8 +848,8 @@ const formatMoney = (amount) => {
             </div>
 
             <!-- Правая колонка: Финансы -->
-            <div class="w-full lg:w-1/4 space-y-6 flex-shrink-0">
-                
+            <CollapsiblePanel storage-key="show-card-right" side="right">
+
                 <!-- Финансовый блок -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
@@ -906,7 +907,7 @@ const formatMoney = (amount) => {
                     </div>
                 </div>
 
-            </div>
+            </CollapsiblePanel>
 
         </div>
 

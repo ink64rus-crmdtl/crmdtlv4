@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
+import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -143,8 +144,8 @@ const currentCountrySchema = computed(() => {
         <div class="w-[99%] mx-auto flex flex-col lg:flex-row gap-6 font-sans text-slate-600">
             
             <!-- Левая колонка: About (Свойства сущности) -->
-            <div class="w-full lg:w-1/4 space-y-6 flex-shrink-0">
-                
+            <CollapsiblePanel storage-key="show-card-left" side="left">
+
                 <!-- Аватар и статус -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex flex-col items-center text-center relative overflow-hidden">
                     <!-- Декоративный фон для группы -->
@@ -287,10 +288,10 @@ const currentCountrySchema = computed(() => {
                         </div>
                     </div>
                 </div>
-            </div>
+            </CollapsiblePanel>
 
             <!-- Центральная колонка: KPI и Таймлайн (Activity) -->
-            <div class="w-full lg:w-2/4 space-y-6">
+            <div class="w-full lg:flex-1 lg:min-w-0 space-y-6">
                 
                 <!-- KPI Dashboard -->
                 <div class="grid grid-cols-2 xl:grid-cols-3 gap-4">
@@ -379,8 +380,8 @@ const currentCountrySchema = computed(() => {
             </div>
 
             <!-- Правая колонка: Связи (Associations) -->
-            <div class="w-full lg:w-1/4 space-y-6 flex-shrink-0">
-                
+            <CollapsiblePanel storage-key="show-card-right" side="right">
+
                 <!-- Автомобили клиента -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
@@ -448,7 +449,7 @@ const currentCountrySchema = computed(() => {
                     </div>
                 </div>
 
-            </div>
+            </CollapsiblePanel>
 
         </div>
 

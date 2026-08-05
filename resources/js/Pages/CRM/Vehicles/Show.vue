@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 
@@ -123,8 +124,8 @@ const getLocalizedLabel = (label) => {
         <div class="w-[99%] mx-auto flex flex-col lg:flex-row gap-6 font-sans text-slate-600">
             
             <!-- Левая колонка: About (Свойства сущности) -->
-            <div class="w-full lg:w-1/4 space-y-6 flex-shrink-0">
-                
+            <CollapsiblePanel storage-key="show-card-left" side="left">
+
                 <!-- Аватар и статус -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex flex-col items-center text-center">
                     <div class="w-24 h-24 rounded bg-primary/10 flex items-center justify-center text-primary font-bold text-4xl mb-4">
@@ -191,10 +192,10 @@ const getLocalizedLabel = (label) => {
                         </div>
                     </div>
                 </div>
-            </div>
+            </CollapsiblePanel>
 
             <!-- Центральная колонка: KPI и Таймлайн (Activity) -->
-            <div class="w-full lg:w-2/4 space-y-6">
+            <div class="w-full lg:flex-1 lg:min-w-0 space-y-6">
                 
                 <!-- KPI Dashboard -->
                 <div class="grid grid-cols-2 gap-4">
@@ -237,8 +238,8 @@ const getLocalizedLabel = (label) => {
             </div>
 
             <!-- Правая колонка: Владелец и Связи -->
-            <div class="w-full lg:w-1/4 space-y-6 flex-shrink-0">
-                
+            <CollapsiblePanel storage-key="show-card-right" side="right">
+
                 <!-- Карточка владельца -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
@@ -306,7 +307,7 @@ const getLocalizedLabel = (label) => {
                     </div>
                 </div>
 
-            </div>
+            </CollapsiblePanel>
 
         </div>
 
