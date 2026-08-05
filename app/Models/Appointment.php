@@ -17,6 +17,7 @@ class Appointment extends Model
         'client_id',
         'vehicle_id',
         'employee_id',
+        'post_id',
         'work_order_id',
         'type',
         'status',
@@ -56,6 +57,11 @@ class Appointment extends Model
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function post(): BelongsTo
+    {
+        return $this->belongsTo(Post::class);
     }
 
     public function workOrder(): BelongsTo

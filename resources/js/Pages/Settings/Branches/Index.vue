@@ -5,6 +5,7 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import WorkingHoursEditor from '@/Components/WorkingHoursEditor.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -27,7 +28,11 @@ const form = useForm({
     phone: '',
     timezone: 'Europe/Moscow',
     is_active: true,
+    working_hours: null,
 });
+
+// Свои часы работы для филиала (иначе действует расписание по умолчанию всего детейлинг-центра)
+const useCustomHours = ref(false);
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -92,9 +97,13 @@ const openModal = (branch = null) => {
         form.phone = branch.phone || '';
         form.timezone = branch.timezone || 'Europe/Moscow';
         form.is_active = Boolean(branch.is_active);
+        form.working_hours = branch.working_hours || null;
+        useCustomHours.value = !!branch.working_hours;
     } else {
         form.reset();
         form.is_active = true;
+        form.working_hours = null;
+        useCustomHours.value = false;
     }
     isModalOpen.value = true;
 };
@@ -104,7 +113,23 @@ const closeModal = () => {
     editingBranch.value = null;
     form.reset();
     form.clearErrors();
+    useCustomHours.value = false;
 };
+
+const buildDefaultSchedule = () => ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => ({
+    day,
+    is_open: day !== 'sun',
+    open: '09:00',
+    close: '20:00',
+}));
+
+watch(useCustomHours, (value) => {
+    if (!value) {
+        form.working_hours = null;
+    } else if (!form.working_hours) {
+        form.working_hours = buildDefaultSchedule();
+    }
+});
 
 const submit = () => {
     if (editingBranch.value) {
@@ -337,6 +362,20 @@ const deleteBranch = (branch) => {
                                     <option value="Asia/Almaty" class="bg-white dark:bg-gray-800">Asia/Almaty</option>
                                 </select>
                             </div>
+                        </div>
+
+                        <!-- Часы работы -->
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="flex items-center mb-3">
+                                <div @click="useCustomHours = !useCustomHours" :class="[useCustomHours ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                    <div :class="[useCustomHours ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                                </div>
+                                <label class="ml-2.5 block text-sm font-semibold text-gray-800 dark:text-gray-200 cursor-pointer" @click="useCustomHours = !useCustomHours">
+                                    Свои часы работы для этого филиала
+                                </label>
+                            </div>
+                            <p v-if="!useCustomHours" class="text-xs text-gray-500 dark:text-gray-400 mb-2">Действует расписание по умолчанию всего детейлинг-центра (Настройки → Клиенты и Авто).</p>
+                            <WorkingHoursEditor v-if="useCustomHours" v-model="form.working_hours" />
                         </div>
 
                         <!-- Toggle Switch (Attex Style) -->

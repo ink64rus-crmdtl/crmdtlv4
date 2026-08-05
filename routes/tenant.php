@@ -12,6 +12,7 @@ use App\Http\Controllers\Tenant\AccountController;
 use App\Http\Controllers\Tenant\BranchController;
 use App\Http\Controllers\Tenant\SystemController;
 use App\Http\Controllers\Tenant\BusinessDirectionController;
+use App\Http\Controllers\Tenant\PostController;
 use App\Http\Controllers\Tenant\WarehouseSettingsController;
 use App\Http\Controllers\Tenant\CustomFieldController;
 use App\Http\Controllers\Tenant\RolePermissionController;
@@ -112,6 +113,13 @@ Route::middleware([
         Route::delete('/settings/business-directions/{businessDirection}', [BusinessDirectionController::class, 'destroy'])->name('settings.business-directions.destroy');
         Route::post('/settings/business-directions/bulk-delete', [BusinessDirectionController::class, 'bulkDestroy'])->name('settings.business-directions.bulk-destroy');
         Route::post('/settings/business-directions/bulk-export', [BusinessDirectionController::class, 'bulkExport'])->name('settings.business-directions.bulk-export');
+
+        Route::get('/settings/posts', [PostController::class, 'index'])->name('settings.posts.index');
+        Route::post('/settings/posts', [PostController::class, 'store'])->name('settings.posts.store');
+        Route::put('/settings/posts/{post}', [PostController::class, 'update'])->name('settings.posts.update');
+        Route::delete('/settings/posts/{post}', [PostController::class, 'destroy'])->name('settings.posts.destroy');
+        Route::post('/settings/posts/bulk-delete', [PostController::class, 'bulkDestroy'])->name('settings.posts.bulk-destroy');
+        Route::post('/settings/posts/reorder', [PostController::class, 'reorder'])->name('settings.posts.reorder');
 
         // Настройки: Склад
         Route::get('/settings/warehouse', [WarehouseSettingsController::class, 'index'])->name('settings.warehouse.index');

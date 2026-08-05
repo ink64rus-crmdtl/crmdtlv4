@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\Vehicle;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\Post;
 use App\Models\Service;
 use App\Models\Product;
 use App\Models\Lookup;
@@ -25,7 +26,7 @@ class AppointmentController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'items']);
+        $query = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'post', 'items']);
 
         $query = QueryFilterService::apply(
             $query,
@@ -54,6 +55,7 @@ class AppointmentController extends Controller
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
+        $posts = Post::where('is_active', true)->orderBy('sort_order')->get(['id', 'branch_id', 'name']);
         $services = Service::where('is_active', true)->get(['id', 'name', 'price']);
         $products = Product::where('is_active', true)->get(['id', 'name']);
 
@@ -77,6 +79,7 @@ class AppointmentController extends Controller
             'clients' => $clients,
             'vehicles' => $vehicles,
             'employees' => $employees,
+            'posts' => $posts,
             'services' => $services,
             'products' => $products,
             'availableColumns' => $availableColumns,
@@ -103,15 +106,17 @@ class AppointmentController extends Controller
         $rangeStart = Carbon::parse($validated['start'])->subDay();
         $rangeEnd = Carbon::parse($validated['end'])->addDay();
 
-        $appointments = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'items'])
+        $appointments = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'post', 'items'])
             ->where('start_at', '<', $rangeEnd)
             ->where('end_at', '>', $rangeStart)
             ->get();
 
         $statusColors = Lookup::where('type', 'appointment_status')->pluck('color', 'value');
+        // Те же hex, что и в resources/js/tailwind.config.js — раньше здесь был
+        // произвольный набор цветов, визуально не совпадающий с остальной темой CRM.
         $colorMap = [
-            'info' => '#0dcaf0', 'primary' => '#7c3aed', 'success' => '#16a34a',
-            'danger' => '#dc2626', 'warning' => '#f59e0b', 'gray' => '#9ca3af',
+            'info' => '#16a7e9', 'primary' => '#3e60d5', 'success' => '#47ad77',
+            'danger' => '#f15776', 'warning' => '#ffc35a', 'gray' => '#6c757d',
         ];
 
         $events = $appointments->map(function (Appointment $appointment) use ($statusColors, $colorMap) {
@@ -138,6 +143,7 @@ class AppointmentController extends Controller
                         'client_id' => $appointment->client_id,
                         'vehicle_id' => $appointment->vehicle_id,
                         'employee_id' => $appointment->employee_id,
+                        'post_id' => $appointment->post_id,
                         'status' => $appointment->status,
                         'comment' => $appointment->comment,
                         'start_at_local' => $startLocal->format('Y-m-d\TH:i'),
@@ -168,6 +174,7 @@ class AppointmentController extends Controller
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'employee_id' => $validated['employee_id'] ?? null,
+                'post_id' => $validated['post_id'] ?? null,
                 'start_at' => Carbon::parse($validated['start_at'], $branchTz)->utc(),
                 'end_at' => Carbon::parse($validated['end_at'], $branchTz)->utc(),
                 'status' => $validated['status'],
@@ -195,6 +202,7 @@ class AppointmentController extends Controller
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'employee_id' => $validated['employee_id'] ?? null,
+                'post_id' => $validated['post_id'] ?? null,
                 'start_at' => Carbon::parse($validated['start_at'], $branchTz)->utc(),
                 'end_at' => Carbon::parse($validated['end_at'], $branchTz)->utc(),
                 'status' => $validated['status'],
@@ -258,6 +266,7 @@ class AppointmentController extends Controller
             'client_id' => ['required', 'exists:clients,id'],
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'employee_id' => ['nullable', 'exists:employees,id'],
+            'post_id' => ['nullable', 'exists:posts,id'],
             'start_at' => ['required', 'date'],
             'end_at' => ['required', 'date', 'after:start_at'],
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],

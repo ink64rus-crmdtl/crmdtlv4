@@ -12,6 +12,9 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import ruLocale from '@fullcalendar/core/locales/ru';
+import PostsWeekTable from '@/Components/Calendar/PostsWeekTable.vue';
+import PostsDayTimeline from '@/Components/Calendar/PostsDayTimeline.vue';
+import PostsDayColumns from '@/Components/Calendar/PostsDayColumns.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -24,6 +27,7 @@ const props = defineProps({
     clients: Array,
     vehicles: Array,
     employees: Array,
+    posts: { type: Array, default: () => [] },
     services: Array,
     products: Array,
     availableColumns: { type: Array, default: () => [] },
@@ -63,11 +67,18 @@ const form = useForm({
     client_id: '',
     vehicle_id: '',
     employee_id: '',
+    post_id: '',
     start_at: '',
     end_at: '',
     status: 'scheduled',
     comment: '',
     items: [],
+});
+
+// Посты общие для всего центра (branch_id === null) видны при любом выбранном филиале.
+const filteredPosts = computed(() => {
+    if (!form.branch_id) return props.posts;
+    return props.posts.filter(p => !p.branch_id || p.branch_id === form.branch_id);
 });
 
 const filteredVehicles = computed(() => {
@@ -133,13 +144,14 @@ const itemsTotal = computed(() => {
 });
 // ----------------------------------------
 
-const openModal = (appointment = null) => {
+const openModal = (appointment = null, prefill = null) => {
     editingAppointment.value = appointment;
     if (appointment) {
         form.branch_id = appointment.branch_id;
         form.client_id = appointment.client_id;
         form.vehicle_id = appointment.vehicle_id || '';
         form.employee_id = appointment.employee_id || '';
+        form.post_id = appointment.post_id || '';
         form.start_at = appointment.start_at_local;
         form.end_at = appointment.end_at_local;
         form.status = appointment.status;
@@ -155,6 +167,13 @@ const openModal = (appointment = null) => {
         form.reset();
         form.status = 'scheduled';
         form.items = [];
+        // Предзаполнение при создании из клика по слоту в видах "по постам"
+        if (prefill) {
+            if (prefill.branch_id) form.branch_id = prefill.branch_id;
+            if (prefill.post_id) form.post_id = prefill.post_id;
+            if (prefill.start_at) form.start_at = prefill.start_at;
+            if (prefill.end_at) form.end_at = prefill.end_at;
+        }
     }
     activeTab.value = 'main';
     isModalOpen.value = true;
@@ -224,24 +243,125 @@ const onCalendarDateClick = (info) => {
 };
 
 const calendarOptions = {
-    plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
-    initialView: 'timeGridWeek',
+    plugins: [dayGridPlugin, interactionPlugin],
+    initialView: 'dayGridMonth',
     headerToolbar: {
         left: 'prev,next today',
         center: 'title',
-        right: 'dayGridMonth,timeGridWeek,timeGridDay',
+        right: '',
     },
     locales: [ruLocale],
     locale: 'ru',
     firstDay: 1,
     height: 'auto',
-    slotMinTime: '07:00:00',
-    slotMaxTime: '22:00:00',
-    nowIndicator: true,
     timeZone: 'local',
     events: fetchCalendarEvents,
     eventClick: onCalendarEventClick,
     dateClick: onCalendarDateClick,
+};
+
+// --- ВИДЫ "ПО ПОСТАМ" (Фаза 9.5): Неделя (слева) / День (слева) / День (сверху) ---
+const calendarViewMode = ref('month'); // 'month' | 'week-posts' | 'day-posts-left' | 'day-posts-top'
+const postsCalendarDate = ref(new Date());
+const postsCalendarAppointments = ref([]);
+const postsCalendarLoading = ref(false);
+
+const toLocalISODate = (d) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const postsViewRange = computed(() => {
+    const base = new Date(postsCalendarDate.value);
+    base.setHours(0, 0, 0, 0);
+    if (calendarViewMode.value === 'week-posts') {
+        const dow = (base.getDay() + 6) % 7; // 0 = понедельник
+        const start = new Date(base);
+        start.setDate(base.getDate() - dow);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 7);
+        return { start, end };
+    }
+    const start = base;
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    return { start, end };
+});
+
+const weekDays = computed(() => {
+    if (calendarViewMode.value !== 'week-posts') return [];
+    const { start } = postsViewRange.value;
+    const dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        return { date: d, iso: toLocalISODate(d), label: dayLabels[i], dayNumber: d.getDate() };
+    });
+});
+
+const postsViewDateLabel = computed(() => {
+    const { start, end } = postsViewRange.value;
+    const fmt = (d) => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    if (calendarViewMode.value === 'week-posts') {
+        const last = new Date(end);
+        last.setDate(last.getDate() - 1);
+        return `${fmt(start)} — ${fmt(last)}`;
+    }
+    return fmt(start);
+});
+
+const fetchPostsCalendarAppointments = async () => {
+    postsCalendarLoading.value = true;
+    try {
+        const { start, end } = postsViewRange.value;
+        const response = await axios.get(route('operations.appointments.calendar-events'), {
+            params: { start: start.toISOString(), end: end.toISOString() },
+        });
+        postsCalendarAppointments.value = response.data.map(e => ({
+            ...e.extendedProps.appointment,
+            title: e.title,
+            color: e.color,
+            start: e.start,
+            end: e.end,
+        }));
+    } catch (error) {
+        console.error('Не удалось загрузить записи для календаря по постам', error);
+    } finally {
+        postsCalendarLoading.value = false;
+    }
+};
+
+watch([viewMode, calendarViewMode, postsCalendarDate], () => {
+    if (viewMode.value === 'calendar' && calendarViewMode.value !== 'month') {
+        fetchPostsCalendarAppointments();
+    }
+}, { immediate: true });
+
+const navigatePosts = (direction) => {
+    const d = new Date(postsCalendarDate.value);
+    d.setDate(d.getDate() + direction * (calendarViewMode.value === 'week-posts' ? 7 : 1));
+    postsCalendarDate.value = d;
+};
+
+const goToPostsToday = () => {
+    postsCalendarDate.value = new Date();
+};
+
+const handlePostsCreate = (payload) => {
+    let { branch_id, post_id, start_at, end_at } = payload;
+    if (!end_at && start_at) {
+        const [datePart, timePart] = start_at.split('T');
+        const [h, m] = timePart.split(':').map(Number);
+        const endDate = new Date(2000, 0, 1, h, m);
+        endDate.setHours(endDate.getHours() + 1);
+        const pad = (n) => String(n).padStart(2, '0');
+        end_at = `${datePart}T${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
+    }
+    openModal(null, { branch_id, post_id, start_at, end_at });
+};
+
+const handlePostsEdit = (appointment) => {
+    openModal(appointment);
 };
 </script>
 
@@ -301,7 +421,53 @@ const calendarOptions = {
                 <!-- Вид: Календарь -->
                 <div v-if="viewMode === 'calendar'" class="p-4">
                     <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Клик по записи — открыть на редактирование. Клик по пустому времени — создать новую запись с предзаполненным временем.</p>
-                    <FullCalendar :options="calendarOptions" />
+
+                    <!-- Переключатель видов календаря -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                            <button type="button" @click="calendarViewMode = 'month'" :class="calendarViewMode === 'month' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-3 py-1.5 text-xs font-medium transition-colors">Месяц</button>
+                            <button type="button" @click="calendarViewMode = 'week-posts'" :class="calendarViewMode === 'week-posts' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-gray-700 transition-colors">Неделя (посты слева)</button>
+                            <button type="button" @click="calendarViewMode = 'day-posts-left'" :class="calendarViewMode === 'day-posts-left' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-gray-700 transition-colors">День (посты слева)</button>
+                            <button type="button" @click="calendarViewMode = 'day-posts-top'" :class="calendarViewMode === 'day-posts-top' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-gray-700 transition-colors">День (посты сверху)</button>
+                        </div>
+
+                        <!-- Навигация по дате — только для видов "по постам", у Месяца своя внутренняя навигация FullCalendar -->
+                        <div v-if="calendarViewMode !== 'month'" class="flex items-center gap-2">
+                            <button type="button" @click="navigatePosts(-1)" class="w-8 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i class="ri-arrow-left-s-line"></i></button>
+                            <button type="button" @click="goToPostsToday" class="px-3 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Сегодня</button>
+                            <button type="button" @click="navigatePosts(1)" class="w-8 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i class="ri-arrow-right-s-line"></i></button>
+                            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1 capitalize">{{ postsViewDateLabel }}</span>
+                        </div>
+                    </div>
+
+                    <FullCalendar v-if="calendarViewMode === 'month'" :options="calendarOptions" />
+                    <PostsWeekTable
+                        v-else-if="calendarViewMode === 'week-posts'"
+                        :posts="posts"
+                        :appointments="postsCalendarAppointments"
+                        :week-days="weekDays"
+                        :loading="postsCalendarLoading"
+                        @edit="handlePostsEdit"
+                        @create="handlePostsCreate"
+                    />
+                    <PostsDayTimeline
+                        v-else-if="calendarViewMode === 'day-posts-left'"
+                        :posts="posts"
+                        :appointments="postsCalendarAppointments"
+                        :date="postsCalendarDate"
+                        :loading="postsCalendarLoading"
+                        @edit="handlePostsEdit"
+                        @create="handlePostsCreate"
+                    />
+                    <PostsDayColumns
+                        v-else-if="calendarViewMode === 'day-posts-top'"
+                        :posts="posts"
+                        :appointments="postsCalendarAppointments"
+                        :date="postsCalendarDate"
+                        :loading="postsCalendarLoading"
+                        @edit="handlePostsEdit"
+                        @create="handlePostsCreate"
+                    />
                 </div>
 
                 <!-- Вид: Список -->
@@ -427,10 +593,10 @@ const calendarOptions = {
                     <!-- Вкладка: Основное -->
                     <div v-show="activeTab === 'main'" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал <span class="text-danger">*</span></label>
-                                <select v-model="form.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <select v-model="form.branch_id" @change="form.post_id = ''" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
                                     <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                 </select>
@@ -441,6 +607,13 @@ const calendarOptions = {
                                 <select v-model="form.employee_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="" class="bg-white dark:bg-gray-800">Не назначен</option>
                                     <option v-for="e in employees" :key="e.id" :value="e.id" class="bg-white dark:bg-gray-800">{{ e.first_name }} {{ e.last_name }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Пост</label>
+                                <select v-model="form.post_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" class="bg-white dark:bg-gray-800">Не назначен</option>
+                                    <option v-for="p in filteredPosts" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ p.name }}</option>
                                 </select>
                             </div>
                         </div>
@@ -545,3 +718,41 @@ const calendarOptions = {
         />
     </AuthenticatedLayout>
 </template>
+
+<style>
+/* Переопределяем CSS-переменные FullCalendar (официальный механизм темизации виджета,
+   см. https://fullcalendar.io/docs/css-customization) под палитру Attex/Tailwind
+   вместо цветов Bootstrap по умолчанию — иначе тулбар/кнопки визуально выпадали из CRM. */
+.fc {
+    --fc-border-color: rgb(229 231 235); /* gray-200, совпадает с border-gray-200 */
+    --fc-button-bg-color: #3e60d5; /* primary */
+    --fc-button-border-color: #3e60d5;
+    --fc-button-hover-bg-color: #324fb6; /* primary-600 */
+    --fc-button-hover-border-color: #324fb6;
+    --fc-button-active-bg-color: #324fb6;
+    --fc-button-active-border-color: #324fb6;
+    --fc-today-bg-color: rgba(62, 96, 213, 0.06); /* primary/6% */
+    --fc-neutral-bg-color: rgb(249 250 251); /* gray-50 */
+    --fc-page-bg-color: transparent;
+    font-family: inherit;
+}
+
+.dark .fc {
+    --fc-border-color: rgb(55 65 81); /* gray-700 */
+    --fc-neutral-bg-color: rgb(31 41 55); /* gray-800 */
+    --fc-page-bg-color: transparent;
+    color: rgb(229 231 235);
+}
+
+.fc .fc-button {
+    text-transform: none;
+    border-radius: 0.375rem; /* rounded-md, как остальные элементы формы в CRM */
+    box-shadow: none !important;
+    font-weight: 500;
+}
+
+.fc .fc-toolbar-title {
+    font-size: 1rem;
+    font-weight: 700;
+}
+</style>

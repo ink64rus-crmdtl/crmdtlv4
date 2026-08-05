@@ -48,6 +48,11 @@ class BranchController extends Controller
             'phone' => ['nullable', 'string', 'max:255'],
             'timezone' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
+            'working_hours' => ['nullable', 'array', 'size:7'],
+            'working_hours.*.day' => ['required_with:working_hours', 'string'],
+            'working_hours.*.is_open' => ['required_with:working_hours', 'boolean'],
+            'working_hours.*.open' => ['nullable', 'string'],
+            'working_hours.*.close' => ['nullable', 'string'],
         ]);
 
         Branch::create($validated);
@@ -65,6 +70,11 @@ class BranchController extends Controller
             'phone' => ['nullable', 'string', 'max:255'],
             'timezone' => ['nullable', 'string', 'max:255'],
             'is_active' => ['boolean'],
+            'working_hours' => ['nullable', 'array', 'size:7'],
+            'working_hours.*.day' => ['required_with:working_hours', 'string'],
+            'working_hours.*.is_open' => ['required_with:working_hours', 'boolean'],
+            'working_hours.*.open' => ['nullable', 'string'],
+            'working_hours.*.close' => ['nullable', 'string'],
         ]);
 
         $branch->update($validated);

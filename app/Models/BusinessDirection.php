@@ -23,4 +23,9 @@ class BusinessDirection extends Model
     {
         return $this->belongsToMany(Branch::class, 'branch_business_direction');
     }
+
+    public function posts(): BelongsToMany
+    {
+        return $this->belongsToMany(Post::class, 'post_business_direction');
+    }
 }
