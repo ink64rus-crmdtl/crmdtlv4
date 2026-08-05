@@ -324,7 +324,7 @@ const deleteOrder = (order) => {
                     :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
                     @open-filters="isFiltersOpen = true"
                     @open-columns="openColumnsModal"
-                    placeholder="Поиск по номеру заказа..."
+                    placeholder="Поиск по номеру заказа, ФИО клиента, телефону, номеру авто..."
                 >
                     <template #actions>
                         <button

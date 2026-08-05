@@ -12,7 +12,9 @@ class QueryFilterService
      *
      * @param Builder $query Eloquent Builder
      * @param array $params Массив параметров (обычно $request->all())
-     * @param array $searchableColumns Колонки для глобального поиска (LIKE %search%)
+     * @param array $searchableColumns Колонки для глобального поиска (LIKE %search%). Помимо
+     *   колонок текущей таблицы, поддерживает dot-нотацию для связей — например 'client.name'
+     *   или 'vehicle.plate_number' — ищет через whereHas по указанной связи модели.
      * @param string|null $entityType Тип сущности для EAV-фильтрации (например, 'client')
      * @return Builder
      */
@@ -21,10 +23,17 @@ class QueryFilterService
         // 1. Глобальный поиск
         if (!empty($params['search']) && !empty($searchableColumns)) {
             $searchTerm = '%' . $params['search'] . '%';
-            
+
             $query->where(function ($q) use ($searchableColumns, $searchTerm) {
                 foreach ($searchableColumns as $index => $column) {
-                    if ($index === 0) {
+                    if (str_contains($column, '.')) {
+                        [$relation, $relationColumn] = explode('.', $column, 2);
+                        $whereHasMethod = $index === 0 ? 'whereHas' : 'orWhereHas';
+
+                        $q->{$whereHasMethod}($relation, function ($relationQuery) use ($relationColumn, $searchTerm) {
+                            $relationQuery->where($relationColumn, 'LIKE', $searchTerm);
+                        });
+                    } elseif ($index === 0) {
                         $q->where($column, 'LIKE', $searchTerm);
                     } else {
                         $q->orWhere($column, 'LIKE', $searchTerm);

@@ -42,9 +42,9 @@ class WorkOrderController extends Controller
         $query = WorkOrder::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel']);
         
         $query = QueryFilterService::apply(
-            $query, 
-            $request->all(), 
-            ['id'],
+            $query,
+            $request->all(),
+            ['id', 'client.name', 'client.phone', 'vehicle.plate_number'],
             'work_order'
         );
 

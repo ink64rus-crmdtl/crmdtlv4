@@ -31,9 +31,9 @@ class ClientController extends Controller
         
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
-            $query, 
-            $request->all(), 
-            ['name', 'phone', 'email', 'alias'], 
+            $query,
+            $request->all(),
+            ['name', 'phone', 'email', 'alias', 'vehicles.plate_number'],
             'client'
         );
 

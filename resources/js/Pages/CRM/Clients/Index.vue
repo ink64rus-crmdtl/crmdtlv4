@@ -381,7 +381,7 @@ const formatMoney = (amount) => {
                     :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
                     @open-filters="isFiltersOpen = true"
                     @open-columns="openColumnsModal"
-                    placeholder="Поиск по имени, телефону, email..."
+                    placeholder="Поиск по имени, телефону, email, номеру авто..."
                 >
                     <template #actions>
                         <button
