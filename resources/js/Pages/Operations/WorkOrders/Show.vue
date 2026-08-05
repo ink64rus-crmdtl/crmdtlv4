@@ -1156,7 +1156,7 @@ const formatMoney = (amount) => {
 
                 <!-- Footer Drawer -->
                 <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-2.5">
-                    <button v-if="drawerTab === 'services'" @click="openQuickServiceModal" title="Добавить услугу, которой нет в каталоге" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Своей услуги нет в списке</button>
+                    <button v-if="drawerTab === 'services'" @click="openQuickServiceModal" title="Добавить услугу, которой нет в каталоге" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Добавить услугу не из прайса</button>
                     <button v-else @click="openQuickProductModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрый товар</button>
                     <button @click="isBatchDrawerOpen = false" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">Сохранить и закрыть</button>
                 </div>
