@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class WorkOrder extends Model
 {
@@ -59,5 +60,10 @@ class WorkOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(WorkOrderItem::class);
+    }
+
+    public function transactions(): MorphMany
+    {
+        return $this->morphMany(Transaction::class, 'payable');
     }
 }

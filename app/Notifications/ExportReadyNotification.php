@@ -49,6 +49,7 @@ class ExportReadyNotification extends Notification
             'business_directions' => 'направлений',
             'custom_fields' => 'кастомных полей',
             'positions' => 'должностей',
+            'work_orders' => 'заказ-нарядов',
         ];
 
         $entityName = $entityNames[$this->entityType] ?? 'записей';

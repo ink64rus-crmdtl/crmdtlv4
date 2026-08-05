@@ -24,6 +24,13 @@ use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
 use App\Http\Controllers\Tenant\NotificationController;
 use App\Http\Controllers\Tenant\LookupController;
+use App\Http\Controllers\Tenant\WorkOrderController;
+use App\Http\Controllers\Tenant\ServiceController;
+use App\Http\Controllers\Tenant\ProductController;
+use App\Http\Controllers\Tenant\StockBalanceController;
+use App\Http\Controllers\Tenant\StockMovementController;
+use App\Http\Controllers\Tenant\TransactionCategoryController;
+use App\Http\Controllers\Tenant\TransactionController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -130,6 +137,14 @@ Route::middleware([
         Route::put('/settings/dictionaries/models/{model}', [DictionaryController::class, 'updateModel'])->name('settings.dictionaries.models.update');
         Route::delete('/settings/dictionaries/models/{model}', [DictionaryController::class, 'destroyModel'])->name('settings.dictionaries.models.destroy');
         Route::post('/settings/dictionaries/import', [DictionaryController::class, 'importCsv'])->name('settings.dictionaries.import');
+        
+        // Настройки: Категории услуг и товаров
+        Route::post('/settings/dictionaries/service-categories', [DictionaryController::class, 'storeServiceCategory'])->name('settings.dictionaries.service-categories.store');
+        Route::put('/settings/dictionaries/service-categories/{category}', [DictionaryController::class, 'updateServiceCategory'])->name('settings.dictionaries.service-categories.update');
+        Route::delete('/settings/dictionaries/service-categories/{category}', [DictionaryController::class, 'destroyServiceCategory'])->name('settings.dictionaries.service-categories.destroy');
+        Route::post('/settings/dictionaries/product-categories', [DictionaryController::class, 'storeProductCategory'])->name('settings.dictionaries.product-categories.store');
+        Route::put('/settings/dictionaries/product-categories/{category}', [DictionaryController::class, 'updateProductCategory'])->name('settings.dictionaries.product-categories.update');
+        Route::delete('/settings/dictionaries/product-categories/{category}', [DictionaryController::class, 'destroyProductCategory'])->name('settings.dictionaries.product-categories.destroy');
 
         // Настройки: Универсальные справочники (Lookups)
         Route::post('/settings/lookups', [LookupController::class, 'store'])->name('settings.lookups.store');
@@ -175,6 +190,66 @@ Route::middleware([
         Route::delete('/crm/vehicles/{vehicle}', [VehicleController::class, 'destroy'])->name('crm.vehicles.destroy');
         Route::post('/crm/vehicles/bulk-delete', [VehicleController::class, 'bulkDestroy'])->name('crm.vehicles.bulk-destroy');
         Route::post('/crm/vehicles/bulk-export', [VehicleController::class, 'bulkExport'])->name('crm.vehicles.bulk-export');
+
+        // Operations: Заказ-наряды
+        Route::get('/operations/work-orders', [WorkOrderController::class, 'index'])->name('operations.work-orders.index');
+        Route::post('/operations/work-orders', [WorkOrderController::class, 'store'])->name('operations.work-orders.store');
+        Route::get('/operations/work-orders/{workOrder}', [WorkOrderController::class, 'show'])->name('operations.work-orders.show');
+        Route::put('/operations/work-orders/{workOrder}', [WorkOrderController::class, 'update'])->name('operations.work-orders.update');
+        Route::delete('/operations/work-orders/{workOrder}', [WorkOrderController::class, 'destroy'])->name('operations.work-orders.destroy');
+        Route::post('/operations/work-orders/bulk-delete', [WorkOrderController::class, 'bulkDestroy'])->name('operations.work-orders.bulk-destroy');
+        Route::post('/operations/work-orders/bulk-export', [WorkOrderController::class, 'bulkExport'])->name('operations.work-orders.bulk-export');
+        
+        // Operations: Заказ-наряды (Позиции, Скидки, Финансы, Склад)
+        Route::post('/operations/work-orders/{workOrder}/items', [WorkOrderController::class, 'addItem'])->name('operations.work-orders.items.store');
+        Route::delete('/operations/work-orders/{workOrder}/items/{item}', [WorkOrderController::class, 'removeItem'])->name('operations.work-orders.items.destroy');
+        Route::post('/operations/work-orders/{workOrder}/discount', [WorkOrderController::class, 'updateDiscount'])->name('operations.work-orders.discount.update');
+        Route::post('/operations/work-orders/{workOrder}/payment', [WorkOrderController::class, 'processPayment'])->name('operations.work-orders.payment.store');
+        Route::post('/operations/work-orders/{workOrder}/complete', [WorkOrderController::class, 'completeOrder'])->name('operations.work-orders.complete');
+        
+        // Operations: Быстрое добавление номенклатуры
+        Route::post('/operations/work-orders/quick-service', [WorkOrderController::class, 'storeServiceQuick'])->name('operations.work-orders.quick-service');
+        Route::post('/operations/work-orders/quick-product', [WorkOrderController::class, 'storeProductQuick'])->name('operations.work-orders.quick-product');
+
+        // Warehouse: Товары и Материалы
+        Route::get('/warehouse/products', [ProductController::class, 'index'])->name('warehouse.products.index');
+        Route::post('/warehouse/products', [ProductController::class, 'store'])->name('warehouse.products.store');
+        Route::put('/warehouse/products/{product}', [ProductController::class, 'update'])->name('warehouse.products.update');
+        Route::delete('/warehouse/products/{product}', [ProductController::class, 'destroy'])->name('warehouse.products.destroy');
+        Route::post('/warehouse/products/bulk-delete', [ProductController::class, 'bulkDestroy'])->name('warehouse.products.bulk-destroy');
+        Route::post('/warehouse/products/bulk-export', [ProductController::class, 'bulkExport'])->name('warehouse.products.bulk-export');
+        Route::post('/warehouse/product-categories', [ProductController::class, 'storeCategory'])->name('warehouse.product-categories.store');
+
+        // Warehouse: Прайс-лист (Услуги)
+        Route::get('/warehouse/services', [ServiceController::class, 'index'])->name('warehouse.services.index');
+        Route::post('/warehouse/services', [ServiceController::class, 'store'])->name('warehouse.services.store');
+        Route::put('/warehouse/services/{service}', [ServiceController::class, 'update'])->name('warehouse.services.update');
+        Route::delete('/warehouse/services/{service}', [ServiceController::class, 'destroy'])->name('warehouse.services.destroy');
+        Route::post('/warehouse/services/bulk-delete', [ServiceController::class, 'bulkDestroy'])->name('warehouse.services.bulk-destroy');
+        Route::post('/warehouse/services/bulk-export', [ServiceController::class, 'bulkExport'])->name('warehouse.services.bulk-export');
+        Route::post('/warehouse/service-categories', [ServiceController::class, 'storeCategory'])->name('warehouse.service-categories.store');
+
+        // Warehouse: Остатки и Движения (Оприходование)
+        Route::get('/warehouse/balances', [StockBalanceController::class, 'index'])->name('warehouse.balances.index');
+        Route::post('/warehouse/balances/bulk-export', [StockBalanceController::class, 'bulkExport'])->name('warehouse.balances.bulk-export');
+        
+        Route::get('/warehouse/movements', [StockMovementController::class, 'index'])->name('warehouse.movements.index');
+        Route::post('/warehouse/movements/receipt', [StockMovementController::class, 'storeReceipt'])->name('warehouse.movements.receipt');
+        Route::post('/warehouse/movements/bulk-export', [StockMovementController::class, 'bulkExport'])->name('warehouse.movements.bulk-export');
+
+        // Finance: Статьи доходов и расходов
+        Route::get('/finance/categories', [TransactionCategoryController::class, 'index'])->name('finance.categories.index');
+        Route::post('/finance/categories', [TransactionCategoryController::class, 'store'])->name('finance.categories.store');
+        Route::put('/finance/categories/{category}', [TransactionCategoryController::class, 'update'])->name('finance.categories.update');
+        Route::delete('/finance/categories/{category}', [TransactionCategoryController::class, 'destroy'])->name('finance.categories.destroy');
+        Route::post('/finance/categories/bulk-delete', [TransactionCategoryController::class, 'bulkDestroy'])->name('finance.categories.bulk-destroy');
+        Route::post('/finance/categories/bulk-export', [TransactionCategoryController::class, 'bulkExport'])->name('finance.categories.bulk-export');
+
+        // Finance: Транзакции
+        Route::get('/finance/transactions', [TransactionController::class, 'index'])->name('finance.transactions.index');
+        Route::post('/finance/transactions', [TransactionController::class, 'store'])->name('finance.transactions.store');
+        Route::delete('/finance/transactions/{transaction}', [TransactionController::class, 'destroy'])->name('finance.transactions.destroy');
+        Route::post('/finance/transactions/bulk-export', [TransactionController::class, 'bulkExport'])->name('finance.transactions.bulk-export');
     });
 
     require __DIR__.'/auth.php';

@@ -9,9 +9,11 @@ import { ref, computed } from 'vue';
 const props = defineProps({
     makes: Array,
     lookups: Object,
+    serviceCategories: Array,
+    productCategories: Array,
 });
 
-const activeTab = ref('makes'); // 'makes', 'models', 'import', or lookup key
+const activeTab = ref('makes'); // 'makes', 'models', 'service_categories', 'product_categories', 'import', or lookup key
 
 const lookupTypes = {
     'client_source': 'Источники клиентов',
@@ -48,6 +50,13 @@ const lookupForm = useForm({
     value: '',
     color: 'gray',
     is_active: true,
+});
+
+const isCategoryModalOpen = ref(false);
+const editingCategory = ref(null);
+const categoryType = ref('service'); // 'service' or 'product'
+const categoryForm = useForm({
+    name: '',
 });
 
 const groupColors = [
@@ -205,6 +214,45 @@ const deleteLookup = (lookup) => {
     }
 };
 
+// --- Управление Категориями (Услуг и Товаров) ---
+const openCategoryModal = (type, category = null) => {
+    categoryType.value = type;
+    editingCategory.value = category;
+    if (category) {
+        categoryForm.name = getLocalizedLabel(category.name);
+    } else {
+        categoryForm.reset();
+    }
+    isCategoryModalOpen.value = true;
+};
+
+const closeCategoryModal = () => {
+    isCategoryModalOpen.value = false;
+    editingCategory.value = null;
+    categoryForm.reset();
+    categoryForm.clearErrors();
+};
+
+const submitCategory = () => {
+    const routePrefix = categoryType.value === 'service' ? 'service-categories' : 'product-categories';
+    if (editingCategory.value) {
+        categoryForm.put(route(`settings.dictionaries.${routePrefix}.update`, editingCategory.value.id), {
+            onSuccess: () => closeCategoryModal(),
+        });
+    } else {
+        categoryForm.post(route(`settings.dictionaries.${routePrefix}.store`), {
+            onSuccess: () => closeCategoryModal(),
+        });
+    }
+};
+
+const deleteCategory = (type, category) => {
+    const routePrefix = type === 'service' ? 'service-categories' : 'product-categories';
+    if (confirm(`Удалить категорию "${getLocalizedLabel(category.name)}"?`)) {
+        categoryForm.delete(route(`settings.dictionaries.${routePrefix}.destroy`, category.id));
+    }
+};
+
 // --- Импорт ---
 const submitImport = () => {
     importForm.post(route('settings.dictionaries.import'), {
@@ -213,6 +261,18 @@ const submitImport = () => {
             activeTab.value = 'makes';
         },
     });
+};
+
+const getLocalizedLabel = (label) => {
+    if (!label) return '';
+    if (typeof label === 'string') {
+        try {
+            label = JSON.parse(label);
+        } catch (e) {
+            return label;
+        }
+    }
+    return label['ru'] || label['en'] || Object.values(label)[0] || '';
 };
 </script>
 
@@ -244,6 +304,12 @@ const submitImport = () => {
                     </button>
                     <button @click="activeTab = 'models'" :class="[activeTab === 'models' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none whitespace-nowrap']">
                         Модели автомобилей
+                    </button>
+                    <button @click="activeTab = 'service_categories'" :class="[activeTab === 'service_categories' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none whitespace-nowrap']">
+                        Категории услуг
+                    </button>
+                    <button @click="activeTab = 'product_categories'" :class="[activeTab === 'product_categories' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none whitespace-nowrap']">
+                        Категории товаров
                     </button>
                     <button v-for="(label, key) in lookupTypes" :key="key" @click="activeTab = key" :class="[activeTab === key ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none whitespace-nowrap']">
                         {{ label }}
@@ -333,6 +399,70 @@ const submitImport = () => {
                                 </template>
                                 <tr v-if="makes.length === 0 || makes.every(m => m.models.length === 0)">
                                     <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Модели еще не добавлены.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Вкладка: Категории услуг -->
+                <div v-show="activeTab === 'service_categories'" class="flex flex-col">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Категории услуг</h3>
+                        <button @click="openCategoryModal('service')" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5">
+                            <i class="ri-add-line"></i> Добавить категорию
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto w-full p-0">
+                        <table class="min-w-full text-left whitespace-nowrap">
+                            <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                                <tr>
+                                    <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                    <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
+                                <tr v-for="cat in serviceCategories" :key="cat.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                    <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
+                                    <td class="py-4 px-6 text-sm text-right space-x-2">
+                                        <button @click="openCategoryModal('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
+                                        <button @click="deleteCategory('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                                    </td>
+                                </tr>
+                                <tr v-if="serviceCategories.length === 0">
+                                    <td colspan="2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Категории не найдены.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Вкладка: Категории товаров -->
+                <div v-show="activeTab === 'product_categories'" class="flex flex-col">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Категории товаров</h3>
+                        <button @click="openCategoryModal('product')" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5">
+                            <i class="ri-add-line"></i> Добавить категорию
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto w-full p-0">
+                        <table class="min-w-full text-left whitespace-nowrap">
+                            <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                                <tr>
+                                    <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                    <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
+                                <tr v-for="cat in productCategories" :key="cat.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                    <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
+                                    <td class="py-4 px-6 text-sm text-right space-x-2">
+                                        <button @click="openCategoryModal('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
+                                        <button @click="deleteCategory('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                                    </td>
+                                </tr>
+                                <tr v-if="productCategories.length === 0">
+                                    <td colspan="2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Категории не найдены.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -492,6 +622,29 @@ Audi;A3;Седан;Класс 1</pre>
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                         <button type="button" @click="closeModelModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
                         <button type="submit" :disabled="modelForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Модалка Категории (Услуг/Товаров) -->
+        <div v-if="isCategoryModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingCategory ? 'Редактирование категории' : 'Новая категория' }}</h3>
+                    <button @click="closeCategoryModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitCategory" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
+                            <input v-model="categoryForm.name" type="text" required placeholder="Например: Мойка" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <span v-if="categoryForm.errors.name" class="text-xs text-danger mt-1">{{ categoryForm.errors.name }}</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeCategoryModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="categoryForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
                     </div>
                 </form>
             </div>

@@ -6,10 +6,12 @@ import { Head, useForm, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
     strictPlateValidation: Boolean,
+    pricingBasis: String,
 });
 
 const form = useForm({
     strict_plate_validation: props.strictPlateValidation,
+    pricing_basis: props.pricingBasis || 'none',
 });
 
 const submit = () => {
@@ -30,9 +32,9 @@ const submit = () => {
             <!-- Навигация по настройкам (Attex Tabs) -->
             <SettingsNav />
 
-            <PageHelper title="Строгая проверка госномеров">
-                <p>Если настройка включена, система будет требовать ввода государственных номеров автомобилей в строгом соответствии с форматом вашей страны (например, А 000 АА 77 для РФ).</p>
-                <p>Если отключена — администраторы смогут вводить любые символы или оставлять поле пустым (например, для автомобилей без номеров или спецтехники).</p>
+            <PageHelper title="Настройки CRM и Ценообразования">
+                <p><strong>Строгая проверка госномеров:</strong> Если включена, система будет требовать ввода номеров автомобилей в строгом соответствии с форматом вашей страны.</p>
+                <p class="mt-2"><strong>База ценообразования услуг:</strong> Вы можете настроить прайс-лист так, чтобы цена услуги зависела от Типа кузова (Седан, Кроссовер) или от Класса автомобиля (Класс 1, Класс 2). Если выбрана зависимость, в карточке услуги появится матрица цен.</p>
             </PageHelper>
 
             <!-- Header Card -->
@@ -58,6 +60,36 @@ const submit = () => {
                                 Включить строгую проверку госномеров
                             </label>
                             <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ввод только по маске страны (латиница/кириллица).</p>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-3">База ценообразования услуг</label>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <label :class="[form.pricing_basis === 'none' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-all items-center gap-3']">
+                                <input type="radio" v-model="form.pricing_basis" value="none" class="sr-only" />
+                                <i class="ri-price-tag-3-line text-2xl text-gray-400"></i>
+                                <div>
+                                    <span class="block text-sm font-semibold text-gray-900 dark:text-white">Единая цена</span>
+                                    <span class="block text-xs text-gray-500 mt-0.5">Цена не зависит от авто</span>
+                                </div>
+                            </label>
+                            <label :class="[form.pricing_basis === 'vehicle_body' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-all items-center gap-3']">
+                                <input type="radio" v-model="form.pricing_basis" value="vehicle_body" class="sr-only" />
+                                <i class="ri-car-line text-2xl text-gray-400"></i>
+                                <div>
+                                    <span class="block text-sm font-semibold text-gray-900 dark:text-white">По типу кузова</span>
+                                    <span class="block text-xs text-gray-500 mt-0.5">Седан, Кроссовер и т.д.</span>
+                                </div>
+                            </label>
+                            <label :class="[form.pricing_basis === 'vehicle_class' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-all items-center gap-3']">
+                                <input type="radio" v-model="form.pricing_basis" value="vehicle_class" class="sr-only" />
+                                <i class="ri-vip-crown-line text-2xl text-gray-400"></i>
+                                <div>
+                                    <span class="block text-sm font-semibold text-gray-900 dark:text-white">По классу авто</span>
+                                    <span class="block text-xs text-gray-500 mt-0.5">Класс 1, Класс 2 и т.д.</span>
+                                </div>
+                            </label>
                         </div>
                     </div>
 

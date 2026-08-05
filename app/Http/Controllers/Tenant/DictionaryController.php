@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
 use App\Models\Lookup;
+use App\Models\ServiceCategory;
+use App\Models\ProductCategory;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,10 +18,14 @@ class DictionaryController extends Controller
     {
         $makes = VehicleMake::with('models')->orderBy('name')->get();
         $lookups = Lookup::orderBy('value')->get()->groupBy('type');
+        $serviceCategories = ServiceCategory::orderBy('id')->get();
+        $productCategories = ProductCategory::orderBy('id')->get();
 
         return Inertia::render('Settings/Dictionaries/Index', [
             'makes' => $makes,
             'lookups' => $lookups,
+            'serviceCategories' => $serviceCategories,
+            'productCategories' => $productCategories,
         ]);
     }
 
@@ -87,6 +93,50 @@ class DictionaryController extends Controller
     {
         $model->delete();
         return redirect()->back()->with('success', 'Модель удалена');
+    }
+
+    public function storeServiceCategory(Request $request)
+    {
+        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        ServiceCategory::create(['name' => [app()->getLocale() => $validated['name']], 'is_active' => true]);
+        return redirect()->back()->with('success', 'Категория услуг добавлена');
+    }
+
+    public function updateServiceCategory(Request $request, ServiceCategory $category)
+    {
+        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        $name = $category->name;
+        $name[app()->getLocale()] = $validated['name'];
+        $category->update(['name' => $name]);
+        return redirect()->back()->with('success', 'Категория услуг обновлена');
+    }
+
+    public function destroyServiceCategory(ServiceCategory $category)
+    {
+        $category->delete();
+        return redirect()->back()->with('success', 'Категория услуг удалена');
+    }
+
+    public function storeProductCategory(Request $request)
+    {
+        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        ProductCategory::create(['name' => [app()->getLocale() => $validated['name']], 'is_active' => true]);
+        return redirect()->back()->with('success', 'Категория товаров добавлена');
+    }
+
+    public function updateProductCategory(Request $request, ProductCategory $category)
+    {
+        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        $name = $category->name;
+        $name[app()->getLocale()] = $validated['name'];
+        $category->update(['name' => $name]);
+        return redirect()->back()->with('success', 'Категория товаров обновлена');
+    }
+
+    public function destroyProductCategory(ProductCategory $category)
+    {
+        $category->delete();
+        return redirect()->back()->with('success', 'Категория товаров удалена');
     }
 
     public function importCsv(Request $request)

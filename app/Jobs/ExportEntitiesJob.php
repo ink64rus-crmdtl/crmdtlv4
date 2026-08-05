@@ -11,6 +11,13 @@ use App\Models\LegalEntity;
 use App\Models\BusinessDirection;
 use App\Models\CustomFieldDefinition;
 use App\Models\Position;
+use App\Models\WorkOrder;
+use App\Models\Service;
+use App\Models\Product;
+use App\Models\StockBalance;
+use App\Models\StockMovement;
+use App\Models\TransactionCategory;
+use App\Models\Transaction;
 use App\Notifications\ExportReadyNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,9 +34,6 @@ class ExportEntitiesJob implements ShouldQueue
     public array $ids;
     public int $userId;
 
-    /**
-     * Create a new job instance.
-     */
     public function __construct(string $entityType, array $ids, int $userId)
     {
         $this->entityType = $entityType;
@@ -37,15 +41,10 @@ class ExportEntitiesJob implements ShouldQueue
         $this->userId = $userId;
     }
 
-    /**
-     * Execute the job.
-     */
     public function handle(): void
     {
         $user = User::find($this->userId);
-        if (!$user) {
-            return;
-        }
+        if (!$user) return;
 
         $fileName = "export_{$this->entityType}_" . date('Y_m_d_His') . '_' . uniqid() . '.csv';
         $filePath = "exports/{$fileName}";
@@ -54,44 +53,33 @@ class ExportEntitiesJob implements ShouldQueue
         $absolutePath = Storage::disk('local')->path($filePath);
         
         $file = fopen($absolutePath, 'w');
-        // Добавляем BOM для корректного отображения UTF-8 в MS Excel
-        fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+        fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF)); // BOM для UTF-8
 
         $this->processExport($file);
 
         fclose($file);
 
-        // Отправляем уведомление пользователю о готовности файла
         $user->notify(new ExportReadyNotification($fileName, $this->entityType, count($this->ids)));
     }
 
     private function processExport($file): void
     {
         switch ($this->entityType) {
-            case 'clients':
-                $this->exportClients($file);
-                break;
-            case 'vehicles':
-                $this->exportVehicles($file);
-                break;
-            case 'employees':
-                $this->exportEmployees($file);
-                break;
-            case 'branches':
-                $this->exportBranches($file);
-                break;
-            case 'legal_entities':
-                $this->exportLegalEntities($file);
-                break;
-            case 'business_directions':
-                $this->exportBusinessDirections($file);
-                break;
-            case 'custom_fields':
-                $this->exportCustomFields($file);
-                break;
-            case 'positions':
-                $this->exportPositions($file);
-                break;
+            case 'clients': $this->exportClients($file); break;
+            case 'vehicles': $this->exportVehicles($file); break;
+            case 'employees': $this->exportEmployees($file); break;
+            case 'branches': $this->exportBranches($file); break;
+            case 'legal_entities': $this->exportLegalEntities($file); break;
+            case 'business_directions': $this->exportBusinessDirections($file); break;
+            case 'custom_fields': $this->exportCustomFields($file); break;
+            case 'positions': $this->exportPositions($file); break;
+            case 'work_orders': $this->exportWorkOrders($file); break;
+            case 'services': $this->exportServices($file); break;
+            case 'products': $this->exportProducts($file); break;
+            case 'stock_balances': $this->exportStockBalances($file); break;
+            case 'stock_movements': $this->exportStockMovements($file); break;
+            case 'transaction_categories': $this->exportTransactionCategories($file); break;
+            case 'transactions': $this->exportTransactions($file); break;
         }
     }
 
@@ -270,6 +258,194 @@ class ExportEntitiesJob implements ShouldQueue
                     $item->id,
                     $name,
                     $item->is_active ? 'Активно' : 'Неактивно'
+                ], ';');
+            }
+        });
+    }
+
+    private function exportWorkOrders($file): void
+    {
+        fputcsv($file, ['ID', 'Филиал', 'Клиент', 'Автомобиль', 'Статус', 'Оплата', 'Пробег', 'Сумма', 'Скидка', 'Итого', 'Дата создания'], ';');
+        
+        $statuses = [
+            'new' => 'Новый',
+            'in_progress' => 'В работе',
+            'ready' => 'Готов',
+            'completed' => 'Выдан',
+            'canceled' => 'Отменен',
+        ];
+
+        $paymentStatuses = [
+            'unpaid' => 'Не оплачен',
+            'partial' => 'Частично',
+            'paid' => 'Оплачен',
+        ];
+
+        WorkOrder::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel'])->whereIn('id', $this->ids)->chunk(500, function($orders) use ($file, $statuses, $paymentStatuses) {
+            foreach ($orders as $order) {
+                $vehicleName = $order->vehicle ? trim(($order->vehicle->make->name ?? '') . ' ' . ($order->vehicle->vehicleModel->name ?? '') . ' ' . $order->vehicle->plate_number) : '—';
+                fputcsv($file, [
+                    $order->id,
+                    $order->branch ? $order->branch->name : '',
+                    $order->client ? $order->client->name : '',
+                    $vehicleName,
+                    $statuses[$order->status] ?? $order->status,
+                    $paymentStatuses[$order->payment_status] ?? $order->payment_status,
+                    $order->mileage,
+                    $order->total_amount / 100,
+                    $order->discount_amount / 100,
+                    $order->final_amount / 100,
+                    $order->created_at->format('Y-m-d H:i:s')
+                ], ';');
+            }
+        });
+    }
+
+    private function exportServices($file): void
+    {
+        fputcsv($file, ['ID', 'Категория', 'Название', 'Цена', 'Длительность (мин)', 'Статус'], ';');
+        
+        Service::with('category')->whereIn('id', $this->ids)->chunk(500, function($items) use ($file) {
+            foreach ($items as $item) {
+                $catName = $item->category ? (is_array($item->category->name) ? ($item->category->name['ru'] ?? current($item->category->name)) : $item->category->name) : 'Без категории';
+                $name = is_array($item->name) ? ($item->name['ru'] ?? current($item->name)) : $item->name;
+                
+                fputcsv($file, [
+                    $item->id,
+                    $catName,
+                    $name,
+                    $item->price / 100,
+                    $item->duration_minutes,
+                    $item->is_active ? 'Активно' : 'Неактивно'
+                ], ';');
+            }
+        });
+    }
+
+    private function exportProducts($file): void
+    {
+        fputcsv($file, ['ID', 'Категория', 'Артикул', 'Название', 'Ед. изм.', 'Тип учета', 'Статус'], ';');
+        
+        Product::with('category')->whereIn('id', $this->ids)->chunk(500, function($items) use ($file) {
+            $accountingTypes = ['average' => 'Средневзвешенный', 'batch' => 'Партионный (FIFO)'];
+            foreach ($items as $item) {
+                $catName = $item->category ? (is_array($item->category->name) ? ($item->category->name['ru'] ?? current($item->category->name)) : $item->category->name) : 'Без категории';
+                $name = is_array($item->name) ? ($item->name['ru'] ?? current($item->name)) : $item->name;
+                
+                fputcsv($file, [
+                    $item->id,
+                    $catName,
+                    $item->sku,
+                    $name,
+                    $item->unit,
+                    $accountingTypes[$item->accounting_type] ?? $item->accounting_type,
+                    $item->is_active ? 'Активно' : 'Неактивно'
+                ], ';');
+            }
+        });
+    }
+
+    private function exportStockBalances($file): void
+    {
+        fputcsv($file, ['ID', 'Склад', 'Категория', 'Артикул', 'Товар', 'Остаток', 'Ед. изм.', 'Средняя себестоимость', 'Общая стоимость'], ';');
+        
+        StockBalance::with(['warehouse', 'product.category'])->whereIn('id', $this->ids)->chunk(500, function($items) use ($file) {
+            foreach ($items as $item) {
+                $product = $item->product;
+                $catName = $product && $product->category ? (is_array($product->category->name) ? ($product->category->name['ru'] ?? current($product->category->name)) : $product->category->name) : 'Без категории';
+                $name = $product ? (is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name) : 'Неизвестно';
+                
+                fputcsv($file, [
+                    $item->id,
+                    $item->warehouse ? $item->warehouse->name : '',
+                    $catName,
+                    $product ? $product->sku : '',
+                    $name,
+                    $item->quantity,
+                    $product ? $product->unit : '',
+                    $item->avg_cost / 100,
+                    ($item->quantity * $item->avg_cost) / 100
+                ], ';');
+            }
+        });
+    }
+
+    private function exportStockMovements($file): void
+    {
+        fputcsv($file, ['ID', 'Дата', 'Тип', 'Склад', 'Филиал', 'Товар', 'Кол-во', 'Себестоимость', 'Заказ-наряд', 'Комментарий'], ';');
+        
+        $types = [
+            'in' => 'Приход',
+            'out' => 'Расход',
+            'transfer' => 'Перемещение',
+            'audit' => 'Инвентаризация',
+            'consolidation' => 'Консолидация',
+        ];
+
+        StockMovement::with(['warehouse', 'branch', 'product', 'workOrder'])->whereIn('id', $this->ids)->chunk(500, function($items) use ($file, $types) {
+            foreach ($items as $item) {
+                $product = $item->product;
+                $name = $product ? (is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name) : 'Неизвестно';
+                
+                fputcsv($file, [
+                    $item->id,
+                    $item->created_at->format('Y-m-d H:i:s'),
+                    $types[$item->type] ?? $item->type,
+                    $item->warehouse ? $item->warehouse->name : '',
+                    $item->branch ? $item->branch->name : '',
+                    $name,
+                    $item->quantity,
+                    $item->cost_price / 100,
+                    $item->work_order_id ? '#' . str_pad($item->work_order_id, 6, '0', STR_PAD_LEFT) : '',
+                    $item->comment
+                ], ';');
+            }
+        });
+    }
+
+    private function exportTransactionCategories($file): void
+    {
+        fputcsv($file, ['ID', 'Тип', 'Название', 'Статус'], ';');
+        
+        TransactionCategory::whereIn('id', $this->ids)->chunk(500, function($items) use ($file) {
+            $types = ['income' => 'Доход', 'expense' => 'Расход'];
+            foreach ($items as $item) {
+                $name = is_array($item->name) ? ($item->name['ru'] ?? current($item->name)) : $item->name;
+                fputcsv($file, [
+                    $item->id,
+                    $types[$item->type] ?? $item->type,
+                    $name,
+                    $item->is_active ? 'Активно' : 'Неактивно'
+                ], ';');
+            }
+        });
+    }
+
+    private function exportTransactions($file): void
+    {
+        fputcsv($file, ['ID', 'Дата', 'Тип', 'Счет (Касса)', 'Филиал', 'Статья', 'Сумма', 'Основание', 'Комментарий'], ';');
+        
+        $types = ['income' => 'Доход', 'expense' => 'Расход', 'transfer' => 'Перевод'];
+
+        Transaction::with(['account', 'branch', 'category', 'payable'])->whereIn('id', $this->ids)->chunk(500, function($items) use ($file, $types) {
+            foreach ($items as $item) {
+                $catName = $item->category ? (is_array($item->category->name) ? ($item->category->name['ru'] ?? current($item->category->name)) : $item->category->name) : '—';
+                
+                $payableInfo = '—';
+                if ($item->payable_type === 'App\\Models\\WorkOrder') {
+                    $payableInfo = 'Заказ-наряд #' . str_pad($item->payable_id, 6, '0', STR_PAD_LEFT);
+                }
+
+                fputcsv($file, [
+                    $item->id,
+                    $item->created_at->format('Y-m-d H:i:s'),
+                    $types[$item->type] ?? $item->type,
+                    $item->account ? $item->account->name : '',
+                    $item->branch ? $item->branch->name : '',
+                    $catName,
+                    $item->amount / 100,
+                    $payableInfo,
+                    $item->comment
                 ], ';');
             }
         });

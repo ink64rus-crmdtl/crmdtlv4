@@ -34,6 +34,9 @@ const routeMap = {
     'system': 'system.index',
     'hr': 'hr.employees.index',
     'crm': 'crm.clients.index',
+    'operations': 'operations.work-orders.index',
+    'warehouse': 'warehouse.products.index',
+    'finance': 'finance.transactions.index', // ИСПРАВЛЕНО: Добавлен маппинг для Финансов
     'dictionaries': 'settings.dictionaries.index',
 };
 
