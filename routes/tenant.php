@@ -25,6 +25,7 @@ use App\Http\Controllers\Tenant\CrmSettingsController;
 use App\Http\Controllers\Tenant\NotificationController;
 use App\Http\Controllers\Tenant\LookupController;
 use App\Http\Controllers\Tenant\WorkOrderController;
+use App\Http\Controllers\Tenant\AppointmentController;
 use App\Http\Controllers\Tenant\ServiceController;
 use App\Http\Controllers\Tenant\ProductController;
 use App\Http\Controllers\Tenant\StockBalanceController;
@@ -224,6 +225,14 @@ Route::middleware([
         // Operations: Быстрое добавление номенклатуры
         Route::post('/operations/work-orders/quick-service', [WorkOrderController::class, 'storeServiceQuick'])->name('operations.work-orders.quick-service');
         Route::post('/operations/work-orders/quick-product', [WorkOrderController::class, 'storeProductQuick'])->name('operations.work-orders.quick-product');
+
+        // Operations: Записи (Фаза 9.2)
+        Route::get('/operations/appointments', [AppointmentController::class, 'index'])->name('operations.appointments.index');
+        Route::post('/operations/appointments', [AppointmentController::class, 'store'])->name('operations.appointments.store');
+        Route::put('/operations/appointments/{appointment}', [AppointmentController::class, 'update'])->name('operations.appointments.update');
+        Route::delete('/operations/appointments/{appointment}', [AppointmentController::class, 'destroy'])->name('operations.appointments.destroy');
+        Route::post('/operations/appointments/bulk-delete', [AppointmentController::class, 'bulkDestroy'])->name('operations.appointments.bulk-destroy');
+        Route::patch('/operations/appointments/{appointment}/status', [AppointmentController::class, 'updateStatus'])->name('operations.appointments.status.update');
 
         // Warehouse: Товары и Материалы
         Route::get('/warehouse/products', [ProductController::class, 'index'])->name('warehouse.products.index');

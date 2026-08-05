@@ -16,10 +16,11 @@ class TenantConfigService
             Carbon::setLocale($tenant->default_locale);
         }
 
-        if ($tenant->timezone) {
-            Config::set('app.timezone', $tenant->timezone);
-            date_default_timezone_set($tenant->timezone);
-        }
+        // Часовой пояс тенанта НЕ применяется к config('app.timezone')/date_default_timezone_set():
+        // сервер и вся БД всегда работают в UTC (см. TimezoneResolver). Смена глобального PHP-таймзона
+        // здесь ранее ломала интерпретацию "наивных" datetime-колонок Eloquent — они читались/писались
+        // в поясе тенанта вместо UTC, хотя реально в БД всегда лежит UTC. Использовать TimezoneResolver::
+        // forTenant()/forBranch() явно там, где нужен именно календарный день клиента.
 
         if ($tenant->base_currency) {
             Config::set('tenant.base_currency', $tenant->base_currency);

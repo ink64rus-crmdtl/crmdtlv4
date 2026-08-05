@@ -6,6 +6,7 @@ use App\Models\Scopes\BranchScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Appointment extends Model
 {
@@ -15,6 +16,8 @@ class Appointment extends Model
         'branch_id',
         'client_id',
         'vehicle_id',
+        'employee_id',
+        'work_order_id',
         'type',
         'status',
         'start_at',
@@ -48,5 +51,20 @@ class Appointment extends Model
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
+    }
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class);
+    }
+
+    public function workOrder(): BelongsTo
+    {
+        return $this->belongsTo(WorkOrder::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(AppointmentItem::class);
     }
 }
