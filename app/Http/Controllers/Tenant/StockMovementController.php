@@ -7,6 +7,7 @@ use App\Models\StockMovement;
 use App\Models\Warehouse;
 use App\Models\Branch;
 use App\Models\Product;
+use App\Models\ListView;
 use App\Services\StockService;
 use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
@@ -49,12 +50,27 @@ class StockMovementController extends Controller
         $branches = Branch::where('is_active', true)->get(['id', 'name']);
         $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'accounting_type']);
 
+        $availableColumns = [
+            ['key' => 'date', 'label' => 'Дата'],
+            ['key' => 'type', 'label' => 'Тип'],
+            ['key' => 'warehouse_branch', 'label' => 'Склад / Филиал'],
+            ['key' => 'product', 'label' => 'Товар'],
+            ['key' => 'quantity', 'label' => 'Кол-во'],
+            ['key' => 'cost_price', 'label' => 'Себестоимость'],
+            ['key' => 'reason', 'label' => 'Основание'],
+        ];
+
+        $listView = ListView::where('entity_type', 'stock_movement')->where('user_id', auth()->id())->first();
+        $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
+
         return Inertia::render('Warehouse/Movements/Index', [
             'movements' => $movements,
             'warehouses' => $warehouses,
             'branches' => $branches,
             'products' => $products,
             'filters' => $request->all(),
+            'availableColumns' => $availableColumns,
+            'listView' => ['visible_columns' => $visibleColumns],
         ]);
     }
 

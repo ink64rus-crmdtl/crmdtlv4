@@ -7,6 +7,7 @@ use App\Models\Transaction;
 use App\Models\TransactionCategory;
 use App\Models\Account;
 use App\Models\Branch;
+use App\Models\ListView;
 use App\Services\FinanceService;
 use App\Services\QueryFilterService;
 use App\Services\PeriodClosureService;
@@ -45,6 +46,19 @@ class TransactionController extends Controller
         $branches = auth()->user()->availableBranches()->where('is_active', true)->get(['branches.id', 'branches.name']);
         $categories = TransactionCategory::where('is_active', true)->get(['id', 'name', 'type']);
 
+        $availableColumns = [
+            ['key' => 'date', 'label' => 'Дата'],
+            ['key' => 'type', 'label' => 'Тип'],
+            ['key' => 'account', 'label' => 'Счет / Касса'],
+            ['key' => 'category', 'label' => 'Статья'],
+            ['key' => 'amount', 'label' => 'Сумма'],
+            ['key' => 'comment', 'label' => 'Основание / Комментарий'],
+            ['key' => 'reconciled', 'label' => 'Сверено'],
+        ];
+
+        $listView = ListView::where('entity_type', 'transaction')->where('user_id', auth()->id())->first();
+        $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
+
         return Inertia::render('Finance/Transactions/Index', [
             'transactions' => $transactions,
             'accounts' => $accounts,
@@ -52,6 +66,8 @@ class TransactionController extends Controller
             'categories' => $categories,
             'filters' => $request->all(),
             'closedThroughDate' => PeriodClosureService::closedThroughDate(),
+            'availableColumns' => $availableColumns,
+            'listView' => ['visible_columns' => $visibleColumns],
         ]);
     }
 

@@ -6,6 +6,7 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -17,11 +18,20 @@ const props = defineProps({
     branches: Array,
     products: Array,
     filters: Object,
+    availableColumns: { type: Array, default: () => [] },
+    listView: { type: Object, default: () => ({ visible_columns: [] }) },
 });
 
 const page = usePage();
 
 const isModalOpen = ref(false);
+const isColumnsModalOpen = ref(false);
+
+const activeColumns = computed(() => {
+    return props.listView.visible_columns
+        .map(key => props.availableColumns.find(c => c.key === key))
+        .filter(Boolean);
+});
 
 // Форма оприходования (Receipt)
 const form = useForm({
@@ -186,6 +196,7 @@ const movementTypes = {
                     v-model="search"
                     :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
                     @open-filters="isFiltersOpen = true"
+                    @open-columns="isColumnsModalOpen = true"
                     placeholder="Поиск по названию товара или номеру заказа..."
                 >
                     <template #actions>
@@ -205,13 +216,7 @@ const movementTypes = {
                                 <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Дата</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Склад / Филиал</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Товар</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Кол-во</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Себестоимость</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Основание</th>
+                                <th v-for="col in activeColumns" :key="col.key" :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', ['quantity','cost_price'].includes(col.key) ? 'text-right' : '']">{{ col.label }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -219,39 +224,41 @@ const movementTypes = {
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="movement.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ new Date(movement.created_at).toLocaleString('ru-RU', {day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'}) }}
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[movementTypes[movement.type]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                        <i :class="movementTypes[movement.type]?.icon"></i> {{ movementTypes[movement.type]?.label || movement.type }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-medium"><i class="ri-building-4-line text-gray-400"></i> {{ movement.warehouse ? movement.warehouse.name : '—' }}</div>
-                                    <div class="text-xs text-gray-500 mt-0.5"><i class="ri-store-2-line"></i> {{ movement.branch ? movement.branch.name : '—' }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-bold text-gray-800 dark:text-gray-200">{{ movement.product ? getLocalizedLabel(movement.product.name) : '—' }}</div>
-                                    <div v-if="movement.batch" class="text-xs text-warning mt-0.5">Партия #{{ movement.batch.id }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm font-bold border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    <span :class="movement.type === 'in' ? 'text-success' : 'text-danger'">
-                                        {{ movement.type === 'in' ? '+' : '-' }}{{ parseFloat(movement.quantity) }} {{ movement.product ? movement.product.unit : '' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    {{ formatMoney(movement.cost_price) }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <Link v-if="movement.workOrder" :href="route('operations.work-orders.show', movement.workOrder.id)" class="text-primary hover:underline font-medium">
-                                        Заказ #{{ String(movement.workOrder.id).padStart(6, '0') }}
-                                    </Link>
-                                    <span v-else class="text-xs text-gray-500">{{ movement.comment || 'Ручная операция' }}</span>
+                                <td v-for="col in activeColumns" :key="col.key" :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', ['quantity','cost_price'].includes(col.key) ? 'text-right' : '']">
+                                    <template v-if="col.key === 'date'">
+                                        {{ new Date(movement.created_at).toLocaleString('ru-RU', {day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'}) }}
+                                    </template>
+                                    <template v-else-if="col.key === 'type'">
+                                        <span :class="[movementTypes[movement.type]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                            <i :class="movementTypes[movement.type]?.icon"></i> {{ movementTypes[movement.type]?.label || movement.type }}
+                                        </span>
+                                    </template>
+                                    <template v-else-if="col.key === 'warehouse_branch'">
+                                        <div class="font-medium"><i class="ri-building-4-line text-gray-400"></i> {{ movement.warehouse ? movement.warehouse.name : '—' }}</div>
+                                        <div class="text-xs text-gray-500 mt-0.5"><i class="ri-store-2-line"></i> {{ movement.branch ? movement.branch.name : '—' }}</div>
+                                    </template>
+                                    <template v-else-if="col.key === 'product'">
+                                        <div class="font-bold text-gray-800 dark:text-gray-200">{{ movement.product ? getLocalizedLabel(movement.product.name) : '—' }}</div>
+                                        <div v-if="movement.batch" class="text-xs text-warning mt-0.5">Партия #{{ movement.batch.id }}</div>
+                                    </template>
+                                    <template v-else-if="col.key === 'quantity'">
+                                        <span :class="[movement.type === 'in' ? 'text-success' : 'text-danger', 'font-bold']">
+                                            {{ movement.type === 'in' ? '+' : '-' }}{{ parseFloat(movement.quantity) }} {{ movement.product ? movement.product.unit : '' }}
+                                        </span>
+                                    </template>
+                                    <template v-else-if="col.key === 'cost_price'">
+                                        {{ formatMoney(movement.cost_price) }}
+                                    </template>
+                                    <template v-else-if="col.key === 'reason'">
+                                        <Link v-if="movement.workOrder" :href="route('operations.work-orders.show', movement.workOrder.id)" class="text-primary hover:underline font-medium">
+                                            Заказ #{{ String(movement.workOrder.id).padStart(6, '0') }}
+                                        </Link>
+                                        <span v-else class="text-xs text-gray-500">{{ movement.comment || 'Ручная операция' }}</span>
+                                    </template>
                                 </td>
                             </tr>
                             <tr v-if="movements.data.length === 0">
-                                <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td :colspan="activeColumns.length + 1" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Движения не найдены.
                                 </td>
                             </tr>
@@ -388,6 +395,15 @@ const movementTypes = {
                 </div>
             </div>
         </Offcanvas>
+
+        <ColumnSettingsModal
+            :show="isColumnsModalOpen"
+            entity-type="stock_movement"
+            :available-columns="availableColumns"
+            :visible-columns="listView.visible_columns"
+            @close="isColumnsModalOpen = false"
+            @saved="isColumnsModalOpen = false"
+        />
 
     </AuthenticatedLayout>
 </template>

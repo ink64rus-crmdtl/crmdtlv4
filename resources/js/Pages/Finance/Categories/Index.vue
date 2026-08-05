@@ -5,6 +5,7 @@ import FinanceNav from '@/Components/FinanceNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -13,10 +14,19 @@ import axios from 'axios';
 const props = defineProps({
     categories: Object,
     filters: Object,
+    availableColumns: { type: Array, default: () => [] },
+    listView: { type: Object, default: () => ({ visible_columns: [] }) },
 });
 
 const isModalOpen = ref(false);
 const editingCategory = ref(null);
+const isColumnsModalOpen = ref(false);
+
+const activeColumns = computed(() => {
+    return props.listView.visible_columns
+        .map(key => props.availableColumns.find(c => c.key === key))
+        .filter(Boolean);
+});
 
 const form = useForm({
     name: '',
@@ -159,6 +169,7 @@ const deleteCategory = (category) => {
                 <DataTableToolbar
                     v-model="search"
                     :has-filters="false"
+                    @open-columns="isColumnsModalOpen = true"
                     placeholder="Поиск по названию..."
                 >
                     <template #actions>
@@ -178,9 +189,7 @@ const deleteCategory = (category) => {
                                 <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название статьи</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
+                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ col.label }}</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
@@ -189,17 +198,19 @@ const deleteCategory = (category) => {
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="category.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span v-if="category.type === 'income'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success"><i class="ri-arrow-right-down-line"></i> Доход</span>
-                                    <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger"><i class="ri-arrow-right-up-line"></i> Расход</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ getLocalizedLabel(category.name) }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[category.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                        {{ category.is_active ? 'Активно' : 'Неактивно' }}
-                                    </span>
+                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <template v-if="col.key === 'type'">
+                                        <span v-if="category.type === 'income'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success"><i class="ri-arrow-right-down-line"></i> Доход</span>
+                                        <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger"><i class="ri-arrow-right-up-line"></i> Расход</span>
+                                    </template>
+                                    <template v-else-if="col.key === 'name'">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(category.name) }}</span>
+                                    </template>
+                                    <template v-else-if="col.key === 'status'">
+                                        <span :class="[category.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                            {{ category.is_active ? 'Активно' : 'Неактивно' }}
+                                        </span>
+                                    </template>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
                                     <button @click="openModal(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
@@ -211,7 +222,7 @@ const deleteCategory = (category) => {
                                 </td>
                             </tr>
                             <tr v-if="categories.data.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Статьи не найдены.
                                 </td>
                             </tr>
@@ -268,5 +279,13 @@ const deleteCategory = (category) => {
             </div>
         </div>
 
+        <ColumnSettingsModal
+            :show="isColumnsModalOpen"
+            entity-type="transaction_category"
+            :available-columns="availableColumns"
+            :visible-columns="listView.visible_columns"
+            @close="isColumnsModalOpen = false"
+            @saved="isColumnsModalOpen = false"
+        />
     </AuthenticatedLayout>
 </template>

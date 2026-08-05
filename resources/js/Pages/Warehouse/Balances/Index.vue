@@ -6,6 +6,7 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -16,6 +17,16 @@ const props = defineProps({
     warehouses: Array,
     categories: Array,
     filters: Object,
+    availableColumns: { type: Array, default: () => [] },
+    listView: { type: Object, default: () => ({ visible_columns: [] }) },
+});
+
+const isColumnsModalOpen = ref(false);
+
+const activeColumns = computed(() => {
+    return props.listView.visible_columns
+        .map(key => props.availableColumns.find(c => c.key === key))
+        .filter(Boolean);
 });
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
@@ -126,6 +137,7 @@ const formatMoney = (amount) => {
                     v-model="search"
                     :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null && v !== '1')"
                     @open-filters="isFiltersOpen = true"
+                    @open-columns="isColumnsModalOpen = true"
                     placeholder="Поиск по названию или артикулу товара..."
                 >
                     <template #actions>
@@ -143,12 +155,7 @@ const formatMoney = (amount) => {
                                 <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Склад</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Категория</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Товар / Артикул</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Остаток</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Ср. Себестоимость</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Общая стоимость</th>
+                                <th v-for="col in activeColumns" :key="col.key" :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', ['quantity','avg_cost','total_value'].includes(col.key) ? 'text-right' : '']">{{ col.label }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -156,32 +163,34 @@ const formatMoney = (amount) => {
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="balance.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
-                                        <i class="ri-building-4-line"></i> {{ balance.warehouse ? balance.warehouse.name : '—' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ balance.product && balance.product.category ? getLocalizedLabel(balance.product.category.name) : '—' }}
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-bold text-gray-800 dark:text-gray-200">{{ balance.product ? getLocalizedLabel(balance.product.name) : '—' }}</div>
-                                    <div class="text-xs text-gray-500 font-mono mt-0.5">{{ balance.product ? balance.product.sku : '' }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm font-bold border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    <span :class="balance.quantity <= 0 ? 'text-danger' : 'text-gray-800 dark:text-gray-200'">
-                                        {{ parseFloat(balance.quantity) }} {{ balance.product ? balance.product.unit : '' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    {{ formatMoney(balance.avg_cost) }}
-                                </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    {{ formatMoney(balance.quantity * balance.avg_cost) }}
+                                <td v-for="col in activeColumns" :key="col.key" :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', ['quantity','avg_cost','total_value'].includes(col.key) ? 'text-right' : '']">
+                                    <template v-if="col.key === 'warehouse'">
+                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            <i class="ri-building-4-line"></i> {{ balance.warehouse ? balance.warehouse.name : '—' }}
+                                        </span>
+                                    </template>
+                                    <template v-else-if="col.key === 'category'">
+                                        {{ balance.product && balance.product.category ? getLocalizedLabel(balance.product.category.name) : '—' }}
+                                    </template>
+                                    <template v-else-if="col.key === 'product'">
+                                        <div class="font-bold text-gray-800 dark:text-gray-200">{{ balance.product ? getLocalizedLabel(balance.product.name) : '—' }}</div>
+                                        <div class="text-xs text-gray-500 font-mono mt-0.5">{{ balance.product ? balance.product.sku : '' }}</div>
+                                    </template>
+                                    <template v-else-if="col.key === 'quantity'">
+                                        <span :class="[balance.quantity <= 0 ? 'text-danger' : 'text-gray-800 dark:text-gray-200', 'font-bold']">
+                                            {{ parseFloat(balance.quantity) }} {{ balance.product ? balance.product.unit : '' }}
+                                        </span>
+                                    </template>
+                                    <template v-else-if="col.key === 'avg_cost'">
+                                        {{ formatMoney(balance.avg_cost) }}
+                                    </template>
+                                    <template v-else-if="col.key === 'total_value'">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(balance.quantity * balance.avg_cost) }}</span>
+                                    </template>
                                 </td>
                             </tr>
                             <tr v-if="balances.data.length === 0">
-                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td :colspan="activeColumns.length + 1" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Остатки не найдены.
                                 </td>
                             </tr>
@@ -235,6 +244,15 @@ const formatMoney = (amount) => {
                 </div>
             </div>
         </Offcanvas>
+
+        <ColumnSettingsModal
+            :show="isColumnsModalOpen"
+            entity-type="stock_balance"
+            :available-columns="availableColumns"
+            :visible-columns="listView.visible_columns"
+            @close="isColumnsModalOpen = false"
+            @saved="isColumnsModalOpen = false"
+        />
 
     </AuthenticatedLayout>
 </template>

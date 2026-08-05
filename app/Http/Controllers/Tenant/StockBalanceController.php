@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\StockBalance;
 use App\Models\Warehouse;
 use App\Models\ProductCategory;
+use App\Models\ListView;
 use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
@@ -57,11 +58,25 @@ class StockBalanceController extends Controller
         $warehouses = Warehouse::where('is_active', true)->get(['id', 'name']);
         $categories = ProductCategory::where('is_active', true)->get(['id', 'name']);
 
+        $availableColumns = [
+            ['key' => 'warehouse', 'label' => 'Склад'],
+            ['key' => 'category', 'label' => 'Категория'],
+            ['key' => 'product', 'label' => 'Товар / Артикул'],
+            ['key' => 'quantity', 'label' => 'Остаток'],
+            ['key' => 'avg_cost', 'label' => 'Ср. Себестоимость'],
+            ['key' => 'total_value', 'label' => 'Общая стоимость'],
+        ];
+
+        $listView = ListView::where('entity_type', 'stock_balance')->where('user_id', auth()->id())->first();
+        $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
+
         return Inertia::render('Warehouse/Balances/Index', [
             'balances' => $balances,
             'warehouses' => $warehouses,
             'categories' => $categories,
             'filters' => $request->all(),
+            'availableColumns' => $availableColumns,
+            'listView' => ['visible_columns' => $visibleColumns],
         ]);
     }
 

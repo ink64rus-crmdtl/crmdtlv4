@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Warehouse;
+use App\Models\ListView;
 use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
@@ -37,11 +38,25 @@ class ProductController extends Controller
         $categories = ProductCategory::orderBy('id')->get();
         $warehouses = Warehouse::where('is_active', true)->get(['id', 'name']);
 
+        $availableColumns = [
+            ['key' => 'category', 'label' => 'Категория'],
+            ['key' => 'sku', 'label' => 'Артикул'],
+            ['key' => 'name', 'label' => 'Название'],
+            ['key' => 'unit', 'label' => 'Ед. изм.'],
+            ['key' => 'accounting_type', 'label' => 'Тип учета'],
+            ['key' => 'status', 'label' => 'Статус'],
+        ];
+
+        $listView = ListView::where('entity_type', 'product')->where('user_id', auth()->id())->first();
+        $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
+
         return Inertia::render('Warehouse/Products/Index', [
             'products' => $products,
             'categories' => $categories,
             'warehouses' => $warehouses,
             'filters' => $request->all(),
+            'availableColumns' => $availableColumns,
+            'listView' => ['visible_columns' => $visibleColumns],
         ]);
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\TransactionCategory;
+use App\Models\ListView;
 use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
@@ -28,9 +29,20 @@ class TransactionCategoryController extends Controller
 
         $categories = $query->paginate(15)->withQueryString();
 
+        $availableColumns = [
+            ['key' => 'type', 'label' => 'Тип'],
+            ['key' => 'name', 'label' => 'Название статьи'],
+            ['key' => 'status', 'label' => 'Статус'],
+        ];
+
+        $listView = ListView::where('entity_type', 'transaction_category')->where('user_id', auth()->id())->first();
+        $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
+
         return Inertia::render('Finance/Categories/Index', [
             'categories' => $categories,
             'filters' => request()->all(),
+            'availableColumns' => $availableColumns,
+            'listView' => ['visible_columns' => $visibleColumns],
         ]);
     }
 
