@@ -64,3 +64,55 @@ description: "Генерация осмысленного сообщения д�
         Закрытие issues: Closes #123, #456
 
         Ссылки на задачи: JIRA-123, TASK-456
+
+        Примеры:
+text
+
+feat(auth): add two-factor authentication
+
+Implement TOTP-based two-factor authentication for user accounts.
+Users can enable/disable 2FA in their profile settings.
+Uses Google Authenticator compatible QR codes.
+
+Closes #789
+
+text
+
+fix(api): handle empty request body in user update
+
+Previously, sending empty request body to PUT /api/users/{id}
+would throw a validation exception. Now properly handles empty
+arrays and returns validation errors.
+
+BREAKING CHANGE: Now returns 422 instead of 500
+
+text
+
+refactor(database): optimize product queries
+
+- Add composite index on (category_id, created_at)
+- Use eager loading for product relationships
+- Replace N+1 queries with join statements
+
+Performance improvement: ~50% faster page load
+
+Твой запрос:
+
+Проанализируй текущие изменения в проекте (используй git diff или git status) и создай осмысленное сообщение для коммита в формате Conventional Commits.
+
+Важно:
+
+    Проанализируй ВСЕ измененные файлы
+
+    Определи основной тип изменений
+
+    Укажи правильный scope
+
+    Напиши подробное body с объяснением
+
+    Если есть breaking changes, обязательно укажи
+
+В конце предложи полную команду для коммита:
+bash
+
+git commit -m "your message" -m "body"
