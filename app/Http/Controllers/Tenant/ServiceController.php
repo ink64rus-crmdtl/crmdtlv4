@@ -16,7 +16,7 @@ use Inertia\Response;
 
 class ServiceController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request)
     {
         $query = Service::with(['category', 'businessDirection']);
         
@@ -42,7 +42,7 @@ class ServiceController extends Controller
         $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
         $lookups = Lookup::whereIn('type', ['vehicle_body', 'vehicle_class'])->where('is_active', true)->get()->groupBy('type');
 
-        return Inertia::render('Warehouse/Services/Index', [
+        return Inertia::render('Operations/Services/Index', [
             'services' => $services,
             'categories' => $categories,
             'businessDirections' => $businessDirections,
@@ -89,7 +89,7 @@ class ServiceController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $name = $service->name;
+        $name = $service->getTranslations('name');
         $name[app()->getLocale()] = $validated['name'];
 
         $service->update([

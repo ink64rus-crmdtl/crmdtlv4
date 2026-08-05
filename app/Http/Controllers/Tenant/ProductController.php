@@ -82,7 +82,7 @@ class ProductController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $name = $product->name;
+        $name = $product->getTranslations('name');
         $name[app()->getLocale()] = $validated['name'];
 
         $product->update([

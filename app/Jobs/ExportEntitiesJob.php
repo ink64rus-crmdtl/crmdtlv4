@@ -18,6 +18,7 @@ use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\TransactionCategory;
 use App\Models\Transaction;
+use App\Models\Lookup;
 use App\Notifications\ExportReadyNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -267,13 +268,9 @@ class ExportEntitiesJob implements ShouldQueue
     {
         fputcsv($file, ['ID', 'Филиал', 'Клиент', 'Автомобиль', 'Статус', 'Оплата', 'Пробег', 'Сумма', 'Скидка', 'Итого', 'Дата создания'], ';');
         
-        $statuses = [
-            'new' => 'Новый',
-            'in_progress' => 'В работе',
-            'ready' => 'Готов',
-            'completed' => 'Выдан',
-            'canceled' => 'Отменен',
-        ];
+        $statuses = Lookup::where('type', 'work_order_status')
+            ->get()
+            ->mapWithKeys(fn ($lookup) => [$lookup->value => $lookup->label ?: $lookup->value]);
 
         $paymentStatuses = [
             'unpaid' => 'Не оплачен',

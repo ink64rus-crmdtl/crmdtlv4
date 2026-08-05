@@ -31,6 +31,11 @@ class Product extends Model
         ];
     }
 
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ProductCategory::class, 'product_category_id');
+    }
+
     public function batches(): HasMany
     {
         return $this->hasMany(ProductBatch::class);

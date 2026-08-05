@@ -28,6 +28,7 @@ use App\Services\FinanceService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Exception;
@@ -121,6 +122,7 @@ class WorkOrderController extends Controller
             'listView' => [
                 'visible_columns' => $visibleColumns,
             ],
+            'workOrderStatuses' => $this->workOrderStatuses(),
         ]);
     }
 
@@ -172,6 +174,7 @@ class WorkOrderController extends Controller
             'serviceCategories' => $serviceCategories,
             'productCategories' => $productCategories,
             'employees' => $employees,
+            'workOrderStatuses' => $this->workOrderStatuses(),
         ]);
     }
 
@@ -181,7 +184,7 @@ class WorkOrderController extends Controller
             'branch_id' => ['required', 'exists:branches,id'],
             'client_id' => ['required', 'exists:clients,id'],
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
-            'status' => ['required', 'string', 'in:new,in_progress,ready,completed,canceled'],
+            'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
             'mileage' => ['nullable', 'integer', 'min:0'],
             'custom_fields' => ['nullable', 'array'],
         ]);
@@ -213,7 +216,7 @@ class WorkOrderController extends Controller
             'branch_id' => ['required', 'exists:branches,id'],
             'client_id' => ['required', 'exists:clients,id'],
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
-            'status' => ['required', 'string', 'in:new,in_progress,ready,completed,canceled'],
+            'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
             'mileage' => ['nullable', 'integer', 'min:0'],
             'custom_fields' => ['nullable', 'array'],
         ]);
@@ -239,6 +242,17 @@ class WorkOrderController extends Controller
     {
         $workOrder->delete();
         return redirect()->back()->with('success', 'Заказ-наряд удален');
+    }
+
+    public function updateStatus(Request $request, WorkOrder $workOrder)
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
+        ]);
+
+        $workOrder->update(['status' => $validated['status']]);
+
+        return redirect()->back()->with('success', 'Статус обновлён');
     }
 
     public function bulkDestroy(Request $request)
@@ -484,6 +498,21 @@ class WorkOrderController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Товар быстро добавлен в справочник');
+    }
+
+    private function workOrderStatuses()
+    {
+        return Lookup::where('type', 'work_order_status')
+            ->orderBy('sort_order')
+            ->get(['id', 'value', 'label', 'color', 'is_active', 'is_system']);
+    }
+
+    private function activeStatusValues(): array
+    {
+        return Lookup::where('type', 'work_order_status')
+            ->where('is_active', true)
+            ->pluck('value')
+            ->all();
     }
 
     private function recalculateTotals(WorkOrder $workOrder)

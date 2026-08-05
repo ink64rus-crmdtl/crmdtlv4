@@ -38,6 +38,7 @@ const form = useForm({
 
 const categoryForm = useForm({
     name: '',
+    business_direction_id: '',
 });
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
@@ -256,7 +257,7 @@ const submitCategory = () => {
                                     <input type="checkbox" :value="service.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span v-if="service.category" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium">
+                                    <span v-if="service.category" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
                                         <i class="ri-folder-line"></i> {{ getLocalizedLabel(service.category.name) }}
                                     </span>
                                     <span v-else class="text-gray-400 text-xs">—</span>
@@ -304,7 +305,7 @@ const submitCategory = () => {
             </div>
         </div>
 
-        <!-- Модалка Услуги (Ширина 4xl - увеличено в 1.5 раза) -->
+        <!-- Модалка Услуги (Ширина 4xl) -->
         <Modal :show="isModalOpen" @close="closeModal" maxWidth="4xl">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
@@ -354,7 +355,7 @@ const submitCategory = () => {
 
                         <!-- Матрица цен -->
                         <div v-if="pricingBasis !== 'none'" class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3">
                                 Индивидуальные цены по {{ pricingBasis === 'vehicle_body' ? 'типам кузова' : 'классам автомобилей' }}
                             </h4>
                             <p class="text-xs text-gray-500 mb-3">Оставьте значение пустым, чтобы подставлять базовую цену.</p>
@@ -397,6 +398,13 @@ const submitCategory = () => {
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
                             <input v-model="categoryForm.name" type="text" required placeholder="Например: Мойка" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление бизнеса</label>
+                            <select v-model="categoryForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" class="bg-white dark:bg-gray-800">Общая категория (Без направления)</option>
+                                <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                            </select>
                         </div>
                     </div>
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50">

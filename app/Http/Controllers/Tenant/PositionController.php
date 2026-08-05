@@ -56,7 +56,7 @@ class PositionController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $name = $position->name;
+        $name = $position->getTranslations('name');
         $name[app()->getLocale()] = $validated['name'];
 
         $position->update([

@@ -59,7 +59,7 @@ class TransactionCategoryController extends Controller
             'is_active' => ['boolean'],
         ]);
 
-        $name = $category->name;
+        $name = $category->getTranslations('name');
         $name[app()->getLocale()] = $validated['name'];
 
         $category->update([

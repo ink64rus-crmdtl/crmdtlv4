@@ -150,6 +150,7 @@ Route::middleware([
         Route::post('/settings/lookups', [LookupController::class, 'store'])->name('settings.lookups.store');
         Route::put('/settings/lookups/{lookup}', [LookupController::class, 'update'])->name('settings.lookups.update');
         Route::delete('/settings/lookups/{lookup}', [LookupController::class, 'destroy'])->name('settings.lookups.destroy');
+        Route::post('/settings/lookups/reorder', [LookupController::class, 'reorder'])->name('settings.lookups.reorder');
 
         // Настройки: CRM (Строгая валидация и т.д.)
         Route::get('/settings/crm', [CrmSettingsController::class, 'index'])->name('settings.crm.index');
@@ -207,7 +208,17 @@ Route::middleware([
         Route::post('/operations/work-orders/{workOrder}/discount', [WorkOrderController::class, 'updateDiscount'])->name('operations.work-orders.discount.update');
         Route::post('/operations/work-orders/{workOrder}/payment', [WorkOrderController::class, 'processPayment'])->name('operations.work-orders.payment.store');
         Route::post('/operations/work-orders/{workOrder}/complete', [WorkOrderController::class, 'completeOrder'])->name('operations.work-orders.complete');
+        Route::patch('/operations/work-orders/{workOrder}/status', [WorkOrderController::class, 'updateStatus'])->name('operations.work-orders.status.update');
         
+        // Operations: Прайс-лист услуг (Перенесено из Warehouse в Operations)
+        Route::get('/operations/services', [ServiceController::class, 'index'])->name('operations.services.index');
+        Route::post('/operations/services', [ServiceController::class, 'store'])->name('operations.services.store');
+        Route::put('/operations/services/{service}', [ServiceController::class, 'update'])->name('operations.services.update');
+        Route::delete('/operations/services/{service}', [ServiceController::class, 'destroy'])->name('operations.services.destroy');
+        Route::post('/operations/services/bulk-delete', [ServiceController::class, 'bulkDestroy'])->name('operations.services.bulk-destroy');
+        Route::post('/operations/services/bulk-export', [ServiceController::class, 'bulkExport'])->name('operations.services.bulk-export');
+        Route::post('/operations/service-categories', [ServiceController::class, 'storeCategory'])->name('operations.service-categories.store');
+
         // Operations: Быстрое добавление номенклатуры
         Route::post('/operations/work-orders/quick-service', [WorkOrderController::class, 'storeServiceQuick'])->name('operations.work-orders.quick-service');
         Route::post('/operations/work-orders/quick-product', [WorkOrderController::class, 'storeProductQuick'])->name('operations.work-orders.quick-product');
@@ -220,15 +231,6 @@ Route::middleware([
         Route::post('/warehouse/products/bulk-delete', [ProductController::class, 'bulkDestroy'])->name('warehouse.products.bulk-destroy');
         Route::post('/warehouse/products/bulk-export', [ProductController::class, 'bulkExport'])->name('warehouse.products.bulk-export');
         Route::post('/warehouse/product-categories', [ProductController::class, 'storeCategory'])->name('warehouse.product-categories.store');
-
-        // Warehouse: Прайс-лист (Услуги)
-        Route::get('/warehouse/services', [ServiceController::class, 'index'])->name('warehouse.services.index');
-        Route::post('/warehouse/services', [ServiceController::class, 'store'])->name('warehouse.services.store');
-        Route::put('/warehouse/services/{service}', [ServiceController::class, 'update'])->name('warehouse.services.update');
-        Route::delete('/warehouse/services/{service}', [ServiceController::class, 'destroy'])->name('warehouse.services.destroy');
-        Route::post('/warehouse/services/bulk-delete', [ServiceController::class, 'bulkDestroy'])->name('warehouse.services.bulk-destroy');
-        Route::post('/warehouse/services/bulk-export', [ServiceController::class, 'bulkExport'])->name('warehouse.services.bulk-export');
-        Route::post('/warehouse/service-categories', [ServiceController::class, 'storeCategory'])->name('warehouse.service-categories.store');
 
         // Warehouse: Остатки и Движения (Оприходование)
         Route::get('/warehouse/balances', [StockBalanceController::class, 'index'])->name('warehouse.balances.index');

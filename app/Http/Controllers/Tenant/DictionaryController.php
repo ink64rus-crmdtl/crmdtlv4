@@ -18,7 +18,7 @@ class DictionaryController extends Controller
     public function index(): Response
     {
         $makes = VehicleMake::with('models')->orderBy('name')->get();
-        $lookups = Lookup::orderBy('value')->get()->groupBy('type');
+        $lookups = Lookup::orderBy('sort_order')->orderBy('value')->get()->groupBy('type');
         $serviceCategories = ServiceCategory::with('businessDirection')->orderBy('id')->get();
         $productCategories = ProductCategory::orderBy('id')->get();
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
@@ -121,7 +121,7 @@ class DictionaryController extends Controller
             'business_direction_id' => ['nullable', 'exists:business_directions,id'],
         ]);
 
-        $name = $category->name;
+        $name = $category->getTranslations('name');
         $name[app()->getLocale()] = $validated['name'];
 
         $category->update([
@@ -158,7 +158,7 @@ class DictionaryController extends Controller
             'name' => ['required', 'string', 'max:255']
         ]);
 
-        $name = $category->name;
+        $name = $category->getTranslations('name');
         $name[app()->getLocale()] = $validated['name'];
 
         $category->update([
