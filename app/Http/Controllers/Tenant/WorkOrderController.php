@@ -128,7 +128,7 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employee', 'transactions.account']);
+        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'transactions.account']);
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'work_order')->where('entity_id', $workOrder->id)->get();
@@ -286,24 +286,31 @@ class WorkOrderController extends Controller
         $validated = $request->validate([
             'itemable_type' => ['required', 'string', 'in:service,product'],
             'itemable_id' => ['required', 'integer'],
-            'employee_id' => ['nullable', 'exists:employees,id'],
+            'employee_ids' => ['nullable', 'array'],
+            'employee_ids.*' => ['integer', 'exists:employees,id'],
             'name' => ['required', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.001'],
             'price' => ['required', 'numeric', 'min:0'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $priceCents = (int) round($validated['price'] * 100);
-        $totalCents = (int) round($validated['quantity'] * $priceCents);
+        $discountCents = (int) round(($validated['discount_amount'] ?? 0) * 100);
+        $totalCents = max(0, (int) round($validated['quantity'] * $priceCents) - $discountCents);
 
-        $workOrder->items()->create([
+        $item = $workOrder->items()->create([
             'itemable_type' => $validated['itemable_type'] === 'service' ? Service::class : Product::class,
             'itemable_id' => $validated['itemable_id'],
-            'employee_id' => $validated['employee_id'] ?? null,
             'name' => $validated['name'],
             'quantity' => $validated['quantity'],
             'price' => $priceCents,
+            'discount_amount' => $discountCents,
             'total' => $totalCents,
         ]);
+
+        if (!empty($validated['employee_ids'])) {
+            $item->employees()->sync($validated['employee_ids']);
+        }
 
         $this->recalculateTotals($workOrder);
 
@@ -317,26 +324,32 @@ class WorkOrderController extends Controller
         }
 
         $validated = $request->validate([
-            'employee_id' => ['nullable', 'exists:employees,id'],
+            'employee_ids' => ['nullable', 'array'],
+            'employee_ids.*' => ['integer', 'exists:employees,id'],
             'quantity' => ['nullable', 'numeric', 'min:0.001'],
             'price' => ['nullable', 'numeric', 'min:0'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $data = [];
-        if ($request->has('employee_id')) {
-            $data['employee_id'] = $validated['employee_id'];
+        if ($request->has('employee_ids')) {
+            $item->employees()->sync($validated['employee_ids'] ?? []);
         }
 
-        if ($request->has('quantity') || $request->has('price')) {
+        $data = [];
+        if ($request->has('quantity') || $request->has('price') || $request->has('discount_amount')) {
             $qty = $validated['quantity'] ?? $item->quantity;
             $price = $request->has('price') ? (int) round($validated['price'] * 100) : $item->price;
-            
+            $discount = $request->has('discount_amount') ? (int) round($validated['discount_amount'] * 100) : $item->discount_amount;
+
             $data['quantity'] = $qty;
             $data['price'] = $price;
-            $data['total'] = (int) round($qty * $price);
+            $data['discount_amount'] = $discount;
+            $data['total'] = max(0, (int) round($qty * $price) - $discount);
         }
 
-        $item->update($data);
+        if (!empty($data)) {
+            $item->update($data);
+        }
 
         $this->recalculateTotals($workOrder);
 

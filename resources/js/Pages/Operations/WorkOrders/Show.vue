@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import Modal from '@/Components/Modal.vue';
+import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 
@@ -221,8 +222,34 @@ const updateItemDetails = (item, fields) => {
     });
 };
 
-const updateItemTechnician = (item, employeeId) => {
-    updateItemDetails(item, { employee_id: employeeId || null });
+const updateItemEmployees = (item, employeeIds) => {
+    updateItemDetails(item, { employee_ids: employeeIds });
+};
+
+// Скидка на отдельную позицию (сумма ₽ или %)
+const itemDiscountMode = ref({}); // item.id -> 'amount' | 'percent'
+
+const getItemDiscountMode = (item) => itemDiscountMode.value[item.id] || 'amount';
+
+const setItemDiscountMode = (item, mode) => {
+    itemDiscountMode.value = { ...itemDiscountMode.value, [item.id]: mode };
+};
+
+const itemBaseRub = (item) => (parseFloat(item.quantity) * item.price) / 100;
+
+const itemDiscountDisplayValue = (item) => {
+    const amountRub = (item.discount_amount || 0) / 100;
+    if (getItemDiscountMode(item) === 'amount') return amountRub;
+    const base = itemBaseRub(item);
+    return base > 0 ? Math.round((amountRub / base) * 10000) / 100 : 0;
+};
+
+const applyItemDiscount = (item, rawValue) => {
+    const raw = Number(rawValue) || 0;
+    const base = itemBaseRub(item);
+    const amountRub = getItemDiscountMode(item) === 'amount' ? raw : Math.round(base * raw) / 100;
+    const clamped = Math.max(0, Math.min(amountRub, base));
+    updateItemDetails(item, { discount_amount: clamped });
 };
 
 // --- ФОРМА ОДИНОЧНОГО ДОБАВЛЕНИЯ (Fallback) ---
@@ -653,17 +680,15 @@ const formatMoney = (amount) => {
                                             </div>
                                         </td>
                                         <td class="py-3 px-6 text-sm">
-                                            <!-- Выбор Исполнителя на каждую позицию (Только для услуг) -->
-                                            <select 
+                                            <!-- Выбор Исполнителей на позицию, можно нескольких (Только для услуг) -->
+                                            <EmployeeMultiSelect
                                                 v-if="item.itemable_type.includes('Service')"
-                                                :value="item.employee_id || ''"
-                                                @change="e => updateItemTechnician(item, e.target.value)"
+                                                class="max-w-[240px]"
+                                                :model-value="(item.employees || []).map(e => e.id)"
+                                                :options="employees"
                                                 :disabled="workOrder.status === 'completed'"
-                                                class="block rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 w-40 animate-fade-in"
-                                            >
-                                                <option value="">Не назначен</option>
-                                                <option v-for="emp in employees" :key="emp.id" :value="emp.id">{{ emp.last_name }} {{ emp.first_name }}</option>
-                                            </select>
+                                                @update:model-value="ids => updateItemEmployees(item, ids)"
+                                            />
                                             <span v-else class="text-xs text-gray-400 font-medium">Складское списание</span>
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }}</td>
@@ -914,51 +939,63 @@ const formatMoney = (amount) => {
 
                         <!-- Список добавленных позиций с прямым редактированием -->
                         <div class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar">
-                            <div v-for="item in workOrder.items" :key="item.id" class="p-3 bg-white dark:bg-[#313a46] border border-gray-200 dark:border-gray-700 rounded-md shadow-sm space-y-2">
-                                <div class="flex justify-between items-start gap-2">
-                                    <div>
-                                        <p class="text-xs font-bold text-gray-800 dark:text-gray-200 leading-tight">{{ item.name }}</p>
-                                        <span v-if="item.itemable_type.includes('Service')" class="text-[10px] text-blue-600 font-semibold uppercase">Услуга</span>
-                                        <span v-else class="text-[10px] text-orange-600 font-semibold uppercase">Товар</span>
+                            <div v-for="item in workOrder.items" :key="item.id" class="p-3 bg-white dark:bg-[#313a46] border border-gray-200 dark:border-gray-700 rounded-md shadow-sm space-y-2.5">
+                                <!-- Наименование, количество и сумма — в одну строку -->
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-bold text-gray-800 dark:text-gray-200 leading-tight truncate" :title="item.name">{{ item.name }}</p>
+                                        <span v-if="item.itemable_type.includes('Service')" class="text-[11px] text-blue-600 font-semibold uppercase">Услуга</span>
+                                        <span v-else class="text-[11px] text-orange-600 font-semibold uppercase">Товар</span>
                                     </div>
-                                    <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 text-xs p-1" title="Удалить"><i class="ri-delete-bin-line text-sm"></i></button>
-                                </div>
-
-                                <!-- Назначение мастера в корзине (Только для услуг) -->
-                                <div v-if="item.itemable_type.includes('Service')">
-                                    <label class="block text-[10px] text-gray-400 font-semibold mb-0.5">Мастер:</label>
-                                    <select 
-                                        :value="item.employee_id || ''"
-                                        @change="e => updateItemTechnician(item, e.target.value)"
-                                        class="block w-full rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
-                                    >
-                                        <option value="">Не назначен</option>
-                                        <option v-for="emp in employees" :key="emp.id" :value="emp.id">{{ emp.last_name }} {{ emp.first_name }}</option>
-                                    </select>
-                                </div>
-
-                                <!-- Изменение цены и количества -->
-                                <div class="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100 dark:border-gray-700/50">
-                                    <div>
-                                        <label class="block text-[10px] text-gray-400 font-semibold mb-0.5">Кол-во:</label>
-                                        <input 
-                                            type="number" 
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <input
+                                            type="number"
                                             step="any"
                                             min="0.001"
-                                            :value="parseFloat(item.quantity)" 
+                                            :value="parseFloat(item.quantity)"
                                             @change="e => updateItemDetails(item, { quantity: e.target.value })"
-                                            class="block w-full rounded border-gray-200 dark:border-gray-700 bg-transparent py-0.5 px-2 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" 
+                                            title="Количество"
+                                            class="w-14 rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-1.5 text-sm font-bold text-gray-800 dark:text-gray-200 text-center focus:border-primary focus:ring-0"
                                         />
-                                    </div>
-                                    <div>
-                                        <label class="block text-[10px] text-gray-400 font-semibold mb-0.5">Цена (₽):</label>
-                                        <input 
-                                            type="number" 
+                                        <span class="text-gray-400">×</span>
+                                        <input
+                                            type="number"
                                             step="0.01"
                                             min="0"
-                                            :value="item.price / 100" 
+                                            :value="item.price / 100"
                                             @change="e => updateItemDetails(item, { price: e.target.value })"
-                                            class="block w-full rounded border-gray-200 dark:border-gray-700 bg-transparent py-0.5 px-2 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" 
+                                            title="Цена за ед."
+                                            class="w-20 rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-1.5 text-sm font-bold text-gray-800 dark:text-gray-200 text-right focus:border-primary focus:ring-0"
+                                        />
+                                        <span class="text-gray-400">=</span>
+                                        <span class="text-sm font-bold text-primary w-20 text-right">{{ formatMoney(item.total) }}</span>
+                                        <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-base"></i></button>
+                                    </div>
+                                </div>
+
+                                <!-- Исполнители (можно несколько) и скидка на позицию -->
+                                <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
+                                    <EmployeeMultiSelect
+                                        v-if="item.itemable_type.includes('Service')"
+                                        :model-value="(item.employees || []).map(e => e.id)"
+                                        :options="employees"
+                                        @update:model-value="ids => updateItemEmployees(item, ids)"
+                                    />
+
+                                    <div class="flex items-center gap-1.5 ml-auto">
+                                        <span class="text-[11px] text-gray-400 font-semibold">Скидка:</span>
+                                        <div class="inline-flex rounded border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+                                            <button type="button" @click="setItemDiscountMode(item, 'amount')" :class="[getItemDiscountMode(item) === 'amount' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-1.5 py-1 text-[11px] font-bold transition-colors']">₽</button>
+                                            <button type="button" @click="setItemDiscountMode(item, 'percent')" :class="[getItemDiscountMode(item) === 'percent' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-1.5 py-1 text-[11px] font-bold transition-colors border-l border-gray-200 dark:border-gray-700']">%</button>
+                                        </div>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            :max="getItemDiscountMode(item) === 'percent' ? 100 : itemBaseRub(item)"
+                                            :value="itemDiscountDisplayValue(item)"
+                                            @change="e => applyItemDiscount(item, e.target.value)"
+                                            class="w-16 rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-1.5 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
                                         />
                                     </div>
                                 </div>

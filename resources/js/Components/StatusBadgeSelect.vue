@@ -123,7 +123,7 @@ onUnmounted(() => {
                     ref="panelRef"
                     :style="panelStyle"
                     @click.stop
-                    class="z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1 max-h-64 overflow-y-auto"
+                    class="z-[250] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1 max-h-64 overflow-y-auto"
                 >
                     <button
                         v-for="option in selectableOptions"

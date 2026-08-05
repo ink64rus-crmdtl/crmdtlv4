@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class WorkOrderItem extends Model
@@ -16,6 +17,7 @@ class WorkOrderItem extends Model
         'name',
         'quantity',
         'price',
+        'discount_amount',
         'total',
         'currency_id',
     ];
@@ -26,6 +28,7 @@ class WorkOrderItem extends Model
             'employee_id' => 'integer',
             'quantity' => 'decimal:3',
             'price' => 'integer',
+            'discount_amount' => 'integer',
             'total' => 'integer',
             'currency_id' => 'integer',
         ];
@@ -44,5 +47,10 @@ class WorkOrderItem extends Model
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function employees(): BelongsToMany
+    {
+        return $this->belongsToMany(Employee::class, 'work_order_item_employees')->withTimestamps();
     }
 }
