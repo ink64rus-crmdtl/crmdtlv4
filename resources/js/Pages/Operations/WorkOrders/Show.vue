@@ -1156,7 +1156,7 @@ const formatMoney = (amount) => {
 
                 <!-- Footer Drawer -->
                 <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-2.5">
-                    <button v-if="drawerTab === 'services'" @click="openQuickServiceModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрая услуга</button>
+                    <button v-if="drawerTab === 'services'" @click="openQuickServiceModal" title="Добавить услугу, которой нет в каталоге" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Своей услуги нет в списке</button>
                     <button v-else @click="openQuickProductModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрый товар</button>
                     <button @click="isBatchDrawerOpen = false" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">Сохранить и закрыть</button>
                 </div>
@@ -1322,7 +1322,7 @@ const formatMoney = (amount) => {
                                 <div>
                                     <div class="flex justify-between items-center mb-1.5">
                                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Выбор из справочника <span class="text-danger">*</span></label>
-                                        <button v-if="itemForm.itemable_type === 'service'" type="button" @click="openQuickServiceModal" class="text-xs text-primary hover:underline font-medium">+ Создать новую</button>
+                                        <button v-if="itemForm.itemable_type === 'service'" type="button" @click="openQuickServiceModal" title="Добавить услугу, которой нет в каталоге" class="text-xs text-primary hover:underline font-medium">+ Нет в списке?</button>
                                         <button v-if="itemForm.itemable_type === 'product'" type="button" @click="openQuickProductModal" class="text-xs text-primary hover:underline font-medium">+ Создать новый</button>
                                     </div>
                                     <select v-model="itemForm.itemable_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
