@@ -14,6 +14,7 @@ class AccountController extends Controller
             'legal_entity_id' => ['required', 'exists:legal_entities,id'],
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', 'in:cash,bank,acquiring'],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'bank_name' => ['nullable', 'string', 'max:255'],
             'bik' => ['nullable', 'string', 'max:50'],
             'account_number' => ['nullable', 'string', 'max:100'],
@@ -32,6 +33,7 @@ class AccountController extends Controller
             'legal_entity_id' => $validated['legal_entity_id'],
             'name' => $validated['name'],
             'type' => $validated['type'],
+            'commission_percent' => $validated['type'] === 'acquiring' ? ($validated['commission_percent'] ?? 0) : null,
             'bank_name' => $validated['bank_name'] ?? null,
             'bik' => $validated['bik'] ?? null,
             'account_number' => $validated['account_number'] ?? null,
@@ -48,6 +50,7 @@ class AccountController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', 'in:cash,bank,acquiring'],
+            'commission_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'bank_name' => ['nullable', 'string', 'max:255'],
             'bik' => ['nullable', 'string', 'max:50'],
             'account_number' => ['nullable', 'string', 'max:100'],
@@ -61,6 +64,8 @@ class AccountController extends Controller
                 ->where('id', '!=', $account->id)
                 ->update(['is_default_for_invoicing' => false]);
         }
+
+        $validated['commission_percent'] = $validated['type'] === 'acquiring' ? ($validated['commission_percent'] ?? 0) : null;
 
         $account->update($validated);
 

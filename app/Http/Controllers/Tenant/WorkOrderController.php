@@ -149,9 +149,10 @@ class WorkOrderController extends Controller
         $services = Service::where('is_active', true)->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
         $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id']);
         
-        $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type']);
+        $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']);
 
         $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
+        $bonusRubPerPoint = (float) (Setting::where('key', 'bonus_rub_per_point')->value('value') ?? 1);
         $lookups = Lookup::whereIn('type', ['vehicle_body', 'vehicle_class'])->where('is_active', true)->get()->groupBy('type');
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
         $serviceCategories = ServiceCategory::where('is_active', true)->get(['id', 'name', 'business_direction_id']);
@@ -169,6 +170,7 @@ class WorkOrderController extends Controller
             'accounts' => $accounts,
             'customFieldDefs' => $customFieldDefs,
             'pricingBasis' => $pricingBasis,
+            'bonusRubPerPoint' => $bonusRubPerPoint,
             'lookups' => $lookups,
             'businessDirections' => $businessDirections,
             'serviceCategories' => $serviceCategories,
@@ -391,12 +393,24 @@ class WorkOrderController extends Controller
             'amount' => ['required', 'numeric', 'min:0.01'],
         ]);
 
+        $account = Account::findOrFail($validated['account_id']);
         $amountCents = (int) round($validated['amount'] * 100);
 
+        // Оплата бонусами не может превышать бонусный баланс клиента
+        if ($account->type === 'bonus') {
+            $rate = (float) (Setting::where('key', 'bonus_rub_per_point')->value('value') ?? 1);
+            $client = $workOrder->client;
+            $maxBonusCents = $rate > 0 ? (int) floor($client->bonus_points * $rate * 100) : 0;
+
+            if ($amountCents > $maxBonusCents) {
+                return redirect()->back()->withErrors(['account_id' => 'Недостаточно бонусов у клиента для списания этой суммы.']);
+            }
+        }
+
         try {
-            DB::transaction(function () use ($validated, $workOrder, $amountCents) {
+            DB::transaction(function () use ($workOrder, $amountCents, $account) {
                 FinanceService::processTransaction([
-                    'account_id' => $validated['account_id'],
+                    'account_id' => $account->id,
                     'branch_id' => $workOrder->branch_id,
                     'type' => 'income',
                     'amount' => $amountCents,
@@ -405,8 +419,38 @@ class WorkOrderController extends Controller
                     'payable_id' => $workOrder->id,
                 ], auth()->id());
 
+                // Списание бонусных баллов клиента пропорционально оплаченной сумме
+                if ($account->type === 'bonus') {
+                    $rate = (float) (Setting::where('key', 'bonus_rub_per_point')->value('value') ?? 1);
+                    $pointsUsed = $rate > 0 ? (int) round(($amountCents / 100) / $rate) : 0;
+                    $client = $workOrder->client;
+                    $pointsUsed = max(0, min($pointsUsed, $client->bonus_points));
+
+                    if ($pointsUsed > 0) {
+                        $client->decrement('bonus_points', $pointsUsed);
+                    }
+                }
+
+                // Комиссия эквайринга: отдельная расходная транзакция с того же счета.
+                // Заказ считается оплаченным на валовую сумму (комиссия не уменьшает погашенный долг клиента).
+                if ($account->type === 'acquiring' && $account->commission_percent > 0) {
+                    $commissionCents = (int) round($amountCents * $account->commission_percent / 100);
+
+                    if ($commissionCents > 0) {
+                        FinanceService::processTransaction([
+                            'account_id' => $account->id,
+                            'branch_id' => $workOrder->branch_id,
+                            'type' => 'expense',
+                            'amount' => $commissionCents,
+                            'comment' => 'Комиссия эквайринга по заказ-наряду #' . $workOrder->id,
+                            'payable_type' => WorkOrder::class,
+                            'payable_id' => $workOrder->id,
+                        ], auth()->id());
+                    }
+                }
+
                 $paidTotal = $workOrder->transactions()->where('type', 'income')->sum('amount');
-                
+
                 if ($paidTotal >= $workOrder->final_amount) {
                     $workOrder->payment_status = 'paid';
                 } elseif ($paidTotal > 0) {

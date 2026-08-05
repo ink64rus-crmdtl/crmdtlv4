@@ -41,7 +41,8 @@ const form = useForm({
 const accountForm = useForm({
     legal_entity_id: null,
     name: '',
-    type: 'bank',
+    type: 'cash',
+    commission_percent: 0,
     bank_name: '',
     bik: '',
     account_number: '',
@@ -49,6 +50,12 @@ const accountForm = useForm({
     is_default_for_invoicing: false,
     is_active: true,
 });
+
+const accountTypeLabels = {
+    cash: 'Касса',
+    bank: 'Расчетный счет',
+    acquiring: 'Эквайринг',
+};
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -165,6 +172,7 @@ const openAccountModal = (account = null) => {
     if (account) {
         accountForm.name = account.name;
         accountForm.type = account.type;
+        accountForm.commission_percent = account.commission_percent || 0;
         accountForm.bank_name = account.bank_name || '';
         accountForm.bik = account.bik || '';
         accountForm.account_number = account.account_number || '';
@@ -174,7 +182,8 @@ const openAccountModal = (account = null) => {
     } else {
         accountForm.reset();
         accountForm.legal_entity_id = editingEntityId.value;
-        accountForm.type = 'bank';
+        accountForm.type = 'cash';
+        accountForm.commission_percent = 0;
         accountForm.is_default_for_invoicing = !editingEntity.value?.accounts?.length;
         accountForm.is_active = true;
     }
@@ -461,7 +470,7 @@ const deleteAccount = (account) => {
                 <!-- Содержимое Вкладки 2: Расчетные счета -->
                 <div v-if="activeTab === 'accounts'" class="p-6 space-y-4 flex flex-col">
                     <div class="flex justify-between items-center mb-2">
-                        <p class="text-sm text-gray-500 dark:text-gray-400 font-medium">Банковские счета компании</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 font-medium">Кассы, расчетные счета и эквайринг компании</p>
                         <button
                             type="button"
                             @click="openAccountModal()"
@@ -481,14 +490,20 @@ const deleteAccount = (account) => {
                             <div>
                                 <div class="flex items-center gap-2 mb-1">
                                     <span class="font-semibold text-gray-800 dark:text-gray-200 text-sm">{{ account.name }}</span>
+                                    <span class="inline-flex items-center rounded bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        {{ accountTypeLabels[account.type] || account.type }}
+                                    </span>
                                     <div v-if="account.is_default_for_invoicing" class="inline-flex items-center rounded bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
                                         Основной для документов
                                     </div>
                                 </div>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <p v-if="account.type === 'bank'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                     <strong class="text-gray-700 dark:text-gray-300 font-medium">{{ account.bank_name || 'Банк не указан' }}</strong> |
                                     {{ bankLabels.bik }}: {{ account.bik || '—' }} |
                                     Счет: <span class="text-gray-700 dark:text-gray-300 font-semibold">{{ account.account_number || '—' }}</span>
+                                </p>
+                                <p v-else-if="account.type === 'acquiring'" class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Комиссия банка: <span class="text-gray-700 dark:text-gray-300 font-semibold">{{ account.commission_percent || 0 }}%</span>
                                 </p>
                             </div>
                             <div class="flex gap-2">
@@ -514,6 +529,16 @@ const deleteAccount = (account) => {
                         </div>
                     </div>
 
+                    <div class="bg-info/5 border border-info/20 rounded-md p-3 flex items-center justify-between gap-3">
+                        <p class="text-xs text-gray-600 dark:text-gray-400">
+                            <i class="ri-arrow-left-right-line text-info mr-1"></i>
+                            Переводы между счетами и полная история операций — в разделе «Финансы».
+                        </p>
+                        <Link :href="route('finance.transactions.index')" class="shrink-0 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white">
+                            Перейти <i class="ri-arrow-right-line ml-1"></i>
+                        </Link>
+                    </div>
+
                     <div class="flex justify-end border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
                         <button 
                             type="button" 
@@ -533,7 +558,7 @@ const deleteAccount = (account) => {
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-xl lg:max-w-2xl my-8 mx-auto flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        {{ editingAccount ? 'Редактирование расчетного счета' : 'Добавление расчетного счета' }}
+                        {{ editingAccount ? 'Редактирование счета' : 'Добавление счета' }}
                     </h3>
                     <button type="button" @click="closeAccountModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
                         <i class="ri-close-line text-xl"></i>
@@ -542,56 +567,95 @@ const deleteAccount = (account) => {
 
                 <form @submit.prevent="submitAccount" class="flex flex-col">
                     <div class="p-6 space-y-4">
+                        <!-- Тип счета -->
+                        <div class="grid grid-cols-3 gap-3">
+                            <label :class="[accountForm.type === 'cash' ? 'border-success bg-success/5 ring-1 ring-success' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-3 shadow-sm focus:outline-none transition-all items-center justify-center text-center']">
+                                <input type="radio" v-model="accountForm.type" value="cash" class="sr-only" />
+                                <span class="text-sm font-semibold text-gray-900 dark:text-white flex flex-col items-center gap-1">
+                                    <i class="ri-wallet-3-line text-success text-xl"></i> Касса
+                                </span>
+                            </label>
+                            <label :class="[accountForm.type === 'bank' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-3 shadow-sm focus:outline-none transition-all items-center justify-center text-center']">
+                                <input type="radio" v-model="accountForm.type" value="bank" class="sr-only" />
+                                <span class="text-sm font-semibold text-gray-900 dark:text-white flex flex-col items-center gap-1">
+                                    <i class="ri-bank-line text-primary text-xl"></i> Расчетный счет
+                                </span>
+                            </label>
+                            <label :class="[accountForm.type === 'acquiring' ? 'border-info bg-info/5 ring-1 ring-info' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-3 shadow-sm focus:outline-none transition-all items-center justify-center text-center']">
+                                <input type="radio" v-model="accountForm.type" value="acquiring" class="sr-only" />
+                                <span class="text-sm font-semibold text-gray-900 dark:text-white flex flex-col items-center gap-1">
+                                    <i class="ri-bank-card-line text-info text-xl"></i> Эквайринг
+                                </span>
+                            </label>
+                        </div>
+
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название счета (для внутренних документов) <span class="text-danger">*</span></label>
-                            <input 
-                                v-model="accountForm.name" 
-                                type="text" 
-                                required 
-                                placeholder="Основной р/с в Сбербанке" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                            <input
+                                v-model="accountForm.name"
+                                type="text"
+                                required
+                                :placeholder="accountForm.type === 'cash' ? 'Касса администратора' : (accountForm.type === 'acquiring' ? 'Терминал Сбербанк' : 'Основной р/с в Сбербанке')"
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             />
                         </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Наименование банка</label>
-                            <input 
-                                v-model="accountForm.bank_name" 
-                                type="text" 
-                                placeholder="ПАО Сбербанк" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                            />
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <template v-if="accountForm.type === 'bank'">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.bik }}</label>
-                                <input 
-                                    v-model="accountForm.bik" 
-                                    type="text" 
-                                    placeholder="044525225" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Наименование банка</label>
+                                <input
+                                    v-model="accountForm.bank_name"
+                                    type="text"
+                                    placeholder="ПАО Сбербанк"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
                             </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.bik }}</label>
+                                    <input
+                                        v-model="accountForm.bik"
+                                        type="text"
+                                        placeholder="044525225"
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.corr_account }}</label>
+                                    <input
+                                        v-model="accountForm.corr_account"
+                                        type="text"
+                                        placeholder="30101810400000000225"
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                    />
+                                </div>
+                            </div>
+
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.corr_account }}</label>
-                                <input 
-                                    v-model="accountForm.corr_account" 
-                                    type="text" 
-                                    placeholder="30101810400000000225" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.account_number }}</label>
+                                <input
+                                    v-model="accountForm.account_number"
+                                    type="text"
+                                    placeholder="40702810938000001234"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
                             </div>
-                        </div>
+                        </template>
 
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.account_number }}</label>
-                            <input 
-                                v-model="accountForm.account_number" 
-                                type="text" 
-                                placeholder="40702810938000001234" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                        <div v-else-if="accountForm.type === 'acquiring'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Комиссия банка за прием карт (%) <span class="text-danger">*</span></label>
+                            <input
+                                v-model="accountForm.commission_percent"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                required
+                                placeholder="2.5"
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                             />
+                            <p class="text-xs text-gray-500 mt-1">При каждой оплате картой с этого счета будет автоматически списываться расход на сумму комиссии.</p>
                         </div>
 
                         <!-- Toggle Switch (Attex Style) -->

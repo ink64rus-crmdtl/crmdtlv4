@@ -15,6 +15,7 @@ class Account extends Model
         'legal_entity_id',
         'name',
         'type',
+        'commission_percent',
         'bank_name',
         'bik',
         'account_number',
@@ -28,6 +29,7 @@ class Account extends Model
     protected function casts(): array
     {
         return [
+            'commission_percent' => 'decimal:2',
             'balance' => 'integer',
             'currency_id' => 'integer',
             'is_active' => 'boolean',

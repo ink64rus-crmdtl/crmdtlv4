@@ -7,11 +7,13 @@ import { Head, useForm, Link } from '@inertiajs/vue3';
 const props = defineProps({
     strictPlateValidation: Boolean,
     pricingBasis: String,
+    bonusRubPerPoint: Number,
 });
 
 const form = useForm({
     strict_plate_validation: props.strictPlateValidation,
     pricing_basis: props.pricingBasis || 'none',
+    bonus_rub_per_point: props.bonusRubPerPoint ?? 1,
 });
 
 const submit = () => {
@@ -90,6 +92,23 @@ const submit = () => {
                                     <span class="block text-xs text-gray-500 mt-0.5">Класс 1, Класс 2 и т.д.</span>
                                 </div>
                             </label>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Бонусная программа</label>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Курс списания бонусных баллов клиента в оплату заказ-наряда.</p>
+                        <div class="flex items-center gap-2 max-w-xs">
+                            <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">1 балл =</span>
+                            <input
+                                v-model="form.bonus_rub_per_point"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                required
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                            />
+                            <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">₽</span>
                         </div>
                     </div>
 

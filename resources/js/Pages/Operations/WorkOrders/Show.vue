@@ -24,6 +24,7 @@ const props = defineProps({
     productCategories: Array,
     employees: Array,
     workOrderStatuses: { type: Array, default: () => [] },
+    bonusRubPerPoint: { type: Number, default: 1 },
 });
 
 const page = usePage();
@@ -455,6 +456,35 @@ const paymentForm = useForm({
 const remainingAmount = computed(() => {
     const paid = props.workOrder.transactions?.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0) || 0;
     return Math.max(0, props.workOrder.final_amount - paid);
+});
+
+const accountTypeLabels = {
+    cash: 'Касса',
+    bank: 'Расчетный счет',
+    acquiring: 'Эквайринг',
+    bonus: 'Бонусы клиента',
+};
+
+const selectedAccount = computed(() => props.accounts.find(a => a.id === paymentForm.account_id));
+
+// Сколько клиент может оплатить бонусами, в рублях
+const clientBonusRub = computed(() => {
+    const points = props.workOrder.client?.bonus_points || 0;
+    return Math.floor(points * props.bonusRubPerPoint * 100) / 100;
+});
+
+// Превью комиссии эквайринга — чисто информационно, реальный расчет всегда на бэкенде
+const acquiringCommissionPreview = computed(() => {
+    if (selectedAccount.value?.type !== 'acquiring') return null;
+    const commissionPercent = Number(selectedAccount.value.commission_percent) || 0;
+    const amount = Number(paymentForm.amount) || 0;
+    const commission = Math.round(amount * commissionPercent) / 100;
+    return { commission, net: Math.max(0, amount - commission) };
+});
+
+const maxPayableRub = computed(() => {
+    const remaining = remainingAmount.value / 100;
+    return selectedAccount.value?.type === 'bonus' ? Math.min(remaining, clientBonusRub.value) : remaining;
 });
 
 const openPaymentModal = () => {
@@ -1408,17 +1438,29 @@ const formatMoney = (amount) => {
                     <form @submit.prevent="submitPayment" class="flex flex-col">
                         <div class="p-6 space-y-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма к оплате (₽) <span class="text-danger">*</span></label>
-                                <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="remainingAmount / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                                <p class="text-xs text-gray-500 mt-1">Остаток долга: {{ formatMoney(remainingAmount) }}</p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Расчетный счет <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Счет <span class="text-danger">*</span></label>
                                 <select v-model="paymentForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="" disabled class="bg-white dark:bg-gray-800">Выберите счет...</option>
-                                    <option v-for="acc in accounts" :key="acc.id" :value="acc.id" class="bg-white dark:bg-gray-800">{{ acc.name }}</option>
+                                    <option v-for="acc in accounts" :key="acc.id" :value="acc.id" class="bg-white dark:bg-gray-800">{{ acc.name }} — {{ accountTypeLabels[acc.type] || acc.type }}</option>
                                 </select>
                                 <span v-if="paymentForm.errors.account_id" class="text-xs text-danger mt-1">{{ paymentForm.errors.account_id }}</span>
+                            </div>
+
+                            <div v-if="selectedAccount?.type === 'bonus'" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
+                                Доступно бонусами: <span class="font-bold text-info">{{ formatMoney(clientBonusRub * 100) }}</span>
+                                ({{ workOrder.client?.bonus_points || 0 }} баллов)
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма к оплате (₽) <span class="text-danger">*</span></label>
+                                <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="maxPayableRub" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <p class="text-xs text-gray-500 mt-1">Остаток долга: {{ formatMoney(remainingAmount) }}</p>
+                            </div>
+
+                            <div v-if="acquiringCommissionPreview" class="p-3 rounded-md bg-warning/5 border border-warning/20 text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                                <div class="flex justify-between"><span>Комиссия банка ({{ selectedAccount.commission_percent }}%):</span> <span class="font-bold text-warning">− {{ formatMoney(acquiringCommissionPreview.commission * 100) }}</span></div>
+                                <div class="flex justify-between"><span>Зачислится на счет:</span> <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(acquiringCommissionPreview.net * 100) }}</span></div>
+                                <p class="text-[11px] text-gray-400 pt-1">Заказ будет учтен как оплаченный на полную сумму — комиссия проводится отдельным расходом.</p>
                             </div>
                         </div>
                         <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
