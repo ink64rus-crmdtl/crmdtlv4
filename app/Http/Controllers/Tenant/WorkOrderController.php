@@ -287,7 +287,12 @@ class WorkOrderController extends Controller
     {
         $validated = $request->validate([
             'itemable_type' => ['required', 'string', 'in:service,product'],
-            'itemable_id' => ['required', 'integer'],
+            'itemable_id' => ['nullable', 'integer'],
+            'is_custom' => ['boolean'],
+            'save_to_catalog' => ['boolean'],
+            'service_category_id' => ['nullable', 'exists:service_categories,id'],
+            'business_direction_id' => ['nullable', 'exists:business_directions,id'],
+            'duration_minutes' => ['nullable', 'integer', 'min:0'],
             'employee_ids' => ['nullable', 'array'],
             'employee_ids.*' => ['integer', 'exists:employees,id'],
             'name' => ['required', 'string', 'max:255'],
@@ -296,23 +301,54 @@ class WorkOrderController extends Controller
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
+        $isCustom = $validated['is_custom'] ?? false;
+
+        // Позиции без каталожной карточки допустимы только для услуг — товар без карточки
+        // Product физически нечего списывать со склада (нет unit/accounting_type/остатков).
+        if ($isCustom && $validated['itemable_type'] !== 'service') {
+            return redirect()->back()->withErrors(['itemable_type' => 'Свою позицию без карточки можно добавить только как услугу.']);
+        }
+
+        if (!$isCustom && empty($validated['itemable_id'])) {
+            return redirect()->back()->withErrors(['itemable_id' => 'Выберите позицию из каталога.']);
+        }
+
         $priceCents = (int) round($validated['price'] * 100);
         $discountCents = (int) round(($validated['discount_amount'] ?? 0) * 100);
         $totalCents = max(0, (int) round($validated['quantity'] * $priceCents) - $discountCents);
 
-        $item = $workOrder->items()->create([
-            'itemable_type' => $validated['itemable_type'] === 'service' ? Service::class : Product::class,
-            'itemable_id' => $validated['itemable_id'],
-            'name' => $validated['name'],
-            'quantity' => $validated['quantity'],
-            'price' => $priceCents,
-            'discount_amount' => $discountCents,
-            'total' => $totalCents,
-        ]);
+        DB::transaction(function () use ($validated, $workOrder, $isCustom, $priceCents, $discountCents, $totalCents) {
+            $itemableId = $validated['itemable_id'] ?? null;
 
-        if (!empty($validated['employee_ids'])) {
-            $item->employees()->sync($validated['employee_ids']);
-        }
+            if ($isCustom && !empty($validated['save_to_catalog'])) {
+                $service = Service::create([
+                    'service_category_id' => $validated['service_category_id'] ?? null,
+                    'business_direction_id' => $validated['business_direction_id'] ?? null,
+                    'name' => [app()->getLocale() => $validated['name']],
+                    'price' => $priceCents,
+                    'duration_minutes' => $validated['duration_minutes'] ?? 0,
+                    'is_active' => true,
+                ]);
+                $itemableId = $service->id;
+            }
+
+            $nextSortOrder = (int) $workOrder->items()->max('sort_order') + 1;
+
+            $item = $workOrder->items()->create([
+                'itemable_type' => $validated['itemable_type'] === 'service' ? Service::class : Product::class,
+                'itemable_id' => $itemableId,
+                'name' => $validated['name'],
+                'quantity' => $validated['quantity'],
+                'price' => $priceCents,
+                'discount_amount' => $discountCents,
+                'total' => $totalCents,
+                'sort_order' => $nextSortOrder,
+            ]);
+
+            if (!empty($validated['employee_ids'])) {
+                $item->employees()->sync($validated['employee_ids']);
+            }
+        });
 
         $this->recalculateTotals($workOrder);
 
@@ -363,11 +399,50 @@ class WorkOrderController extends Controller
         if ($item->work_order_id !== $workOrder->id) {
             abort(403);
         }
-        
+
         $item->delete();
         $this->recalculateTotals($workOrder);
-        
+
         return redirect()->back()->with('success', 'Позиция удалена');
+    }
+
+    /**
+     * Группирует позиции: сначала все услуги, затем все товары — относительный порядок
+     * внутри каждой группы сохраняется (стабильная сортировка по текущему sort_order).
+     */
+    public function autoSortItems(WorkOrder $workOrder)
+    {
+        $items = $workOrder->items()->get();
+
+        $ordered = $items->sortBy(function (WorkOrderItem $item) {
+            return $item->itemable_type === Service::class ? 0 : 1;
+        })->values();
+
+        DB::transaction(function () use ($ordered) {
+            foreach ($ordered as $index => $item) {
+                $item->update(['sort_order' => $index]);
+            }
+        });
+
+        return redirect()->back()->with('success', 'Позиции упорядочены: услуги сверху, товары снизу');
+    }
+
+    public function reorderItems(Request $request, WorkOrder $workOrder)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array'],
+            'ids.*' => ['integer', 'exists:work_order_items,id'],
+        ]);
+
+        DB::transaction(function () use ($validated, $workOrder) {
+            foreach ($validated['ids'] as $index => $id) {
+                WorkOrderItem::where('id', $id)
+                    ->where('work_order_id', $workOrder->id)
+                    ->update(['sort_order' => $index]);
+            }
+        });
+
+        return redirect()->back()->with('success', 'Порядок позиций обновлён');
     }
 
     public function updateDiscount(Request $request, WorkOrder $workOrder)
@@ -501,30 +576,9 @@ class WorkOrderController extends Controller
     }
 
     // --- QUICK ADD FROM WORK ORDER ---
-
-    public function storeServiceQuick(Request $request)
-    {
-        $validated = $request->validate([
-            'service_category_id' => ['nullable', 'exists:service_categories,id'],
-            'business_direction_id' => ['nullable', 'exists:business_directions,id'],
-            'name' => ['required', 'string', 'max:255'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'prices' => ['nullable', 'array'],
-            'duration_minutes' => ['required', 'integer', 'min:0'],
-        ]);
-
-        Service::create([
-            'service_category_id' => $validated['service_category_id'],
-            'business_direction_id' => $validated['business_direction_id'],
-            'name' => [app()->getLocale() => $validated['name']],
-            'price' => (int) round($validated['price'] * 100),
-            'prices' => $validated['prices'] ?? null,
-            'duration_minutes' => $validated['duration_minutes'],
-            'is_active' => true,
-        ]);
-
-        return redirect()->back()->with('success', 'Услуга быстро добавлена в справочник');
-    }
+    // storeServiceQuick удалён: его функциональность (быстрое создание услуги из карточки заказа)
+    // полностью поглощена addItem() с флагами is_custom + save_to_catalog — теперь одним шагом
+    // позиция сразу добавляется в заказ, а не только создаётся в каталоге отдельно.
 
     public function storeProductQuick(Request $request)
     {

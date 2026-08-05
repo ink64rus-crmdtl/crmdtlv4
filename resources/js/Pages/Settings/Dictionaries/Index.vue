@@ -4,8 +4,9 @@ import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
 import Modal from '@/Components/Modal.vue';
+import draggable from 'vuedraggable';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 
 const props = defineProps({
     makes: { type: Array, default: () => [] },
@@ -124,20 +125,17 @@ const statusColorClass = (color) => statusColorOptions.find(c => c.value === col
 
 const colorOptionsForType = computed(() => activeTab.value === 'work_order_status' ? statusColorOptions : groupColors);
 
-const workOrderStatuses = computed(() => [...(props.lookups['work_order_status'] || [])].sort((a, b) => a.sort_order - b.sort_order));
+const sortLookupsByOrder = (list) => [...(list || [])].sort((a, b) => a.sort_order - b.sort_order);
 
-const moveStatus = (lookup, direction) => {
-    const list = workOrderStatuses.value;
-    const index = list.findIndex(s => s.id === lookup.id);
-    const swapWith = direction === 'up' ? index - 1 : index + 1;
-    if (index === -1 || swapWith < 0 || swapWith >= list.length) return;
+const workOrderStatusesList = ref(sortLookupsByOrder(props.lookups['work_order_status']));
+watch(() => props.lookups['work_order_status'], (list) => {
+    workOrderStatusesList.value = sortLookupsByOrder(list);
+});
 
-    const reordered = [...list];
-    [reordered[index], reordered[swapWith]] = [reordered[swapWith], reordered[index]];
-
+const onStatusesReordered = () => {
     router.post(route('settings.lookups.reorder'), {
         type: 'work_order_status',
-        ids: reordered.map(s => s.id),
+        ids: workOrderStatusesList.value.map(s => s.id),
     }, { preserveScroll: true, preserveState: true });
 };
 
@@ -634,34 +632,40 @@ const getLocalizedLabel = (label) => {
                                             <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="(lookup, index) in workOrderStatuses" :key="lookup.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td class="py-4 px-4">
-                                                <div class="flex items-center gap-1">
-                                                    <button @click="moveStatus(lookup, 'up')" :disabled="index === 0" class="text-gray-400 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"><i class="ri-arrow-up-s-line"></i></button>
-                                                    <button @click="moveStatus(lookup, 'down')" :disabled="index === workOrderStatuses.length - 1" class="text-gray-400 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"><i class="ri-arrow-down-s-line"></i></button>
-                                                </div>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm">
-                                                <span :class="[statusColorClass(lookup.color), 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
-                                                    {{ lookup.label || lookup.value }}
-                                                </span>
-                                                <i v-if="lookup.is_system" class="ri-lock-line text-gray-400 ml-2" title="Системный статус"></i>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm">
-                                                <span :class="[lookup.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                                    {{ lookup.is_active ? 'Активно' : 'Неактивно' }}
-                                                </span>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm text-right space-x-2">
-                                                <template v-if="!lookup.is_system">
-                                                    <button @click="openLookupModal(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                    <button @click="deleteLookup(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                                </template>
-                                                <span v-else class="text-xs text-gray-400">Системный</span>
-                                            </td>
-                                        </tr>
-                                    </tbody>
+                                    <draggable
+                                        v-model="workOrderStatusesList"
+                                        tag="tbody"
+                                        item-key="id"
+                                        class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300"
+                                        handle=".status-drag-handle"
+                                        @end="onStatusesReordered"
+                                    >
+                                        <template #item="{ element: lookup }">
+                                            <tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                                <td class="py-4 px-4">
+                                                    <i class="ri-draggable status-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
+                                                </td>
+                                                <td class="py-4 px-6 text-sm">
+                                                    <span :class="[statusColorClass(lookup.color), 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
+                                                        {{ lookup.label || lookup.value }}
+                                                    </span>
+                                                    <i v-if="lookup.is_system" class="ri-lock-line text-gray-400 ml-2" title="Системный статус"></i>
+                                                </td>
+                                                <td class="py-4 px-6 text-sm">
+                                                    <span :class="[lookup.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                                        {{ lookup.is_active ? 'Активно' : 'Неактивно' }}
+                                                    </span>
+                                                </td>
+                                                <td class="py-4 px-6 text-sm text-right space-x-2">
+                                                    <template v-if="!lookup.is_system">
+                                                        <button @click="openLookupModal(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                                        <button @click="deleteLookup(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                                    </template>
+                                                    <span v-else class="text-xs text-gray-400">Системный</span>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </draggable>
                                 </table>
                             </div>
                         </div>

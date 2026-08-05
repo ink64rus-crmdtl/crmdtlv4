@@ -4,6 +4,7 @@ import Offcanvas from '@/Components/Offcanvas.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -150,17 +151,6 @@ const toggleColumn = (key) => {
     }
 };
 
-const moveColumn = (index, direction) => {
-    if (direction === 'up' && index > 0) {
-        const temp = columnsForm.visible_columns[index];
-        columnsForm.visible_columns[index] = columnsForm.visible_columns[index - 1];
-        columnsForm.visible_columns[index - 1] = temp;
-    } else if (direction === 'down' && index < columnsForm.visible_columns.length - 1) {
-        const temp = columnsForm.visible_columns[index];
-        columnsForm.visible_columns[index] = columnsForm.visible_columns[index + 1];
-        columnsForm.visible_columns[index + 1] = temp;
-    }
-};
 // ---------------------------
 
 const form = useForm({
@@ -515,19 +505,19 @@ const employeeTypes = {
                     <!-- Список выбранных колонок (с сортировкой) -->
                     <div class="space-y-2 mb-6">
                         <h4 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-2">Отображаемые столбцы</h4>
-                        <div v-for="(key, index) in columnsForm.visible_columns" :key="key" class="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2">
-                            <div class="flex items-center gap-2">
-                                <i class="ri-draggable text-gray-400"></i>
-                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    {{ availableColumns.find(c => c.key === key)?.label || key }}
-                                </span>
-                            </div>
-                            <div class="flex items-center gap-1">
-                                <button type="button" @click="moveColumn(index, 'up')" :disabled="index === 0" class="text-gray-400 hover:text-primary disabled:opacity-30"><i class="ri-arrow-up-s-line text-lg"></i></button>
-                                <button type="button" @click="moveColumn(index, 'down')" :disabled="index === columnsForm.visible_columns.length - 1" class="text-gray-400 hover:text-primary disabled:opacity-30"><i class="ri-arrow-down-s-line text-lg"></i></button>
-                                <button type="button" @click="toggleColumn(key)" class="text-danger hover:text-danger/80 ml-2"><i class="ri-close-circle-line text-lg"></i></button>
-                            </div>
-                        </div>
+                        <draggable v-model="columnsForm.visible_columns" :item-key="(key) => key" class="space-y-2" handle=".col-drag-handle">
+                            <template #item="{ element: key }">
+                                <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2">
+                                    <div class="flex items-center gap-2">
+                                        <i class="ri-draggable col-drag-handle text-gray-400 cursor-grab active:cursor-grabbing"></i>
+                                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                            {{ availableColumns.find(c => c.key === key)?.label || key }}
+                                        </span>
+                                    </div>
+                                    <button type="button" @click="toggleColumn(key)" class="text-danger hover:text-danger/80"><i class="ri-close-circle-line text-lg"></i></button>
+                                </div>
+                            </template>
+                        </draggable>
                     </div>
 
                     <!-- Список доступных колонок -->

@@ -59,7 +59,7 @@ class WorkOrder extends Model
 
     public function items(): HasMany
     {
-        return $this->hasMany(WorkOrderItem::class);
+        return $this->hasMany(WorkOrderItem::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function transactions(): MorphMany

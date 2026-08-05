@@ -208,6 +208,8 @@ Route::middleware([
         Route::post('/operations/work-orders/{workOrder}/items', [WorkOrderController::class, 'addItem'])->name('operations.work-orders.items.store');
         Route::put('/operations/work-orders/{workOrder}/items/{item}', [WorkOrderController::class, 'updateItem'])->name('operations.work-orders.items.update');
         Route::delete('/operations/work-orders/{workOrder}/items/{item}', [WorkOrderController::class, 'removeItem'])->name('operations.work-orders.items.destroy');
+        Route::post('/operations/work-orders/{workOrder}/items/auto-sort', [WorkOrderController::class, 'autoSortItems'])->name('operations.work-orders.items.auto-sort');
+        Route::post('/operations/work-orders/{workOrder}/items/reorder', [WorkOrderController::class, 'reorderItems'])->name('operations.work-orders.items.reorder');
         Route::post('/operations/work-orders/{workOrder}/discount', [WorkOrderController::class, 'updateDiscount'])->name('operations.work-orders.discount.update');
         Route::post('/operations/work-orders/{workOrder}/payment', [WorkOrderController::class, 'processPayment'])->name('operations.work-orders.payment.store');
         Route::post('/operations/work-orders/{workOrder}/complete', [WorkOrderController::class, 'completeOrder'])->name('operations.work-orders.complete');
@@ -222,8 +224,7 @@ Route::middleware([
         Route::post('/operations/services/bulk-export', [ServiceController::class, 'bulkExport'])->name('operations.services.bulk-export');
         Route::post('/operations/service-categories', [ServiceController::class, 'storeCategory'])->name('operations.service-categories.store');
 
-        // Operations: Быстрое добавление номенклатуры
-        Route::post('/operations/work-orders/quick-service', [WorkOrderController::class, 'storeServiceQuick'])->name('operations.work-orders.quick-service');
+        // Operations: Быстрое добавление номенклатуры (услуги теперь через items.store с is_custom/save_to_catalog)
         Route::post('/operations/work-orders/quick-product', [WorkOrderController::class, 'storeProductQuick'])->name('operations.work-orders.quick-product');
 
         // Operations: Записи (Фаза 9.2)

@@ -1,5 +1,6 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
+import draggable from 'vuedraggable';
 import { watch } from 'vue';
 
 const props = defineProps({
@@ -44,18 +45,6 @@ const toggleColumn = (key) => {
     }
 };
 
-const moveColumn = (index, direction) => {
-    if (direction === 'up' && index > 0) {
-        const temp = form.visible_columns[index];
-        form.visible_columns[index] = form.visible_columns[index - 1];
-        form.visible_columns[index - 1] = temp;
-    } else if (direction === 'down' && index < form.visible_columns.length - 1) {
-        const temp = form.visible_columns[index];
-        form.visible_columns[index] = form.visible_columns[index + 1];
-        form.visible_columns[index + 1] = temp;
-    }
-};
-
 const save = () => {
     form.post(route('list-views.store'), {
         preserveScroll: true,
@@ -80,19 +69,24 @@ const save = () => {
 
                 <div class="space-y-2 mb-6">
                     <h4 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-2">Отображаемые столбцы</h4>
-                    <div v-for="(key, index) in form.visible_columns" :key="key" class="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2">
-                        <div class="flex items-center gap-2">
-                            <i class="ri-draggable text-gray-400"></i>
-                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                {{ availableColumns.find(c => c.key === key)?.label || key }}
-                            </span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <button type="button" @click="moveColumn(index, 'up')" :disabled="index === 0" class="text-gray-400 hover:text-primary disabled:opacity-30"><i class="ri-arrow-up-s-line text-lg"></i></button>
-                            <button type="button" @click="moveColumn(index, 'down')" :disabled="index === form.visible_columns.length - 1" class="text-gray-400 hover:text-primary disabled:opacity-30"><i class="ri-arrow-down-s-line text-lg"></i></button>
-                            <button type="button" @click="toggleColumn(key)" class="text-danger hover:text-danger/80 ml-2"><i class="ri-close-circle-line text-lg"></i></button>
-                        </div>
-                    </div>
+                    <draggable
+                        v-model="form.visible_columns"
+                        :item-key="(key) => key"
+                        class="space-y-2"
+                        handle=".col-drag-handle"
+                    >
+                        <template #item="{ element: key }">
+                            <div class="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded px-3 py-2">
+                                <div class="flex items-center gap-2">
+                                    <i class="ri-draggable col-drag-handle text-gray-400 cursor-grab active:cursor-grabbing"></i>
+                                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        {{ availableColumns.find(c => c.key === key)?.label || key }}
+                                    </span>
+                                </div>
+                                <button type="button" @click="toggleColumn(key)" class="text-danger hover:text-danger/80"><i class="ri-close-circle-line text-lg"></i></button>
+                            </div>
+                        </template>
+                    </draggable>
                     <p v-if="form.visible_columns.length === 0" class="text-xs text-gray-400 text-center py-2">Ни одного столбца не выбрано.</p>
                 </div>
 

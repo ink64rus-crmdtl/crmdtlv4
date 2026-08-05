@@ -20,6 +20,7 @@ class WorkOrderItem extends Model
         'discount_amount',
         'total',
         'currency_id',
+        'sort_order',
     ];
 
     protected function casts(): array
@@ -31,6 +32,7 @@ class WorkOrderItem extends Model
             'discount_amount' => 'integer',
             'total' => 'integer',
             'currency_id' => 'integer',
+            'sort_order' => 'integer',
         ];
     }
 

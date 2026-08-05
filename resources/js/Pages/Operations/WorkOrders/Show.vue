@@ -4,6 +4,7 @@ import PageHelper from '@/Components/PageHelper.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import Modal from '@/Components/Modal.vue';
 import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
+import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 
@@ -238,6 +239,12 @@ const setItemDiscountMode = (item, mode) => {
 
 const itemBaseRub = (item) => (parseFloat(item.quantity) * item.price) / 100;
 
+const itemDiscountPercent = (item) => {
+    const base = itemBaseRub(item);
+    if (base <= 0) return 0;
+    return Math.round(((item.discount_amount || 0) / 100 / base) * 1000) / 10;
+};
+
 const itemDiscountDisplayValue = (item) => {
     const amountRub = (item.discount_amount || 0) / 100;
     if (getItemDiscountMode(item) === 'amount') return amountRub;
@@ -289,6 +296,22 @@ const deleteItem = (item) => {
     }
 };
 
+// --- ПОРЯДОК ПОЗИЦИЙ (drag-and-drop + автосортировка "услуги сверху, товары снизу") ---
+const sortedItems = ref([...(props.workOrder.items || [])]);
+watch(() => props.workOrder.items, (items) => {
+    sortedItems.value = [...(items || [])];
+});
+
+const onItemsReordered = () => {
+    router.post(route('operations.work-orders.items.reorder', props.workOrder.id), {
+        ids: sortedItems.value.map(i => i.id),
+    }, { preserveScroll: true, preserveState: true });
+};
+
+const autoSortItems = () => {
+    router.post(route('operations.work-orders.items.auto-sort', props.workOrder.id), {}, { preserveScroll: true });
+};
+
 watch(() => itemForm.itemable_id, (newId) => {
     if (!newId) return;
     if (itemForm.itemable_type === 'service') {
@@ -325,7 +348,7 @@ watch(() => itemForm.itemable_type, () => {
     itemForm.price = 0;
 });
 
-// --- БЫСТРОЕ СОЗДАНИЕ УСЛУГИ / ТОВАРА ИЗ ОКНА ЗАКАЗА ---
+// --- СВОЯ ПОЗИЦИЯ-УСЛУГА БЕЗ КАРТОЧКИ В КАТАЛОГЕ (добавляется в заказ сразу, каталог — по желанию) ---
 const isQuickServiceModalOpen = ref(false);
 const quickServiceForm = useForm({
     service_category_id: '',
@@ -333,10 +356,12 @@ const quickServiceForm = useForm({
     name: '',
     price: 0,
     duration_minutes: 60,
+    save_to_catalog: true,
 });
 
 const openQuickServiceModal = () => {
     quickServiceForm.reset();
+    quickServiceForm.save_to_catalog = true;
     isQuickServiceModalOpen.value = true;
 };
 
@@ -347,7 +372,17 @@ const closeQuickServiceModal = () => {
 };
 
 const submitQuickService = () => {
-    quickServiceForm.post(route('operations.work-orders.quick-service'), {
+    quickServiceForm.transform((data) => ({
+        itemable_type: 'service',
+        is_custom: true,
+        save_to_catalog: data.save_to_catalog,
+        service_category_id: data.service_category_id || null,
+        business_direction_id: data.business_direction_id || null,
+        name: data.name,
+        price: data.price,
+        duration_minutes: data.duration_minutes,
+        quantity: 1,
+    })).post(route('operations.work-orders.items.store', props.workOrder.id), {
         onSuccess: () => closeQuickServiceModal(),
     });
 };
@@ -402,6 +437,11 @@ const submitDiscount = () => {
         onSuccess: () => closeDiscountModal(),
     });
 };
+
+const orderDiscountPercent = computed(() => {
+    if (!props.workOrder.total_amount) return 0;
+    return Math.round((props.workOrder.discount_amount / props.workOrder.total_amount) * 1000) / 10;
+});
 
 // Инлайн-скидка в корзине пакетного добавления (сумма ₽ или %)
 const drawerDiscountMode = ref('amount'); // 'amount' | 'percent'
@@ -690,6 +730,14 @@ const formatMoney = (amount) => {
                                 <button v-if="workOrder.status !== 'completed'" @click="openItemModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5">
                                     <i class="ri-search-line"></i> Быстрый поиск
                                 </button>
+                                <button
+                                    v-if="workOrder.status !== 'completed' && workOrder.items && workOrder.items.length > 1"
+                                    @click="autoSortItems"
+                                    title="Услуги сверху, товары снизу"
+                                    class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5"
+                                >
+                                    <i class="ri-sort-desc"></i> Упорядочить
+                                </button>
                             </div>
                         </div>
                         
@@ -697,48 +745,70 @@ const formatMoney = (amount) => {
                             <table class="min-w-full text-left">
                                 <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                                     <tr>
+                                        <th class="py-3 px-2 border-b border-gray-200 dark:border-gray-700 w-8"></th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Наименование</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Исполнитель</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Кол-во</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Цена</th>
+                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Скидка</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Сумма</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right w-16"></th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                                    <tr v-for="item in workOrder.items" :key="item.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                        <td class="py-3 px-6 text-sm font-medium text-gray-800 dark:text-gray-200">
-                                            <div>{{ item.name }}</div>
-                                            <div class="mt-1">
-                                                <span v-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 uppercase tracking-wider"><i class="ri-tools-line"></i> Услуга</span>
-                                                <span v-else class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 uppercase tracking-wider"><i class="ri-box-3-line"></i> Товар</span>
-                                            </div>
-                                        </td>
-                                        <td class="py-3 px-6 text-sm">
-                                            <!-- Выбор Исполнителей на позицию, можно нескольких (Только для услуг) -->
-                                            <EmployeeMultiSelect
-                                                v-if="item.itemable_type.includes('Service')"
-                                                class="max-w-[240px]"
-                                                :model-value="(item.employees || []).map(e => e.id)"
-                                                :options="employees"
-                                                :disabled="workOrder.status === 'completed'"
-                                                @update:model-value="ids => updateItemEmployees(item, ids)"
-                                            />
-                                            <span v-else class="text-xs text-gray-400 font-medium">Складское списание</span>
-                                        </td>
-                                        <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }}</td>
-                                        <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.price) }}</td>
-                                        <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.total) }}</td>
-                                        <td class="py-3 px-6 text-sm text-right">
-                                            <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line"></i></button>
-                                        </td>
-                                    </tr>
-                                    <tr v-if="!workOrder.items || workOrder.items.length === 0">
-                                        <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <tbody v-if="!workOrder.items || workOrder.items.length === 0" class="divide-y divide-gray-200 dark:divide-gray-700">
+                                    <tr>
+                                        <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                             В заказ-наряд еще не добавлены услуги или товары. Нажмите "Добавить позицию" или "Быстрый поиск".
                                         </td>
                                     </tr>
                                 </tbody>
+                                <draggable
+                                    v-else
+                                    v-model="sortedItems"
+                                    tag="tbody"
+                                    item-key="id"
+                                    class="divide-y divide-gray-200 dark:divide-gray-700"
+                                    handle=".item-drag-handle"
+                                    :disabled="workOrder.status === 'completed'"
+                                    @end="onItemsReordered"
+                                >
+                                    <template #item="{ element: item }">
+                                        <tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                            <td class="py-3 px-2 text-center">
+                                                <i v-if="workOrder.status !== 'completed'" class="ri-draggable item-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
+                                            </td>
+                                            <td class="py-3 px-6 text-sm font-medium text-gray-800 dark:text-gray-200">
+                                                <div>{{ item.name }}</div>
+                                                <div class="mt-1">
+                                                    <span v-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 uppercase tracking-wider"><i class="ri-tools-line"></i> Услуга</span>
+                                                    <span v-else class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 uppercase tracking-wider"><i class="ri-box-3-line"></i> Товар</span>
+                                                </div>
+                                            </td>
+                                            <td class="py-3 px-6 text-sm">
+                                                <!-- Выбор Исполнителей на позицию, можно нескольких (Только для услуг) -->
+                                                <EmployeeMultiSelect
+                                                    v-if="item.itemable_type.includes('Service')"
+                                                    class="max-w-[240px]"
+                                                    :model-value="(item.employees || []).map(e => e.id)"
+                                                    :options="employees"
+                                                    :disabled="workOrder.status === 'completed'"
+                                                    @update:model-value="ids => updateItemEmployees(item, ids)"
+                                                />
+                                                <span v-else class="text-xs text-gray-400 font-medium">Складское списание</span>
+                                            </td>
+                                            <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }}</td>
+                                            <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.price) }}</td>
+                                            <td class="py-3 px-6 text-sm text-right">
+                                                <span v-if="item.discount_amount > 0" class="text-danger font-medium">- {{ formatMoney(item.discount_amount) }} <span class="text-gray-400 font-normal">({{ itemDiscountPercent(item) }}%)</span></span>
+                                                <span v-else class="text-gray-400">—</span>
+                                            </td>
+                                            <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.total) }}</td>
+                                            <td class="py-3 px-6 text-sm text-right">
+                                                <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line"></i></button>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </draggable>
                             </table>
                         </div>
                         
@@ -754,7 +824,7 @@ const formatMoney = (amount) => {
                                         Скидка:
                                         <button v-if="workOrder.status !== 'completed'" @click="openDiscountModal" class="text-primary hover:text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"><i class="ri-pencil-line"></i></button>
                                     </span>
-                                    <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }}</span>
+                                    <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
                                 </div>
                                 <div class="pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                                     <span class="font-bold text-gray-800 dark:text-gray-200 text-base">Итого к оплате:</span>
@@ -797,7 +867,7 @@ const formatMoney = (amount) => {
                                 Скидка:
                                 <button v-if="workOrder.status !== 'completed'" @click="openDiscountModal" class="text-primary hover:text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"><i class="ri-pencil-line"></i></button>
                             </span>
-                            <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }}</span>
+                            <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
                         </div>
                         <div class="pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                             <span class="font-bold text-gray-800 dark:text-gray-200">К оплате:</span>
@@ -1054,7 +1124,7 @@ const formatMoney = (amount) => {
                             </div>
                             <div class="flex justify-between items-center text-xs">
                                 <span class="text-gray-500">Скидка:</span>
-                                <span class="font-bold text-danger">- {{ formatMoney(workOrder.discount_amount) }}</span>
+                                <span class="font-bold text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
                             </div>
 
                             <!-- Инлайн-редактирование скидки: сумма (₽) или процент (%) -->
@@ -1088,7 +1158,7 @@ const formatMoney = (amount) => {
                 <div class="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-2.5">
                     <button v-if="drawerTab === 'services'" @click="openQuickServiceModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрая услуга</button>
                     <button v-else @click="openQuickProductModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрый товар</button>
-                    <button @click="isBatchDrawerOpen = false" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">Закрыть корзину</button>
+                    <button @click="isBatchDrawerOpen = false" class="flex-1 inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">Сохранить и закрыть</button>
                 </div>
             </div>
         </Offcanvas>
@@ -1303,46 +1373,57 @@ const formatMoney = (amount) => {
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col animate-fade-in">
                     <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                         <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                            Быстрое добавление услуги в каталог
+                            Добавить услугу, которой нет в каталоге
                         </h3>
                         <button @click="closeQuickServiceModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
                     </div>
                     <form @submit.prevent="submitQuickService" class="flex flex-col">
                         <div class="p-6 space-y-4">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
-                                    <select v-model="quickServiceForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                        <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
-                                        <option v-for="cat in serviceCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление</label>
-                                    <select v-model="quickServiceForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                        <option value="" class="bg-white dark:bg-gray-800">Без направления</option>
-                                        <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
-                                    </select>
-                                </div>
-                            </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название услуги <span class="text-danger">*</span></label>
-                                <input v-model="quickServiceForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <input v-model="quickServiceForm.name" type="text" required placeholder="Например: разовая работа по просьбе клиента" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Базовая цена (₽) <span class="text-danger">*</span></label>
-                                    <input v-model="quickServiceForm.price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цена (₽) <span class="text-danger">*</span></label>
+                                <input v-model="quickServiceForm.price" type="number" step="0.01" min="0" required class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            </div>
+
+                            <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                                <div @click="quickServiceForm.save_to_catalog = !quickServiceForm.save_to_catalog" :class="[quickServiceForm.save_to_catalog ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
+                                    <div :class="[quickServiceForm.save_to_catalog ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                                </div>
+                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="quickServiceForm.save_to_catalog = !quickServiceForm.save_to_catalog">
+                                    Сохранить в каталог услуг на будущее
+                                </label>
+                            </div>
+                            <p v-if="!quickServiceForm.save_to_catalog" class="text-xs text-gray-500">Позиция добавится только в этот заказ и не появится в общем прайс-листе.</p>
+
+                            <div v-if="quickServiceForm.save_to_catalog" class="space-y-4 pt-2">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
+                                        <select v-model="quickServiceForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                            <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
+                                            <option v-for="cat in serviceCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление</label>
+                                        <select v-model="quickServiceForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                            <option value="" class="bg-white dark:bg-gray-800">Без направления</option>
+                                            <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Нормо-время (мин) <span class="text-danger">*</span></label>
-                                    <input v-model="quickServiceForm.duration_minutes" type="number" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    <input v-model="quickServiceForm.duration_minutes" type="number" min="0" :required="quickServiceForm.save_to_catalog" class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                 </div>
                             </div>
                         </div>
                         <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                             <button type="button" @click="closeQuickServiceModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                            <button type="submit" :disabled="quickServiceForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                            <button type="submit" :disabled="quickServiceForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить в заказ</button>
                         </div>
                     </form>
                 </div>
