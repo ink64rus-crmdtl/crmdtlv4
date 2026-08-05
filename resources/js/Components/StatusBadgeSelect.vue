@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 
 const props = defineProps({
     modelValue: {
@@ -20,6 +20,9 @@ const emit = defineEmits(['update:modelValue']);
 
 const isOpen = ref(false);
 const containerRef = ref(null);
+const buttonRef = ref(null);
+const panelRef = ref(null);
+const panelStyle = ref({});
 
 const colorClasses = {
     info: 'bg-info/10 text-info',
@@ -38,9 +41,26 @@ const currentClass = computed(() => badgeClass(current.value?.color));
 
 const selectableOptions = computed(() => props.options.filter(o => o.is_active !== false || o.value === props.modelValue));
 
-const toggle = () => {
+// Позиционируем панель через fixed-координаты и телепортируем в <body>,
+// чтобы её не обрезали overflow-контейнеры (например overflow-x-auto у таблицы).
+const updatePosition = () => {
+    if (!buttonRef.value) return;
+    const rect = buttonRef.value.getBoundingClientRect();
+    panelStyle.value = {
+        position: 'fixed',
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        minWidth: `${Math.max(rect.width, 160)}px`,
+    };
+};
+
+const toggle = async () => {
     if (props.disabled) return;
     isOpen.value = !isOpen.value;
+    if (isOpen.value) {
+        await nextTick();
+        updatePosition();
+    }
 };
 
 const select = (option) => {
@@ -50,18 +70,36 @@ const select = (option) => {
 };
 
 const closeDropdown = (e) => {
-    if (containerRef.value && !containerRef.value.contains(e.target)) {
+    if (
+        containerRef.value && !containerRef.value.contains(e.target) &&
+        panelRef.value && !panelRef.value.contains(e.target)
+    ) {
         isOpen.value = false;
     }
 };
 
-onMounted(() => document.addEventListener('click', closeDropdown));
-onUnmounted(() => document.removeEventListener('click', closeDropdown));
+// Скролл (в т.ч. внутри overflow-x-auto таблицы) сбивает fixed-координаты — проще закрыть список.
+const closeOnScrollOrResize = () => {
+    if (isOpen.value) isOpen.value = false;
+};
+
+onMounted(() => {
+    document.addEventListener('click', closeDropdown);
+    window.addEventListener('scroll', closeOnScrollOrResize, true);
+    window.addEventListener('resize', closeOnScrollOrResize);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('click', closeDropdown);
+    window.removeEventListener('scroll', closeOnScrollOrResize, true);
+    window.removeEventListener('resize', closeOnScrollOrResize);
+});
 </script>
 
 <template>
     <div class="relative inline-block" ref="containerRef">
         <button
+            ref="buttonRef"
             type="button"
             @click.stop="toggle"
             :disabled="disabled"
@@ -71,32 +109,36 @@ onUnmounted(() => document.removeEventListener('click', closeDropdown));
             <i v-if="!disabled" class="ri-arrow-down-s-line text-[13px]"></i>
         </button>
 
-        <Transition
-            enter-active-class="transition ease-out duration-100"
-            enter-from-class="transform opacity-0 scale-95"
-            enter-to-class="transform opacity-100 scale-100"
-            leave-active-class="transition ease-in duration-75"
-            leave-from-class="transform opacity-100 scale-100"
-            leave-to-class="transform opacity-0 scale-95"
-        >
-            <div
-                v-if="isOpen"
-                @click.stop
-                class="absolute z-50 left-0 mt-1 min-w-[160px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1 max-h-64 overflow-y-auto"
+        <Teleport to="body">
+            <Transition
+                enter-active-class="transition ease-out duration-100"
+                enter-from-class="transform opacity-0 scale-95"
+                enter-to-class="transform opacity-100 scale-100"
+                leave-active-class="transition ease-in duration-75"
+                leave-from-class="transform opacity-100 scale-100"
+                leave-to-class="transform opacity-0 scale-95"
             >
-                <button
-                    v-for="option in selectableOptions"
-                    :key="option.value"
-                    type="button"
-                    @click="select(option)"
-                    class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
+                <div
+                    v-if="isOpen"
+                    ref="panelRef"
+                    :style="panelStyle"
+                    @click.stop
+                    class="z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg py-1 max-h-64 overflow-y-auto"
                 >
-                    <span :class="[badgeClass(option.color), 'inline-flex items-center px-2 py-0.5 rounded font-medium']">
-                        {{ option.label || option.value }}
-                    </span>
-                    <i v-if="option.value === modelValue" class="ri-check-line text-primary ml-auto"></i>
-                </button>
-            </div>
-        </Transition>
+                    <button
+                        v-for="option in selectableOptions"
+                        :key="option.value"
+                        type="button"
+                        @click="select(option)"
+                        class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors"
+                    >
+                        <span :class="[badgeClass(option.color), 'inline-flex items-center px-2 py-0.5 rounded font-medium']">
+                            {{ option.label || option.value }}
+                        </span>
+                        <i v-if="option.value === modelValue" class="ri-check-line text-primary ml-auto"></i>
+                    </button>
+                </div>
+            </Transition>
+        </Teleport>
     </div>
 </template>
