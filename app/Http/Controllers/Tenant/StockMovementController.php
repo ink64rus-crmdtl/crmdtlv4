@@ -47,7 +47,7 @@ class StockMovementController extends Controller
         $movements = $query->paginate(15)->withQueryString();
         
         $warehouses = Warehouse::where('is_active', true)->get(['id', 'name']);
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'accounting_type']);
 
         $availableColumns = [

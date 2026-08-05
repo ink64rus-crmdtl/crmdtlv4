@@ -50,7 +50,7 @@ class EmployeeController extends Controller
         // Пагинация вместо ->get()
         $employees = $query->paginate(15)->withQueryString();
         
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $positions = Position::where('is_active', true)->get(['id', 'name']);
         $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
         
@@ -184,7 +184,7 @@ class EmployeeController extends Controller
         }
 
         // Данные для модального окна редактирования
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $positions = Position::where('is_active', true)->get(['id', 'name']);
         $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
         

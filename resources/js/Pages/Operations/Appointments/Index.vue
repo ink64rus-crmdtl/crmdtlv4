@@ -28,6 +28,7 @@ const props = defineProps({
 const isModalOpen = ref(false);
 const editingAppointment = ref(null);
 const isColumnsModalOpen = ref(false);
+const activeTab = ref('main');
 
 const activeColumns = computed(() => {
     return props.listView.visible_columns
@@ -149,6 +150,7 @@ const openModal = (appointment = null) => {
         form.status = 'scheduled';
         form.items = [];
     }
+    activeTab.value = 'main';
     isModalOpen.value = true;
 };
 
@@ -315,8 +317,28 @@ const changeStatus = (appointment, status) => {
                     </button>
                 </div>
 
+                <!-- Вкладки внутри модалки -->
+                <div class="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 px-6 bg-white dark:bg-[#313a46] custom-scrollbar">
+                    <button
+                        type="button"
+                        @click="activeTab = 'main'"
+                        :class="[activeTab === 'main' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-calendar-event-line"></i> Основное
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'estimate'"
+                        :class="[activeTab === 'estimate' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-file-list-3-line"></i> Смета
+                        <span v-if="form.items.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{{ form.items.length }}</span>
+                    </button>
+                </div>
+
                 <form @submit.prevent="submit" class="flex flex-col">
-                    <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <!-- Вкладка: Основное -->
+                    <div v-show="activeTab === 'main'" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
@@ -378,42 +400,43 @@ const changeStatus = (appointment, status) => {
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Комментарий</label>
                             <textarea v-model="form.comment" rows="2" placeholder="Например: клиент просил перезвонить за час" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"></textarea>
                         </div>
+                    </div>
 
-                        <!-- Ориентировочная смета: не резервирует остатки, не создает финансовых операций -->
-                        <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
-                            <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ориентировочная смета</p>
+                    <!-- Вкладка: Ориентировочная смета (не резервирует остатки, не создает финансовых операций) -->
+                    <div v-show="activeTab === 'estimate'" class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Ориентировочная смета для клиента. Остатки на складе не резервируются, финансовые операции не создаются — это происходит только после конвертации записи в заказ-наряд.</p>
 
-                            <div v-if="form.items.length > 0" class="space-y-1.5 mb-3">
-                                <div v-for="(item, index) in form.items" :key="index" class="flex items-center justify-between gap-2 py-1.5 px-3 rounded bg-gray-50/50 dark:bg-gray-800/30 text-sm">
-                                    <span class="flex-1 truncate">{{ item.name }}</span>
-                                    <span class="text-gray-400">{{ item.quantity }} × {{ item.price }} ₽</span>
-                                    <button type="button" @click="removeItemRow(index)" class="text-danger hover:opacity-70">
-                                        <i class="ri-close-line"></i>
-                                    </button>
-                                </div>
-                                <div class="text-right text-sm font-semibold text-gray-700 dark:text-gray-300 pr-3">Итого: {{ itemsTotal.toFixed(2) }} ₽</div>
-                            </div>
-
-                            <div class="flex flex-wrap items-end gap-2">
-                                <select v-model="newItem.itemable_type" class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="service" class="bg-white dark:bg-gray-800">Услуга</option>
-                                    <option value="product" class="bg-white dark:bg-gray-800">Товар</option>
-                                </select>
-                                <select v-model="newItem.itemable_id" @change="onNewItemSelect" class="flex-1 min-w-[140px] rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите...</option>
-                                    <template v-if="newItem.itemable_type === 'service'">
-                                        <option v-for="s in services" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(s.name) }}</option>
-                                    </template>
-                                    <template v-else>
-                                        <option v-for="p in products" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(p.name) }}</option>
-                                    </template>
-                                </select>
-                                <input v-model.number="newItem.quantity" type="number" min="0.001" step="0.001" placeholder="Кол-во" class="w-20 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                                <input v-model.number="newItem.price" type="number" min="0" step="0.01" placeholder="Цена" class="w-24 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                                <button type="button" @click="addItemRow" class="inline-flex items-center justify-center rounded px-3 py-2 text-xs font-medium bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all">
-                                    <i class="ri-add-line"></i>
+                        <div v-if="form.items.length > 0" class="space-y-1.5">
+                            <div v-for="(item, index) in form.items" :key="index" class="flex items-center justify-between gap-2 py-1.5 px-3 rounded bg-gray-50/50 dark:bg-gray-800/30 text-sm">
+                                <span class="flex-1 truncate">{{ item.name }}</span>
+                                <span class="text-gray-400">{{ item.quantity }} × {{ item.price }} ₽</span>
+                                <button type="button" @click="removeItemRow(index)" class="text-danger hover:opacity-70">
+                                    <i class="ri-close-line"></i>
                                 </button>
                             </div>
+                            <div class="text-right text-sm font-semibold text-gray-700 dark:text-gray-300 pr-3">Итого: {{ itemsTotal.toFixed(2) }} ₽</div>
+                        </div>
+                        <p v-else class="text-sm text-gray-400 text-center py-4">Позиции сметы не добавлены</p>
+
+                        <div class="flex flex-wrap items-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <select v-model="newItem.itemable_type" class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="service" class="bg-white dark:bg-gray-800">Услуга</option>
+                                <option value="product" class="bg-white dark:bg-gray-800">Товар</option>
+                            </select>
+                            <select v-model="newItem.itemable_id" @change="onNewItemSelect" class="flex-1 min-w-[140px] rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите...</option>
+                                <template v-if="newItem.itemable_type === 'service'">
+                                    <option v-for="s in services" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(s.name) }}</option>
+                                </template>
+                                <template v-else>
+                                    <option v-for="p in products" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(p.name) }}</option>
+                                </template>
+                            </select>
+                            <input v-model.number="newItem.quantity" type="number" min="0.001" step="0.001" placeholder="Кол-во" class="w-20 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <input v-model.number="newItem.price" type="number" min="0" step="0.01" placeholder="Цена" class="w-24 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <button type="button" @click="addItemRow" class="inline-flex items-center justify-center rounded px-3 py-2 text-xs font-medium bg-primary/10 text-primary hover:bg-primary hover:text-white transition-all">
+                                <i class="ri-add-line"></i>
+                            </button>
                         </div>
                     </div>
 

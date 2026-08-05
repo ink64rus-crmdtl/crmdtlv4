@@ -50,7 +50,7 @@ class AppointmentController extends Controller
             return $appointment;
         });
 
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);

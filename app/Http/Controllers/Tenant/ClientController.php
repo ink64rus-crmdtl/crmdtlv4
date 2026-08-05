@@ -49,7 +49,7 @@ class ClientController extends Controller
         // Пагинация вместо ->get()
         $clients = $query->paginate(15)->withQueryString();
         
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $clientGroups = ClientGroup::orderBy('name')->get();
         $lookups = Lookup::whereIn('type', ['client_source', 'client_role'])->where('is_active', true)->get()->groupBy('type');
 
@@ -157,7 +157,7 @@ class ClientController extends Controller
         $countryConfig = CountryConfigService::getForCountry($tenantCountry);
 
         // Данные для модального окна редактирования
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $clientGroups = ClientGroup::orderBy('name')->get();
         $lookups = Lookup::whereIn('type', ['client_source', 'client_role'])->where('is_active', true)->get()->groupBy('type');
 

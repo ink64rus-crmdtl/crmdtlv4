@@ -54,7 +54,7 @@ class WorkOrderController extends Controller
 
         $workOrders = $query->paginate(15)->withQueryString();
         
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
 
@@ -142,7 +142,7 @@ class WorkOrderController extends Controller
             ];
         }
 
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         

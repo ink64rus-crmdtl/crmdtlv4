@@ -43,7 +43,7 @@ class TransactionController extends Controller
         
         // Справочники для фильтров и создания
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.balance']);
-        $branches = auth()->user()->availableBranches()->where('is_active', true)->get(['branches.id', 'branches.name']);
+        $branches = auth()->user()->availableBranches()->forSelect()->get(['branches.id', 'branches.name']);
         $categories = TransactionCategory::where('is_active', true)->get(['id', 'name', 'type']);
 
         $availableColumns = [

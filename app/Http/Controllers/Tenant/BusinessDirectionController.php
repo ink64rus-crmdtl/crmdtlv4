@@ -30,7 +30,7 @@ class BusinessDirectionController extends Controller
 
         $businessDirections = $query->paginate(15)->withQueryString();
         
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
 
         return Inertia::render('Settings/BusinessDirections/Index', [
             'businessDirections' => $businessDirections,

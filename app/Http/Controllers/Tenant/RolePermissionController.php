@@ -30,7 +30,7 @@ class RolePermissionController extends Controller
         $modules = Module::orderBy('sort_order')->get();
 
         // Получаем все справочники для Scopes
-        $branches = Branch::where('is_active', true)->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name']);
         $legalEntities = LegalEntity::where('is_active', true)->get(['id', 'name']);
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
         $warehouses = Warehouse::where('is_active', true)->get(['id', 'name']);
