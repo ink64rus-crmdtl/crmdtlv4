@@ -66,4 +66,23 @@ class WorkOrder extends Model
     {
         return $this->morphMany(Transaction::class, 'payable');
     }
+
+    /**
+     * Пересчитывает payment_status на основе суммы поступивших (income) транзакций.
+     * O(1) относительно общего числа транзакций в системе — агрегат по индексу payable_type+payable_id.
+     */
+    public function syncPaymentStatus(): void
+    {
+        $paidTotal = $this->transactions()->where('type', 'income')->sum('amount');
+
+        if ($this->final_amount > 0 && $paidTotal >= $this->final_amount) {
+            $this->payment_status = 'paid';
+        } elseif ($paidTotal > 0) {
+            $this->payment_status = 'partial';
+        } else {
+            $this->payment_status = 'unpaid';
+        }
+
+        $this->save();
+    }
 }

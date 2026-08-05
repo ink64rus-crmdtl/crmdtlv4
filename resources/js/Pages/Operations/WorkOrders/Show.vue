@@ -458,6 +458,11 @@ const remainingAmount = computed(() => {
     return Math.max(0, props.workOrder.final_amount - paid);
 });
 
+// Только поступления (без служебных расходов вроде комиссии эквайринга)
+const paymentTransactions = computed(() => props.workOrder.transactions?.filter(t => t.type === 'income') || []);
+
+const transactionLink = (tx) => route('finance.transactions.index', { filters: { id: tx.id } });
+
 const accountTypeLabels = {
     cash: 'Касса',
     bank: 'Расчетный счет',
@@ -811,18 +816,23 @@ const formatMoney = (amount) => {
                 </div>
 
                 <!-- История транзакций -->
-                <div v-if="workOrder.transactions && workOrder.transactions.length > 0" class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
+                <div v-if="paymentTransactions.length > 0" class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
                         <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">История оплат</h3>
                     </div>
                     <div class="p-6 space-y-3">
-                        <div v-for="tx in workOrder.transactions" :key="tx.id" class="flex justify-between items-start border-b border-gray-100 dark:border-gray-700/50 pb-3 last:border-0 last:pb-0">
+                        <Link
+                            v-for="tx in paymentTransactions"
+                            :key="tx.id"
+                            :href="transactionLink(tx)"
+                            class="flex justify-between items-start border-b border-gray-100 dark:border-gray-700/50 pb-3 last:border-0 last:pb-0 group hover:bg-gray-50/50 dark:hover:bg-gray-800/30 -mx-2 px-2 rounded transition-colors"
+                        >
                             <div>
-                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ tx.account ? tx.account.name : 'Касса' }}</p>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors">{{ tx.account ? tx.account.name : 'Касса' }}</p>
                                 <p class="text-xs text-gray-500 mt-0.5">{{ new Date(tx.created_at).toLocaleString('ru-RU', {day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'}) }}</p>
                             </div>
                             <span class="text-sm font-bold text-success">+ {{ formatMoney(tx.amount) }}</span>
-                        </div>
+                        </Link>
                     </div>
                 </div>
 

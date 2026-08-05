@@ -31,6 +31,8 @@ use App\Http\Controllers\Tenant\StockBalanceController;
 use App\Http\Controllers\Tenant\StockMovementController;
 use App\Http\Controllers\Tenant\TransactionCategoryController;
 use App\Http\Controllers\Tenant\TransactionController;
+use App\Http\Controllers\Tenant\AccountSnapshotController;
+use App\Http\Controllers\Tenant\PeriodClosureController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -251,8 +253,17 @@ Route::middleware([
         // Finance: Транзакции
         Route::get('/finance/transactions', [TransactionController::class, 'index'])->name('finance.transactions.index');
         Route::post('/finance/transactions', [TransactionController::class, 'store'])->name('finance.transactions.store');
+        Route::put('/finance/transactions/{transaction}', [TransactionController::class, 'update'])->name('finance.transactions.update');
         Route::delete('/finance/transactions/{transaction}', [TransactionController::class, 'destroy'])->name('finance.transactions.destroy');
         Route::post('/finance/transactions/bulk-export', [TransactionController::class, 'bulkExport'])->name('finance.transactions.bulk-export');
+        Route::patch('/finance/transactions/{transaction}/reconcile', [TransactionController::class, 'toggleReconciled'])->name('finance.transactions.reconcile');
+
+        // Finance: Дневные снэпшоты остатков
+        Route::get('/finance/snapshots', [AccountSnapshotController::class, 'index'])->name('finance.snapshots.index');
+
+        // Finance: Закрытие периода
+        Route::get('/finance/period-closure', [PeriodClosureController::class, 'index'])->name('finance.period-closure.index');
+        Route::post('/finance/period-closure', [PeriodClosureController::class, 'store'])->name('finance.period-closure.store');
     });
 
     require __DIR__.'/auth.php';

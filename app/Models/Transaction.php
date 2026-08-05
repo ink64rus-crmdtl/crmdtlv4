@@ -11,8 +11,10 @@ class Transaction extends Model
 {
     protected $fillable = [
         'account_id', 'branch_id', 'transaction_category_id',
-        'payable_type', 'payable_id', 'type', 'amount', 
-        'currency_id', 'exchange_rate_snapshot', 'comment', 'created_by'
+        'payable_type', 'payable_id', 'type', 'direction', 'amount', 'transaction_date',
+        'currency_id', 'exchange_rate_snapshot', 'comment', 'created_by',
+        'edited_at', 'edited_by', 'idempotency_key',
+        'is_reconciled', 'reconciled_at', 'reconciled_by',
     ];
 
     protected function casts(): array
@@ -21,6 +23,10 @@ class Transaction extends Model
             'amount' => 'integer',
             'currency_id' => 'integer',
             'exchange_rate_snapshot' => 'decimal:6',
+            'transaction_date' => 'date',
+            'edited_at' => 'datetime',
+            'is_reconciled' => 'boolean',
+            'reconciled_at' => 'datetime',
         ];
     }
 
@@ -47,5 +53,15 @@ class Transaction extends Model
     public function payable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function editor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'edited_by');
+    }
+
+    public function reconciler(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reconciled_by');
     }
 }

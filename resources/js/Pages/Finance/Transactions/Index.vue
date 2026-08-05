@@ -17,11 +17,15 @@ const props = defineProps({
     branches: Array,
     categories: Array,
     filters: Object,
+    closedThroughDate: { type: String, default: null },
 });
 
 const page = usePage();
 
 const isModalOpen = ref(false);
+const editingTransaction = ref(null);
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const form = useForm({
     type: 'expense',
@@ -31,35 +35,94 @@ const form = useForm({
     branch_id: page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : ''),
     transaction_category_id: '',
     amount: 0,
+    transaction_date: todayIso(),
     comment: '',
 });
 
 const openModal = () => {
+    editingTransaction.value = null;
     form.reset();
     form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
     form.type = 'expense';
+    form.transaction_date = todayIso();
     if (props.accounts.length > 0) {
         form.account_id = props.accounts[0].id;
     }
     isModalOpen.value = true;
 };
 
+const openEditModal = (transaction) => {
+    editingTransaction.value = transaction;
+    form.reset();
+    form.clearErrors();
+    form.type = transaction.type;
+    form.account_id = transaction.account_id;
+    form.branch_id = transaction.branch_id;
+    form.transaction_category_id = transaction.transaction_category_id || '';
+    form.amount = transaction.amount / 100;
+    form.transaction_date = transaction.transaction_date;
+    form.comment = transaction.comment || '';
+    isModalOpen.value = true;
+};
+
 const closeModal = () => {
     isModalOpen.value = false;
+    editingTransaction.value = null;
     form.reset();
     form.clearErrors();
 };
 
 const submit = () => {
-    form.post(route('finance.transactions.store'), {
-        onSuccess: () => closeModal(),
-    });
+    if (editingTransaction.value) {
+        // Бэкенд сам валидирует и берет только редактируемые поля (amount, transaction_date, comment,
+        // transaction_category_id) — счет/тип/филиал в форме нужны только для отображения и игнорируются.
+        form.put(route('finance.transactions.update', editingTransaction.value.id), {
+            onSuccess: () => closeModal(),
+        });
+    } else {
+        form.post(route('finance.transactions.store'), {
+            onSuccess: () => closeModal(),
+        });
+    }
 };
 
 const deleteTransaction = (transaction) => {
     if (confirm(`Отменить транзакцию на сумму ${formatMoney(transaction.amount)}? Баланс счета будет восстановлен.`)) {
         router.delete(route('finance.transactions.destroy', transaction.id));
     }
+};
+
+const toggleReconciled = (transaction) => {
+    router.patch(route('finance.transactions.reconcile', transaction.id), {}, { preserveScroll: true });
+};
+
+// Дата операции в уже закрытом периоде — сумму/дату такой транзакции менять нельзя.
+const isDateClosed = (date) => {
+    if (!props.closedThroughDate || !date) return false;
+    return new Date(date) <= new Date(props.closedThroughDate);
+};
+
+// Почему поле недоступно для правки — используется в модалке редактирования, чтобы не гадать.
+const lockReason = (field) => {
+    if (!editingTransaction.value) return null;
+
+    if (['account', 'type', 'branch'].includes(field)) {
+        return 'Меняется только через отмену операции и создание новой.';
+    }
+
+    if (['amount', 'transaction_date'].includes(field)) {
+        if (editingTransaction.value.is_reconciled) {
+            return 'Операция сверена с банком — снимите отметку сверки, чтобы изменить.';
+        }
+        if (isDateClosed(editingTransaction.value.transaction_date)) {
+            return 'Период закрыт — операция недоступна для правки.';
+        }
+        if (field === 'amount' && editingTransaction.value.type === 'transfer') {
+            return 'Сумму перевода нельзя менять — отмените операцию и создайте новую.';
+        }
+    }
+
+    return null;
 };
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
@@ -70,9 +133,14 @@ const filtersForm = reactive({
     branch_id: props.filters?.filters?.branch_id || '',
     type: props.filters?.filters?.type || '',
     transaction_category_id: props.filters?.filters?.transaction_category_id || '',
+    is_reconciled: props.filters?.filters?.is_reconciled || '',
 });
 
 const isFiltersOpen = ref(false);
+
+// Переход по ссылке "показать операцию" из карточки заказа — filters.id не входит в filtersForm,
+// поэтому не сбрасывается автоматически другими фильтрами, но и не считается "активным фильтром" в тулбаре.
+const deepLinkedTransactionId = computed(() => props.filters?.filters?.id || null);
 
 const fetchFiltered = useDebounceFn(() => {
     router.get(route('finance.transactions.index'), {
@@ -89,6 +157,7 @@ const resetFilters = () => {
     filtersForm.branch_id = '';
     filtersForm.type = '';
     filtersForm.transaction_category_id = '';
+    filtersForm.is_reconciled = '';
 };
 // ------------------------------------
 
@@ -145,9 +214,10 @@ const transactionTypes = {
     'transfer': { label: 'Перевод', class: 'bg-info/10 text-info', icon: 'ri-arrow-left-right-line' },
 };
 
-// Вычисляем общие балансы по счетам для дашборда
+// Вычисляем общие балансы по счетам для дашборда.
+// Счет "Бонусы" — виртуальный (не реальные деньги), поэтому не входит в общий баланс наличных/безнала.
 const totalBalance = computed(() => {
-    return props.accounts.reduce((sum, acc) => sum + acc.balance, 0);
+    return props.accounts.filter(acc => acc.type !== 'bonus').reduce((sum, acc) => sum + acc.balance, 0);
 });
 </script>
 
@@ -163,6 +233,15 @@ const totalBalance = computed(() => {
             
             <FinanceNav />
 
+            <PageHelper title="Как устроено редактирование операций">
+                <p>После проведения операции можно менять сумму, дату, статью и комментарий — баланс счета пересчитывается на разницу. Тип операции, счет и филиал менять нельзя (для этого отмените операцию и проведите новую).</p>
+                <p class="mt-2"><strong>Сверка с банком:</strong> отметьте операцию как сверенную после сопоставления с банковской выпиской — сумму и дату сверенной операции нельзя изменить, пока отметка не снята.</p>
+                <p class="mt-2"><strong>Закрытие периода:</strong>
+                    <template v-if="closedThroughDate">период закрыт по {{ closedThroughDate }} — операции с такой или более ранней датой создавать/менять/отменять нельзя.</template>
+                    <template v-else>периоды пока не закрывались — см. раздел «Закрытие периода».</template>
+                </p>
+            </PageHelper>
+
             <!-- Блок ошибок -->
             <div v-if="page.props.errors.error" class="p-4 bg-danger/10 border border-danger/20 rounded-md text-sm text-danger font-medium flex items-start gap-3">
                 <i class="ri-error-warning-fill text-xl shrink-0"></i>
@@ -172,6 +251,12 @@ const totalBalance = computed(() => {
                 </div>
             </div>
 
+            <!-- Баннер "показана одна операция" при переходе по ссылке из карточки заказа -->
+            <div v-if="deepLinkedTransactionId" class="p-3 bg-info/5 border border-info/20 rounded-md text-sm text-gray-600 dark:text-gray-400 flex items-center justify-between gap-3">
+                <span><i class="ri-filter-3-line text-info mr-1"></i> Показана операция №{{ deepLinkedTransactionId }}</span>
+                <Link :href="route('finance.transactions.index')" class="shrink-0 text-info hover:text-info-600 font-medium">Показать все</Link>
+            </div>
+
             <!-- Dashboard Балансов -->
             <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-5">
@@ -179,7 +264,10 @@ const totalBalance = computed(() => {
                     <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(totalBalance) }}</p>
                 </div>
                 <div v-for="acc in accounts.slice(0, 3)" :key="acc.id" class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-5">
-                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 truncate" :title="acc.name">{{ acc.name }}</p>
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 truncate" :title="acc.name">
+                        {{ acc.name }}
+                        <span v-if="acc.type === 'bonus'" class="normal-case font-medium">(не наличные)</span>
+                    </p>
                     <p class="text-xl font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(acc.balance) }}</p>
                 </div>
             </div>
@@ -224,6 +312,7 @@ const totalBalance = computed(() => {
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статья</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Сумма</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Основание / Комментарий</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-center">Сверено</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
@@ -233,7 +322,8 @@ const totalBalance = computed(() => {
                                     <input type="checkbox" :value="tx.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ new Date(tx.created_at).toLocaleString('ru-RU', {day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'}) }}
+                                    {{ new Date(tx.transaction_date).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric'}) }}
+                                    <i v-if="tx.edited_at" class="ri-edit-2-line text-gray-400 ml-1" :title="`Отредактировано ${new Date(tx.edited_at).toLocaleString('ru-RU')}${tx.editor ? ' — ' + tx.editor.name : ''}`"></i>
                                 </td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <span :class="[transactionTypes[tx.type]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
@@ -259,14 +349,26 @@ const totalBalance = computed(() => {
                                     </div>
                                     <div class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" :title="tx.comment">{{ tx.comment || '—' }}</div>
                                 </td>
-                                <td class="py-4 px-6 text-sm text-right border-b border-gray-100 dark:border-gray-700/50">
+                                <td class="py-4 px-6 text-sm text-center border-b border-gray-100 dark:border-gray-700/50">
+                                    <button
+                                        @click="toggleReconciled(tx)"
+                                        :class="[tx.is_reconciled ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500', 'inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors hover:opacity-80']"
+                                        :title="tx.is_reconciled ? `Сверено ${tx.reconciled_at ? new Date(tx.reconciled_at).toLocaleString('ru-RU') : ''}${tx.reconciler ? ' — ' + tx.reconciler.name : ''} (клик — снять отметку)` : 'Отметить как сверенное с банковской выпиской'"
+                                    >
+                                        <i class="ri-bank-line"></i>
+                                    </button>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-right border-b border-gray-100 dark:border-gray-700/50 space-x-1">
+                                    <button @click="openEditModal(tx)" class="text-primary hover:text-primary-600 transition-colors p-1" title="Редактировать">
+                                        <i class="ri-pencil-line"></i>
+                                    </button>
                                     <button @click="deleteTransaction(tx)" class="text-danger hover:text-danger-600 transition-colors p-1" title="Отменить транзакцию">
                                         <i class="ri-arrow-go-back-line"></i>
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="transactions.data.length === 0">
-                                <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="9" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Операции не найдены.
                                 </td>
                             </tr>
@@ -282,7 +384,7 @@ const totalBalance = computed(() => {
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl my-8 mx-auto flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        Новая финансовая операция
+                        {{ editingTransaction ? 'Редактирование операции' : 'Новая финансовая операция' }}
                     </h3>
                     <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                         <i class="ri-close-line text-xl"></i>
@@ -291,9 +393,14 @@ const totalBalance = computed(() => {
 
                 <form @submit.prevent="submit" class="flex flex-col">
                     <div class="p-6 space-y-6">
-                        
+
+                        <div v-if="editingTransaction" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
+                            <i class="ri-information-line text-info mr-1"></i>
+                            Тип, счет и филиал операции менять нельзя — доступны сумма, дата, статья и комментарий. Если нужно перенести операцию на другой счет — отмените её и проведите заново.
+                        </div>
+
                         <!-- Выбор типа операции -->
-                        <div class="grid grid-cols-3 gap-3">
+                        <div v-if="!editingTransaction" class="grid grid-cols-3 gap-3">
                             <label :class="[form.type === 'expense' ? 'border-danger bg-danger/5 ring-1 ring-danger' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-3 shadow-sm focus:outline-none transition-all items-center justify-center text-center']">
                                 <input type="radio" v-model="form.type" value="expense" class="sr-only" />
                                 <span class="text-sm font-semibold text-gray-900 dark:text-white flex flex-col items-center gap-1">
@@ -313,13 +420,18 @@ const totalBalance = computed(() => {
                                 </span>
                             </label>
                         </div>
+                        <div v-else class="flex items-center gap-2">
+                            <span :class="[transactionTypes[form.type]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center gap-1.5 py-1 px-2.5 rounded text-xs font-medium']">
+                                <i :class="transactionTypes[form.type]?.icon"></i> {{ transactionTypes[form.type]?.label || form.type }}
+                            </span>
+                        </div>
 
-                        <!-- Форма для Дохода / Расхода -->
+                        <!-- Форма для Дохода / Расхода: при редактировании счет заблокирован (виден для справки) -->
                         <template v-if="form.type !== 'transfer'">
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Счет / Касса <span class="text-danger">*</span></label>
-                                    <select v-model="form.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                    <select v-model="form.account_id" required :disabled="!!editingTransaction" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60">
                                         <option value="" disabled class="bg-white dark:bg-gray-800">Выберите счет...</option>
                                         <option v-for="acc in accounts" :key="acc.id" :value="acc.id" class="bg-white dark:bg-gray-800">{{ acc.name }} ({{ formatMoney(acc.balance) }})</option>
                                     </select>
@@ -334,8 +446,8 @@ const totalBalance = computed(() => {
                             </div>
                         </template>
 
-                        <!-- Форма для Перевода -->
-                        <template v-else>
+                        <!-- Форма для Перевода: при создании — выбор пары счетов, при редактировании — только справочно один счет этой ноги -->
+                        <template v-else-if="!editingTransaction">
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Списать со счета <span class="text-danger">*</span></label>
@@ -353,18 +465,33 @@ const totalBalance = computed(() => {
                                 </div>
                             </div>
                         </template>
+                        <template v-else>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Счет (одна из двух ног перевода)</label>
+                                <select disabled class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 opacity-60">
+                                    <option>{{ accounts.find(a => a.id === form.account_id)?.name || '—' }}</option>
+                                </select>
+                            </div>
+                        </template>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма (₽) <span class="text-danger">*</span></label>
-                                <input v-model="form.amount" type="number" step="0.01" min="0.01" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <input v-model="form.amount" type="number" step="0.01" min="0.01" required :disabled="!!lockReason('amount')" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60" />
+                                <p v-if="lockReason('amount')" class="text-xs text-gray-500 mt-1">{{ lockReason('amount') }}</p>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал (Центр затрат) <span class="text-danger">*</span></label>
-                                <select v-model="form.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                    <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
-                                </select>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата операции <span class="text-danger">*</span></label>
+                                <input v-model="form.transaction_date" type="date" required :disabled="!!lockReason('transaction_date')" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60" />
+                                <p v-if="lockReason('transaction_date')" class="text-xs text-gray-500 mt-1">{{ lockReason('transaction_date') }}</p>
                             </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал (Центр затрат) <span class="text-danger">*</span></label>
+                            <select v-model="form.branch_id" required :disabled="!!editingTransaction" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60">
+                                <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
+                            </select>
                         </div>
 
                         <div>
@@ -376,7 +503,7 @@ const totalBalance = computed(() => {
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                         <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
                         <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
-                            Провести операцию
+                            {{ editingTransaction ? 'Сохранить изменения' : 'Провести операцию' }}
                         </button>
                     </div>
                 </form>
@@ -419,6 +546,14 @@ const totalBalance = computed(() => {
                         <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
                             <option value="">Все филиалы</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сверка с банком</label>
+                        <select v-model="filtersForm.is_reconciled" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все</option>
+                            <option value="1">Сверено</option>
+                            <option value="0">Не сверено</option>
                         </select>
                     </div>
                 </div>

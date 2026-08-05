@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,6 +19,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         //
+    })
+    ->withSchedule(function (Schedule $schedule): void {
+        // tenants:run сам оборачивает выполнение в tenancy()->initialize() для каждого тенанта.
+        // Ежечасно, не dailyAt('00:00') — филиалы тенанта могут быть в разных часовых поясах
+        // (Branch::timezone), сервер работает в UTC. Сама команда решает, для каких поясов
+        // сейчас "только что наступила полночь" — см. TakeDailyAccountSnapshots.
+        $schedule->command('tenants:run snapshots:accounts')
+            ->hourly()
+            ->withoutOverlapping();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

@@ -449,16 +449,7 @@ class WorkOrderController extends Controller
                     }
                 }
 
-                $paidTotal = $workOrder->transactions()->where('type', 'income')->sum('amount');
-
-                if ($paidTotal >= $workOrder->final_amount) {
-                    $workOrder->payment_status = 'paid';
-                } elseif ($paidTotal > 0) {
-                    $workOrder->payment_status = 'partial';
-                } else {
-                    $workOrder->payment_status = 'unpaid';
-                }
-                $workOrder->save();
+                $workOrder->syncPaymentStatus();
             });
 
             return redirect()->back()->with('success', 'Оплата успешно принята');
@@ -589,14 +580,7 @@ class WorkOrderController extends Controller
             'final_amount' => $final,
         ]);
 
-        $paidTotal = $workOrder->transactions()->where('type', 'income')->sum('amount');
-        if ($paidTotal >= $final && $final > 0) {
-            $workOrder->update(['payment_status' => 'paid']);
-        } elseif ($paidTotal > 0) {
-            $workOrder->update(['payment_status' => 'partial']);
-        } else {
-            $workOrder->update(['payment_status' => 'unpaid']);
-        }
+        $workOrder->syncPaymentStatus();
     }
 
     private function saveCustomFields(WorkOrder $workOrder, array $customFieldsData)
