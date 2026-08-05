@@ -12,7 +12,30 @@ const props = defineProps({
     strictPlateValidation: Boolean,
     tenantCountry: String,
     customFieldDefs: Array,
+    workOrders: { type: Array, default: () => [] },
+    workOrderStatuses: { type: Array, default: () => [] },
 });
+
+const formatMoney = (amount) => {
+    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format(amount / 100);
+};
+
+const statusColorClasses = {
+    info: 'bg-info/10 text-info',
+    warning: 'bg-warning/10 text-warning',
+    success: 'bg-success/10 text-success',
+    danger: 'bg-danger/10 text-danger',
+    primary: 'bg-primary/10 text-primary',
+    gray: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+};
+
+const workOrderStatus = (value) => {
+    const s = props.workOrderStatuses.find(s => s.value === value);
+    return {
+        label: s?.label || value,
+        class: statusColorClasses[s?.color] || statusColorClasses.gray,
+    };
+};
 
 const isModalOpen = ref(false);
 
@@ -248,15 +271,36 @@ const getLocalizedLabel = (label) => {
                     </div>
                 </div>
 
-                <!-- Активные Заказ-наряды (Заглушка) -->
+                <!-- Заказ-наряды -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Заказ-наряды (0)</h3>
-                        <button class="text-primary hover:text-primary-600 transition-colors text-sm font-medium flex items-center gap-1">
-                            <i class="ri-add-line"></i> Создать
-                        </button>
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Заказ-наряды ({{ workOrders.length }})</h3>
+                        <Link :href="route('operations.work-orders.index', { filters: { vehicle_id: vehicle.id } })" class="text-primary hover:text-primary-600 transition-colors text-sm font-medium flex items-center gap-1">
+                            <i class="ri-add-line"></i> Все заказы
+                        </Link>
                     </div>
-                    <div class="p-6 text-center py-8">
+                    <div v-if="workOrders.length > 0" class="p-6 space-y-2.5">
+                        <Link
+                            v-for="wo in workOrders"
+                            :key="wo.id"
+                            :href="route('operations.work-orders.show', wo.id)"
+                            class="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-700/50 rounded-md bg-gray-50/50 dark:bg-gray-800/30 hover:border-primary/30 transition-colors group"
+                        >
+                            <div>
+                                <p class="text-sm font-bold font-mono text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors">
+                                    #{{ String(wo.id).padStart(6, '0') }}
+                                </p>
+                                <p class="text-xs text-gray-500 font-medium mt-0.5">{{ new Date(wo.created_at).toLocaleDateString('ru-RU') }}</p>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <span :class="[workOrderStatus(wo.status).class, 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
+                                    {{ workOrderStatus(wo.status).label }}
+                                </span>
+                                <p class="text-sm font-bold text-gray-800 dark:text-gray-200 mt-1">{{ formatMoney(wo.final_amount) }}</p>
+                            </div>
+                        </Link>
+                    </div>
+                    <div v-else class="p-6 text-center py-8">
                         <i class="ri-briefcase-line text-3xl text-gray-300 dark:text-gray-600 mb-2 block"></i>
                         <p class="text-sm text-gray-500 dark:text-gray-400">История заказов пуста</p>
                     </div>

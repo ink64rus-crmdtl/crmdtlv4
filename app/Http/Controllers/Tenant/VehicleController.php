@@ -11,6 +11,8 @@ use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Models\Setting;
+use App\Models\WorkOrder;
+use App\Models\Lookup;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
@@ -159,6 +161,12 @@ class VehicleController extends Controller
         $strictPlateValidation = Setting::where('key', 'strict_plate_validation')->value('value') === '1';
         $tenantCountry = config('tenant.country_code', 'RU');
 
+        $workOrders = WorkOrder::where('vehicle_id', $vehicle->id)
+            ->orderByDesc('id')
+            ->get(['id', 'branch_id', 'client_id', 'vehicle_id', 'status', 'payment_status', 'final_amount', 'created_at']);
+
+        $workOrderStatuses = Lookup::where('type', 'work_order_status')->orderBy('sort_order')->get(['value', 'label', 'color']);
+
         return Inertia::render('CRM/Vehicles/Show', [
             'vehicle' => $vehicle,
             'customFieldsData' => $customFieldsData,
@@ -168,6 +176,8 @@ class VehicleController extends Controller
             'strictPlateValidation' => $strictPlateValidation,
             'tenantCountry' => $tenantCountry,
             'customFieldDefs' => $customFieldDefs,
+            'workOrders' => $workOrders,
+            'workOrderStatuses' => $workOrderStatuses,
         ]);
     }
 

@@ -10,6 +10,7 @@ use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Models\Lookup;
+use App\Models\WorkOrder;
 use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
@@ -160,6 +161,13 @@ class ClientController extends Controller
         $clientGroups = ClientGroup::orderBy('name')->get();
         $lookups = Lookup::whereIn('type', ['client_source', 'client_role'])->where('is_active', true)->get()->groupBy('type');
 
+        $workOrders = WorkOrder::where('client_id', $client->id)
+            ->with(['vehicle.make', 'vehicle.vehicleModel'])
+            ->orderByDesc('id')
+            ->get(['id', 'branch_id', 'client_id', 'vehicle_id', 'status', 'payment_status', 'final_amount', 'created_at']);
+
+        $workOrderStatuses = Lookup::where('type', 'work_order_status')->orderBy('sort_order')->get(['value', 'label', 'color']);
+
         return Inertia::render('CRM/Clients/Show', [
             'client' => $client,
             'customFieldsData' => $customFieldsData,
@@ -169,6 +177,8 @@ class ClientController extends Controller
             'clientGroups' => $clientGroups,
             'lookups' => $lookups,
             'customFieldDefs' => $customFieldDefs,
+            'workOrders' => $workOrders,
+            'workOrderStatuses' => $workOrderStatuses,
         ]);
     }
 
