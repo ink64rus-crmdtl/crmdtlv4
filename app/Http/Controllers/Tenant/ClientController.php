@@ -21,7 +21,7 @@ use Inertia\Response;
 
 class ClientController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request)
     {
         $user = auth()->user();
         
@@ -31,14 +31,18 @@ class ClientController extends Controller
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
             $query, 
-            request()->all(), 
+            $request->all(), 
             ['name', 'phone', 'email', 'alias'], 
             'client'
         );
 
-        // Сортировка по умолчанию, если не задана иная
-        if (!request()->has('sort_by')) {
+        if (!$request->has('sort_by')) {
             $query->orderBy('id', 'desc');
+        }
+
+        // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
+        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+            return response()->json($query->paginate(15));
         }
 
         // Пагинация вместо ->get()
@@ -68,7 +72,7 @@ class ClientController extends Controller
             ['key' => 'branch', 'label' => 'Филиал', 'type' => 'system', 'is_default' => true],
         ];
 
-        // 2. Подмешиваем кастомные поля для Клиентов
+        // 2. Подмешиваем кастомные поля для  Клиентов
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();
         foreach ($customFieldDefs as $cf) {
             $baseColumns[] = [
@@ -117,7 +121,7 @@ class ClientController extends Controller
 
         return Inertia::render('CRM/Clients/Index', [
             'clients' => $clients,
-            'filters' => request()->all(),
+            'filters' => $request->all(),
             'branches' => $branches,
             'clientGroups' => $clientGroups,
             'lookups' => $lookups,

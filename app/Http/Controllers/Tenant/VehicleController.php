@@ -21,7 +21,7 @@ use Inertia\Response;
 
 class VehicleController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request)
     {
         $user = auth()->user();
         
@@ -31,14 +31,22 @@ class VehicleController extends Controller
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
             $query, 
-            request()->all(), 
+            $request->all(), 
             ['plate_number', 'vin'], 
             'vehicle'
         );
 
         // Сортировка по умолчанию, если не задана иная
-        if (!request()->has('sort_by')) {
+        if (!$request->has('sort_by')) {
             $query->orderBy('id', 'desc');
+        }
+
+        // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
+        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+            if ($request->filled('client_id')) {
+                $query->where('client_id', $request->client_id);
+            }
+            return response()->json($query->paginate(15));
         }
 
         // Пагинация вместо ->get()
@@ -114,7 +122,7 @@ class VehicleController extends Controller
 
         return Inertia::render('CRM/Vehicles/Index', [
             'vehicles' => $vehicles,
-            'filters' => request()->all(),
+            'filters' => $request->all(),
             'clients' => $clients,
             'makes' => $makes,
             'models' => $models,

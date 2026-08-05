@@ -312,9 +312,9 @@ const submitCategory = () => {
             </div>
         </div>
 
-        <!-- Модальное окно Услуги -->
+        <!-- Модальное окно Услуги (Attex Standard: 4xl width - увеличено в 1.5 раза) -->
         <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl my-8 mx-auto flex flex-col">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-4xl my-8 mx-auto flex flex-col animate-fade-in">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                         {{ editingService ? 'Редактирование услуги' : 'Новая услуга' }}
@@ -367,10 +367,10 @@ const submitCategory = () => {
                             </h4>
                             <p class="text-xs text-gray-500 mb-4">Оставьте поле пустым, чтобы использовать базовую цену.</p>
                             
-                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                <div v-for="lookup in (lookups[pricingBasis] || [])" :key="lookup.id">
-                                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{{ lookup.value }} (₽)</label>
-                                    <input v-model="pricesInput[lookup.value]" type="number" step="0.01" min="0" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                                <div v-for="lookup in (lookups[pricingBasis] || [])" :key="lookup.id" class="bg-gray-50/50 dark:bg-gray-800/20 p-2.5 rounded border border-gray-200 dark:border-gray-700">
+                                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">{{ lookup.value }} (₽)</label>
+                                    <input v-model="pricesInput[lookup.value]" type="number" step="0.01" min="0" class="block w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                 </div>
                             </div>
                         </div>

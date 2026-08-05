@@ -1,5 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PageHelper from '@/Components/PageHelper.vue';
+import Offcanvas from '@/Components/Offcanvas.vue';
+import Modal from '@/Components/Modal.vue';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 
@@ -18,6 +21,7 @@ const props = defineProps({
     businessDirections: Array,
     serviceCategories: Array,
     productCategories: Array,
+    employees: Array,
 });
 
 const page = usePage();
@@ -39,7 +43,7 @@ const paymentStatuses = {
     'paid': { label: 'Оплачен', class: 'bg-success/10 text-success' },
 };
 
-// Форма редактирования шапки
+// Форма редактирования шапки (Увеличена до 3xl)
 const form = useForm({
     branch_id: '',
     client_id: '',
@@ -80,7 +84,125 @@ const submit = () => {
     });
 };
 
-// Форма добавления позиции
+// --- ФУНКЦИОНАЛ ПАКЕТНОЙ КОРЗИНЫ (DRAWER) ---
+const isBatchDrawerOpen = ref(false);
+const drawerSearch = ref('');
+const drawerTab = ref('services'); // 'services' | 'products'
+const selectedDirectionId = ref('');
+const addedToastMessage = ref('');
+const showToast = ref(false);
+
+const triggerToast = (msg) => {
+    addedToastMessage.value = msg;
+    showToast.value = true;
+    setTimeout(() => {
+        showToast.value = false;
+    }, 2000);
+};
+
+// Фильтрация услуг в слайдере по поиску и направлению бизнеса
+const filteredDrawerServices = computed(() => {
+    let list = props.services;
+    if (selectedDirectionId.value) {
+        list = list.filter(s => s.business_direction_id === selectedDirectionId.value);
+    }
+    if (drawerSearch.value) {
+        const query = drawerSearch.value.toLowerCase();
+        list = list.filter(s => getLocalizedLabel(s.name).toLowerCase().includes(query));
+    }
+    return list;
+});
+
+// Фильтрация товаров в слайдере по поиску
+const filteredDrawerProducts = computed(() => {
+    let list = props.products;
+    if (drawerSearch.value) {
+        const query = drawerSearch.value.toLowerCase();
+        list = list.filter(p => getLocalizedLabel(p.name).toLowerCase().includes(query) || (p.sku && p.sku.toLowerCase().includes(query)));
+    }
+    return list;
+});
+
+// Группировка услуг по категориям для красивого вывода
+const groupedDrawerServices = computed(() => {
+    const groups = {};
+    filteredDrawerServices.value.forEach(service => {
+        const catId = service.service_category_id || 0;
+        if (!groups[catId]) {
+            const cat = props.serviceCategories.find(c => c.id === catId);
+            groups[catId] = {
+                id: catId,
+                name: cat ? getLocalizedLabel(cat.name) : 'Без категории',
+                items: []
+            };
+        }
+        groups[catId].items.push(service);
+    });
+    return Object.values(groups);
+});
+
+// Группировка товаров по категориям для красивого вывода
+const groupedDrawerProducts = computed(() => {
+    const groups = {};
+    filteredDrawerProducts.value.forEach(product => {
+        const catId = product.product_category_id || 0;
+        if (!groups[catId]) {
+            const cat = props.productCategories.find(c => c.id === catId);
+            groups[catId] = {
+                id: catId,
+                name: cat ? getLocalizedLabel(cat.name) : 'Без категории',
+                items: []
+            };
+        }
+        groups[catId].items.push(product);
+    });
+    return Object.values(groups);
+});
+
+// Добавление позиции напрямую из слайдера без закрытия
+const addItemDirect = (type, item) => {
+    let finalPrice = 0;
+    let name = getLocalizedLabel(item.name);
+    
+    if (type === 'service') {
+        finalPrice = item.price / 100; // Базовая цена
+        
+        // Расчет цены на основе матрицы
+        if (props.pricingBasis === 'vehicle_body' && props.workOrder.vehicle?.vehicle_model?.body_type) {
+            const bodyType = props.workOrder.vehicle.vehicle_model.body_type;
+            if (item.prices && item.prices[bodyType]) {
+                finalPrice = item.prices[bodyType] / 100;
+            }
+        } else if (props.pricingBasis === 'vehicle_class' && props.workOrder.vehicle?.vehicle_model?.category) {
+            const vClass = props.workOrder.vehicle.vehicle_model.category;
+            if (item.prices && item.prices[vClass]) {
+                finalPrice = item.prices[vClass] / 100;
+            }
+        }
+    }
+
+    router.post(route('operations.work-orders.items.store', props.workOrder.id), {
+        itemable_type: type,
+        itemable_id: item.id,
+        name: name,
+        quantity: 1,
+        price: finalPrice,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            triggerToast(`"${name}" успешно добавлено в заказ!`);
+        }
+    });
+};
+
+// Привязка мастера-исполнителя к строке
+const updateItemTechnician = (item, employeeId) => {
+    router.put(route('operations.work-orders.items.update', [props.workOrder.id, item.id]), {
+        employee_id: employeeId || null
+    }, { preserveScroll: true });
+};
+
+// --- ФОРМА ОДИНОЧНОГО ДОБАВЛЕНИЯ (Fallback) ---
 const isItemModalOpen = ref(false);
 const itemForm = useForm({
     itemable_type: 'service',
@@ -116,7 +238,6 @@ const deleteItem = (item) => {
     }
 };
 
-// Автозаполнение названия и цены при выборе из справочника с учетом матрицы цен
 watch(() => itemForm.itemable_id, (newId) => {
     if (!newId) return;
     if (itemForm.itemable_type === 'service') {
@@ -124,9 +245,7 @@ watch(() => itemForm.itemable_id, (newId) => {
         if (service) {
             itemForm.name = getLocalizedLabel(service.name);
             
-            let finalPrice = service.price; // Базовая цена в копейках
-            
-            // Проверяем динамическое ценообразование
+            let finalPrice = service.price;
             if (props.pricingBasis === 'vehicle_body' && props.workOrder.vehicle?.vehicle_model?.body_type) {
                 const bodyType = props.workOrder.vehicle.vehicle_model.body_type;
                 if (service.prices && service.prices[bodyType]) {
@@ -138,7 +257,6 @@ watch(() => itemForm.itemable_id, (newId) => {
                     finalPrice = service.prices[vClass];
                 }
             }
-            
             itemForm.price = finalPrice / 100;
         }
     } else {
@@ -156,7 +274,7 @@ watch(() => itemForm.itemable_type, () => {
     itemForm.price = 0;
 });
 
-// --- БЫСТРОЕ СОЗДАНИЕ УСЛУГИ / ТОВАРА ---
+// --- БЫСТРОЕ СОЗДАНИЕ УСЛУГИ / ТОВАРА ИЗ ОКНА ЗАКАЗА (Увеличен до 3xl) ---
 const isQuickServiceModalOpen = ref(false);
 const quickServiceForm = useForm({
     service_category_id: '',
@@ -179,11 +297,7 @@ const closeQuickServiceModal = () => {
 
 const submitQuickService = () => {
     quickServiceForm.post(route('operations.work-orders.quick-service'), {
-        onSuccess: () => {
-            closeQuickServiceModal();
-            // После успешного создания можно было бы автоматически выбрать новую услугу,
-            // но для простоты просто закрываем модалку.
-        },
+        onSuccess: () => closeQuickServiceModal(),
     });
 };
 
@@ -214,7 +328,6 @@ const submitQuickProduct = () => {
         onSuccess: () => closeQuickProductModal(),
     });
 };
-// ----------------------------------------
 
 // Форма скидки
 const isDiscountModalOpen = ref(false);
@@ -309,7 +422,7 @@ const formatMoney = (amount) => {
                         <i class="ri-arrow-left-line"></i> Заказ-наряды
                     </Link>
                     <span class="text-gray-400">/</span>
-                    <span class="font-semibold text-gray-800 dark:text-gray-200">Заказ #{{ String(workOrder.id).padStart(6, '0') }}</span>
+                    <span class="font-semibold text-gray-800 dark:text-gray-200 font-mono">Заказ #{{ String(workOrder.id).padStart(6, '0') }}</span>
                 </div>
                 <div class="flex gap-2">
                     <button v-if="workOrder.status !== 'completed'" @click="completeOrder" :disabled="completeOrderForm.processing" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success text-white hover:bg-success-600 shadow-sm disabled:opacity-50">
@@ -342,7 +455,7 @@ const formatMoney = (amount) => {
                     <div class="w-20 h-20 rounded bg-primary/10 flex items-center justify-center text-primary font-bold text-3xl mb-4">
                         <i class="ri-briefcase-line"></i>
                     </div>
-                    <h2 class="text-lg font-bold text-gray-800 dark:text-gray-200 leading-tight mb-1">
+                    <h2 class="text-lg font-bold text-gray-800 dark:text-gray-200 leading-tight mb-1 font-mono">
                         Заказ #{{ String(workOrder.id).padStart(6, '0') }}
                     </h2>
                     <p class="text-sm text-gray-500 dark:text-gray-400 font-medium mb-4">
@@ -442,17 +555,22 @@ const formatMoney = (amount) => {
                     <div v-if="activeMainTab === 'items'" class="flex-1 flex flex-col">
                         <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-white dark:bg-[#313a46]">
                             <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Позиции заказа</h3>
-                            <button v-if="workOrder.status !== 'completed'" @click="openItemModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 shadow-sm gap-1.5">
-                                <i class="ri-add-line"></i> Добавить позицию
-                            </button>
+                            <div class="flex gap-2">
+                                <button v-if="workOrder.status !== 'completed'" @click="isBatchDrawerOpen = true" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm">
+                                    <i class="ri-add-line"></i> Добавить позицию
+                                </button>
+                                <button v-if="workOrder.status !== 'completed'" @click="openItemModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5">
+                                    <i class="ri-search-line"></i> Быстрый поиск
+                                </button>
+                            </div>
                         </div>
                         
                         <div class="overflow-x-auto w-full flex-1">
-                            <table class="min-w-full text-left whitespace-nowrap">
+                            <table class="min-w-full text-left">
                                 <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                                     <tr>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Наименование</th>
-                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
+                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Исполнитель</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Кол-во</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Цена</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Сумма</th>
@@ -461,10 +579,26 @@ const formatMoney = (amount) => {
                                 </thead>
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                                     <tr v-for="item in workOrder.items" :key="item.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                        <td class="py-3 px-6 text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.name }}</td>
+                                        <td class="py-3 px-6 text-sm font-medium text-gray-800 dark:text-gray-200">
+                                            <div>{{ item.name }}</div>
+                                            <div class="mt-1">
+                                                <span v-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 uppercase tracking-wider"><i class="ri-tools-line"></i> Услуга</span>
+                                                <span v-else class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 uppercase tracking-wider"><i class="ri-box-3-line"></i> Товар</span>
+                                            </div>
+                                        </td>
                                         <td class="py-3 px-6 text-sm">
-                                            <span v-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"><i class="ri-tools-line"></i> Услуга</span>
-                                            <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"><i class="ri-box-3-line"></i> Товар</span>
+                                            <!-- Выбор Исполнителя на каждую позицию (Только для услуг) -->
+                                            <select 
+                                                v-if="item.itemable_type.includes('Service')"
+                                                :value="item.employee_id || ''"
+                                                @change="e => updateItemTechnician(item, e.target.value)"
+                                                :disabled="workOrder.status === 'completed'"
+                                                class="block rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 w-40 animate-fade-in"
+                                            >
+                                                <option value="">Не назначен</option>
+                                                <option v-for="emp in employees" :key="emp.id" :value="emp.id">{{ emp.last_name }} {{ emp.first_name }}</option>
+                                            </select>
+                                            <span v-else class="text-xs text-gray-400 font-medium">Складское списание</span>
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }}</td>
                                         <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.price) }}</td>
@@ -475,7 +609,7 @@ const formatMoney = (amount) => {
                                     </tr>
                                     <tr v-if="!workOrder.items || workOrder.items.length === 0">
                                         <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                            В заказ-наряд еще не добавлены услуги или товары.
+                                            В заказ-наряд еще не добавлены услуги или товары. Нажмите "Добавить позицию" или "Быстрый поиск".
                                         </td>
                                     </tr>
                                 </tbody>
@@ -575,9 +709,126 @@ const formatMoney = (amount) => {
 
         </div>
 
-        <!-- Модальное окно редактирования шапки -->
+        <!-- TRI-STATE 1: Слайдер пакетного выбора (Drawer Offcanvas) -->
+        <Offcanvas :show="isBatchDrawerOpen" @close="isBatchDrawerOpen = false" maxWidth="xl">
+            <div class="flex flex-col h-full bg-white dark:bg-[#313a46]">
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <div class="flex items-center gap-2.5">
+                        <i class="ri-shopping-basket-2-line text-primary text-xl"></i>
+                        <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Пакетный выбор</h3>
+                    </div>
+                    <button @click="isBatchDrawerOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-2xl"></i></button>
+                </div>
+
+                <!-- Быстрый поиск в шапке слайдера -->
+                <div class="p-4 border-b border-gray-100 dark:border-gray-700/80 bg-white dark:bg-gray-800 flex gap-2">
+                    <div class="relative flex-1">
+                        <input v-model="drawerSearch" type="text" placeholder="Поиск по названию услуги или товара..." class="block w-full pl-9 pr-4 py-1.5 border border-gray-200 dark:border-gray-700 rounded-md text-sm leading-5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors" />
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="ri-search-line text-gray-400"></i>
+                        </div>
+                    </div>
+                    <div v-if="drawerTab === 'services'" class="w-48 shrink-0">
+                        <select v-model="selectedDirectionId" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="">Все направления</option>
+                            <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id">{{ dir.name }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Вкладки Услуги / Товары в слайдере -->
+                <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/30 dark:bg-gray-800/10">
+                    <button @click="drawerTab = 'services'" :class="[drawerTab === 'services' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3 px-1 text-sm transition-colors focus:outline-none']">
+                        <i class="ri-tools-line mr-1"></i> Услуги (Прайс-лист)
+                    </button>
+                    <button @click="drawerTab = 'products'" :class="[drawerTab === 'products' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3 px-1 text-sm transition-colors focus:outline-none']">
+                        <i class="ri-box-3-line mr-1"></i> Товары и Расходники
+                    </button>
+                </div>
+
+                <!-- Toast уведомление прямо внутри слайдера при добавлении -->
+                <div v-if="showToast" class="m-4 p-3 bg-success/10 border border-success/20 rounded text-success text-xs font-semibold flex items-center gap-1.5 animate-fade-in shadow-sm">
+                    <i class="ri-checkbox-circle-fill"></i> {{ addedToastMessage }}
+                </div>
+
+                <!-- Список с группировкой по категориям -->
+                <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                    
+                    <!-- Рендеринг Услуг -->
+                    <template v-if="drawerTab === 'services'">
+                        <div v-for="group in groupedDrawerServices" :key="'g_srv_' + group.id" class="space-y-2">
+                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                <i class="ri-folder-open-line"></i> {{ group.name }}
+                            </h4>
+                            <div class="space-y-1.5">
+                                <div v-for="srv in group.items" :key="srv.id" class="flex justify-between items-center p-3 border border-gray-100 dark:border-gray-700/50 rounded-md bg-gray-50/50 dark:bg-gray-800/10 hover:border-primary/20 transition-all group">
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(srv.name) }}</p>
+                                        <p class="text-xs text-gray-500 font-medium mt-0.5 flex items-center gap-2">
+                                            <span><i class="ri-time-line"></i> {{ srv.duration_minutes }} мин</span>
+                                            <span>•</span>
+                                            <!-- Показ правильной цены с учетом матрицы -->
+                                            <span class="text-primary font-semibold">
+                                                <template v-if="pricingBasis === 'vehicle_body' && workOrder.vehicle?.vehicle_model?.body_type && srv.prices?.[workOrder.vehicle.vehicle_model.body_type]">
+                                                    {{ formatMoney(srv.prices[workOrder.vehicle.vehicle_model.body_type]) }}
+                                                </template>
+                                                <template v-else-if="pricingBasis === 'vehicle_class' && workOrder.vehicle?.vehicle_model?.category && srv.prices?.[workOrder.vehicle.vehicle_model.category]">
+                                                    {{ formatMoney(srv.prices[workOrder.vehicle.vehicle_model.category]) }}
+                                                </template>
+                                                <template v-else>
+                                                    {{ formatMoney(srv.price) }}
+                                                </template>
+                                            </span>
+                                        </p>
+                                    </div>
+                                    <button @click="addItemDirect('service', srv)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-bold transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white shadow-sm gap-1">
+                                        <i class="ri-add-line"></i> Добавить
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-if="groupedDrawerServices.length === 0" class="text-center py-12 text-sm text-gray-500">Услуги не найдены.</div>
+                    </template>
+
+                    <!-- Рендеринг Товаров -->
+                    <template v-else>
+                        <div v-for="group in groupedDrawerProducts" :key="'g_prd_' + group.id" class="space-y-2">
+                            <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                <i class="ri-folder-open-line"></i> {{ group.name }}
+                            </h4>
+                            <div class="space-y-1.5">
+                                <div v-for="prd in group.items" :key="prd.id" class="flex justify-between items-center p-3 border border-gray-100 dark:border-gray-700/50 rounded-md bg-gray-50/50 dark:bg-gray-800/10 hover:border-primary/20 transition-all group">
+                                    <div>
+                                        <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(prd.name) }}</p>
+                                        <p class="text-xs text-gray-500 font-medium mt-0.5 flex items-center gap-1.5">
+                                            <span class="font-mono">{{ prd.sku || 'Без артикула' }}</span>
+                                            <span>•</span>
+                                            <span>Ед: {{ prd.unit }}</span>
+                                        </p>
+                                    </div>
+                                    <button @click="addItemDirect('product', prd)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-bold transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white shadow-sm gap-1">
+                                        <i class="ri-add-line"></i> Добавить
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-if="groupedDrawerProducts.length === 0" class="text-center py-12 text-sm text-gray-500">Товары не найдены.</div>
+                    </template>
+
+                </div>
+
+                <!-- Footer Drawer -->
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-2.5">
+                    <button v-if="drawerTab === 'services'" @click="openQuickServiceModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-2 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрая услуга</button>
+                    <button v-else @click="openQuickProductModal" class="flex-1 inline-flex items-center justify-center rounded px-3 py-2 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1"><i class="ri-add-line"></i> Быстрый товар</button>
+                    <button @click="isBatchDrawerOpen = false" class="flex-1 inline-flex items-center justify-center rounded px-3 py-2 text-xs font-semibold transition-all duration-300 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">Закрыть корзину</button>
+                </div>
+            </div>
+        </Offcanvas>
+
+        <!-- Модальное окно редактирования шапки (Ширина 3xl - увеличено в 1.5 раза) -->
         <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-2xl my-8 mx-auto flex flex-col">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
                         Редактирование шапки заказа
@@ -681,7 +932,7 @@ const formatMoney = (amount) => {
                                     </template>
                                     
                                     <template v-else-if="def.type === 'select'">
-                                        <select v-model="form.custom_fields[def.key]" :required="def.is_required" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                        <select v-model="form.custom_fields[def.key]" :required="def.is_required" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                             <option value="" disabled class="bg-white dark:bg-gray-800">Выберите...</option>
                                             <option v-for="opt in def.options" :key="opt" :value="opt" class="bg-white dark:bg-gray-800">{{ opt }}</option>
                                         </select>
@@ -707,7 +958,7 @@ const formatMoney = (amount) => {
             </div>
         </div>
 
-        <!-- Модальное окно добавления позиции -->
+        <!-- Модальное окно быстрого поиска одной позиции -->
         <div v-if="isItemModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-xl my-8 mx-auto flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
@@ -734,7 +985,7 @@ const formatMoney = (amount) => {
                                     <button v-if="itemForm.itemable_type === 'service'" type="button" @click="openQuickServiceModal" class="text-xs text-primary hover:underline font-medium">+ Создать новую</button>
                                     <button v-if="itemForm.itemable_type === 'product'" type="button" @click="openQuickProductModal" class="text-xs text-primary hover:underline font-medium">+ Создать новый</button>
                                 </div>
-                                <select v-model="itemForm.itemable_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                <select v-model="itemForm.itemable_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="" disabled class="bg-white dark:bg-gray-800">Выберите...</option>
                                     <template v-if="itemForm.itemable_type === 'service'">
                                         <option v-for="s in services" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(s.name) }}</option>
@@ -748,17 +999,17 @@ const formatMoney = (amount) => {
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Наименование в чеке <span class="text-danger">*</span></label>
-                            <input v-model="itemForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            <input v-model="itemForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Количество <span class="text-danger">*</span></label>
-                                <input v-model="itemForm.quantity" type="number" step="any" min="0.001" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <input v-model="itemForm.quantity" type="number" step="any" min="0.001" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цена за ед. (₽) <span class="text-danger">*</span></label>
-                                <input v-model="itemForm.price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <input v-model="itemForm.price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
                         </div>
                         
@@ -775,45 +1026,45 @@ const formatMoney = (amount) => {
             </div>
         </div>
 
-        <!-- Модальное окно быстрого создания Услуги -->
+        <!-- Модальное окно быстрого создания Услуги (Ширина 3xl - увеличено в 1.5 раза) -->
         <div v-if="isQuickServiceModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col animate-fade-in">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        Быстрое добавление услуги
+                        Быстрое добавление услуги в каталог
                     </h3>
-                    <button @click="closeQuickServiceModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none">
-                        <i class="ri-close-line text-xl"></i>
-                    </button>
+                    <button @click="closeQuickServiceModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
                 </div>
                 <form @submit.prevent="submitQuickService" class="flex flex-col">
                     <div class="p-6 space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
-                            <select v-model="quickServiceForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
-                                <option v-for="cat in serviceCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление</label>
-                            <select v-model="quickServiceForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                <option value="" class="bg-white dark:bg-gray-800">Без направления</option>
-                                <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
-                            </select>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
+                                <select v-model="quickServiceForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
+                                    <option v-for="cat in serviceCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление</label>
+                                <select v-model="quickServiceForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" class="bg-white dark:bg-gray-800">Без направления</option>
+                                    <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                                </select>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название услуги <span class="text-danger">*</span></label>
-                            <input v-model="quickServiceForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            <input v-model="quickServiceForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                         </div>
-                        <div class="grid grid-cols-2 gap-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Базовая цена (₽) <span class="text-danger">*</span></label>
-                                <input v-model="quickServiceForm.price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <input v-model="quickServiceForm.price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Нормо-время (мин) <span class="text-danger">*</span></label>
-                                <input v-model="quickServiceForm.duration_minutes" type="number" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <input v-model="quickServiceForm.duration_minutes" type="number" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
                         </div>
                     </div>
@@ -825,12 +1076,12 @@ const formatMoney = (amount) => {
             </div>
         </div>
 
-        <!-- Модальное окно быстрого создания Товара -->
+        <!-- Модальное окно быстрого создания Товара (Ширина 3xl - увеличено в 1.5 раза) -->
         <div v-if="isQuickProductModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col animate-fade-in">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        Быстрое добавление товара
+                        Быстрое добавление товара в каталог
                     </h3>
                     <button @click="closeQuickProductModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
                         <i class="ri-close-line text-xl"></i>
@@ -840,19 +1091,19 @@ const formatMoney = (amount) => {
                     <div class="p-6 space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
-                            <select v-model="quickProductForm.product_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <select v-model="quickProductForm.product_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
                                 <option v-for="cat in productCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
                             </select>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название товара <span class="text-danger">*</span></label>
-                            <input v-model="quickProductForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            <input v-model="quickProductForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                         </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ед. изм. <span class="text-danger">*</span></label>
-                                <select v-model="quickProductForm.unit" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                <select v-model="quickProductForm.unit" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="шт" class="bg-white dark:bg-gray-800">Штуки (шт)</option>
                                     <option value="мл" class="bg-white dark:bg-gray-800">Миллилитры (мл)</option>
                                     <option value="л" class="bg-white dark:bg-gray-800">Литры (л)</option>
@@ -863,7 +1114,7 @@ const formatMoney = (amount) => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип учета <span class="text-danger">*</span></label>
-                                <select v-model="quickProductForm.accounting_type" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                <select v-model="quickProductForm.accounting_type" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="average" class="bg-white dark:bg-gray-800">Средневзвешенный</option>
                                     <option value="batch" class="bg-white dark:bg-gray-800">Партионный (FIFO)</option>
                                 </select>
@@ -920,12 +1171,12 @@ const formatMoney = (amount) => {
                     <div class="p-6 space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма к оплате (₽) <span class="text-danger">*</span></label>
-                            <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="remainingAmount / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="remainingAmount / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             <p class="text-xs text-gray-500 mt-1">Остаток долга: {{ formatMoney(remainingAmount) }}</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Расчетный счет <span class="text-danger">*</span></label>
-                            <select v-model="paymentForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <select v-model="paymentForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="" disabled class="bg-white dark:bg-gray-800">Выберите счет...</option>
                                 <option v-for="acc in accounts" :key="acc.id" :value="acc.id" class="bg-white dark:bg-gray-800">{{ acc.name }}</option>
                             </select>

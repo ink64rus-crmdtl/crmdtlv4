@@ -19,6 +19,7 @@ use App\Models\Lookup;
 use App\Models\BusinessDirection;
 use App\Models\ServiceCategory;
 use App\Models\ProductCategory;
+use App\Models\Employee;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
 use App\Services\WarehouseResolver;
@@ -33,7 +34,7 @@ use Exception;
 
 class WorkOrderController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $user = auth()->user();
         
@@ -41,7 +42,7 @@ class WorkOrderController extends Controller
         
         $query = QueryFilterService::apply(
             $query, 
-            request()->all(), 
+            $request->all(), 
             ['id'],
             'work_order'
         );
@@ -111,7 +112,7 @@ class WorkOrderController extends Controller
 
         return Inertia::render('Operations/WorkOrders/Index', [
             'workOrders' => $workOrders,
-            'filters' => request()->all(),
+            'filters' => $request->all(),
             'branches' => $branches,
             'clients' => $clients,
             'vehicles' => $vehicles,
@@ -125,7 +126,7 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items', 'transactions.account']);
+        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employee', 'transactions.account']);
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'work_order')->where('entity_id', $workOrder->id)->get();
@@ -143,16 +144,17 @@ class WorkOrderController extends Controller
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         
-        $services = Service::where('is_active', true)->get(['id', 'name', 'price', 'prices']);
-        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit']);
+        $services = Service::where('is_active', true)->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
+        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id']);
         
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type']);
 
         $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
         $lookups = Lookup::whereIn('type', ['vehicle_body', 'vehicle_class'])->where('is_active', true)->get()->groupBy('type');
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
-        $serviceCategories = ServiceCategory::where('is_active', true)->get(['id', 'name']);
+        $serviceCategories = ServiceCategory::where('is_active', true)->get(['id', 'name', 'business_direction_id']);
         $productCategories = ProductCategory::where('is_active', true)->get(['id', 'name']);
+        $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
 
         return Inertia::render('Operations/WorkOrders/Show', [
             'workOrder' => $workOrder,
@@ -169,6 +171,7 @@ class WorkOrderController extends Controller
             'businessDirections' => $businessDirections,
             'serviceCategories' => $serviceCategories,
             'productCategories' => $productCategories,
+            'employees' => $employees,
         ]);
     }
 
@@ -269,6 +272,7 @@ class WorkOrderController extends Controller
         $validated = $request->validate([
             'itemable_type' => ['required', 'string', 'in:service,product'],
             'itemable_id' => ['required', 'integer'],
+            'employee_id' => ['nullable', 'exists:employees,id'],
             'name' => ['required', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.001'],
             'price' => ['required', 'numeric', 'min:0'],
@@ -280,6 +284,7 @@ class WorkOrderController extends Controller
         $workOrder->items()->create([
             'itemable_type' => $validated['itemable_type'] === 'service' ? Service::class : Product::class,
             'itemable_id' => $validated['itemable_id'],
+            'employee_id' => $validated['employee_id'] ?? null,
             'name' => $validated['name'],
             'quantity' => $validated['quantity'],
             'price' => $priceCents,
@@ -289,6 +294,39 @@ class WorkOrderController extends Controller
         $this->recalculateTotals($workOrder);
 
         return redirect()->back()->with('success', 'Позиция добавлена');
+    }
+
+    public function updateItem(Request $request, WorkOrder $workOrder, WorkOrderItem $item)
+    {
+        if ($item->work_order_id !== $workOrder->id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'employee_id' => ['nullable', 'exists:employees,id'],
+            'quantity' => ['nullable', 'numeric', 'min:0.001'],
+            'price' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $data = [];
+        if ($request->has('employee_id')) {
+            $data['employee_id'] = $validated['employee_id'];
+        }
+
+        if ($request->has('quantity') || $request->has('price')) {
+            $qty = $validated['quantity'] ?? $item->quantity;
+            $price = $request->has('price') ? (int) round($validated['price'] * 100) : $item->price;
+            
+            $data['quantity'] = $qty;
+            $data['price'] = $price;
+            $data['total'] = (int) round($qty * $price);
+        }
+
+        $item->update($data);
+
+        $this->recalculateTotals($workOrder);
+
+        return redirect()->back()->with('success', 'Позиция обновлена');
     }
 
     public function removeItem(WorkOrder $workOrder, WorkOrderItem $item)
@@ -316,6 +354,8 @@ class WorkOrderController extends Controller
 
         return redirect()->back()->with('success', 'Скидка обновлена');
     }
+
+    // --- ФИНАНСЫ И СКЛАД (ФАЗА 8.3) ---
 
     public function processPayment(Request $request, WorkOrder $workOrder)
     {

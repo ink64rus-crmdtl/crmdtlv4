@@ -202,6 +202,7 @@ Route::middleware([
         
         // Operations: Заказ-наряды (Позиции, Скидки, Финансы, Склад)
         Route::post('/operations/work-orders/{workOrder}/items', [WorkOrderController::class, 'addItem'])->name('operations.work-orders.items.store');
+        Route::put('/operations/work-orders/{workOrder}/items/{item}', [WorkOrderController::class, 'updateItem'])->name('operations.work-orders.items.update');
         Route::delete('/operations/work-orders/{workOrder}/items/{item}', [WorkOrderController::class, 'removeItem'])->name('operations.work-orders.items.destroy');
         Route::post('/operations/work-orders/{workOrder}/discount', [WorkOrderController::class, 'updateDiscount'])->name('operations.work-orders.discount.update');
         Route::post('/operations/work-orders/{workOrder}/payment', [WorkOrderController::class, 'processPayment'])->name('operations.work-orders.payment.store');

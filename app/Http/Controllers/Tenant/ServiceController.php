@@ -16,18 +16,23 @@ use Inertia\Response;
 
 class ServiceController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $query = Service::with(['category', 'businessDirection']);
         
         $query = QueryFilterService::apply(
             $query,
-            request()->all(),
+            $request->all(),
             ['name']
         );
 
-        if (!request()->has('sort_by')) {
+        if (!$request->has('sort_by')) {
             $query->orderBy('id', 'desc');
+        }
+
+        // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
+        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+            return response()->json($query->paginate(15));
         }
 
         $services = $query->paginate(15)->withQueryString();
@@ -43,7 +48,7 @@ class ServiceController extends Controller
             'businessDirections' => $businessDirections,
             'pricingBasis' => $pricingBasis,
             'lookups' => $lookups,
-            'filters' => request()->all(),
+            'filters' => $request->all(),
         ]);
     }
 

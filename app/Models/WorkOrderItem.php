@@ -10,6 +10,7 @@ class WorkOrderItem extends Model
 {
     protected $fillable = [
         'work_order_id',
+        'employee_id',
         'itemable_type',
         'itemable_id',
         'name',
@@ -22,6 +23,7 @@ class WorkOrderItem extends Model
     protected function casts(): array
     {
         return [
+            'employee_id' => 'integer',
             'quantity' => 'decimal:3',
             'price' => 'integer',
             'total' => 'integer',
@@ -37,5 +39,10 @@ class WorkOrderItem extends Model
     public function itemable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class);
     }
 }

@@ -11,6 +11,7 @@ const props = defineProps({
     lookups: Object,
     serviceCategories: Array,
     productCategories: Array,
+    businessDirections: Array,
 });
 
 const activeTab = ref('makes'); // 'makes', 'models', 'service_categories', 'product_categories', 'import', or lookup key
@@ -57,6 +58,7 @@ const editingCategory = ref(null);
 const categoryType = ref('service'); // 'service' or 'product'
 const categoryForm = useForm({
     name: '',
+    business_direction_id: '',
 });
 
 const groupColors = [
@@ -220,6 +222,7 @@ const openCategoryModal = (type, category = null) => {
     editingCategory.value = category;
     if (category) {
         categoryForm.name = getLocalizedLabel(category.name);
+        categoryForm.business_direction_id = category.business_direction_id || '';
     } else {
         categoryForm.reset();
     }
@@ -418,19 +421,26 @@ const getLocalizedLabel = (label) => {
                             <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                                 <tr>
                                     <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                    <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Направление бизнеса</th>
                                     <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
                                 <tr v-for="cat in serviceCategories" :key="cat.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                     <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
+                                    <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300">
+                                        <span v-if="cat.business_direction" class="inline-flex items-center gap-1.5 bg-info/10 text-info px-2.5 py-1 rounded text-xs font-medium">
+                                            <i class="ri-node-tree"></i> {{ cat.business_direction.name }}
+                                        </span>
+                                        <span v-else class="text-xs text-gray-400 dark:text-gray-500">Общее (Без направления)</span>
+                                    </td>
                                     <td class="py-4 px-6 text-sm text-right space-x-2">
                                         <button @click="openCategoryModal('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
                                         <button @click="deleteCategory('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
                                     </td>
                                 </tr>
                                 <tr v-if="serviceCategories.length === 0">
-                                    <td colspan="2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Категории не найдены.</td>
+                                    <td colspan="3" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Категории не найдены.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -583,7 +593,7 @@ Audi;A3;Седан;Класс 1</pre>
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingModel ? 'Редактирование модели' : 'Новая модель' }}</h3>
-                    <button @click="closeModelModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                    <button @click="closeModelModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none"><i class="ri-close-line text-xl"></i></button>
                 </div>
                 <form @submit.prevent="submitModel" class="flex flex-col">
                     <div class="p-6 space-y-4">
@@ -630,9 +640,9 @@ Audi;A3;Седан;Класс 1</pre>
         <!-- Модалка Категории (Услуг/Товаров) -->
         <div v-if="isCategoryModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
-                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingCategory ? 'Редактирование категории' : 'Новая категория' }}</h3>
-                    <button @click="closeCategoryModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                    <button @click="closeCategoryModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none"><i class="ri-close-line text-xl"></i></button>
                 </div>
                 <form @submit.prevent="submitCategory" class="flex flex-col">
                     <div class="p-6 space-y-4">
@@ -640,6 +650,14 @@ Audi;A3;Седан;Класс 1</pre>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
                             <input v-model="categoryForm.name" type="text" required placeholder="Например: Мойка" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             <span v-if="categoryForm.errors.name" class="text-xs text-danger mt-1">{{ categoryForm.errors.name }}</span>
+                        </div>
+                        <div v-if="categoryType === 'service'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление бизнеса</label>
+                            <select v-model="categoryForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" class="bg-white dark:bg-gray-800">Общая категория (Без направления)</option>
+                                <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                            </select>
+                            <span v-if="categoryForm.errors.business_direction_id" class="text-xs text-danger mt-1">{{ categoryForm.errors.business_direction_id }}</span>
                         </div>
                     </div>
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
@@ -655,7 +673,7 @@ Audi;A3;Седан;Класс 1</pre>
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingLookup ? 'Редактирование записи' : 'Новая запись' }}</h3>
-                    <button @click="closeLookupModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                    <button @click="closeLookupModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none"><i class="ri-close-line text-xl"></i></button>
                 </div>
                 <form @submit.prevent="submitLookup" class="flex flex-col">
                     <div class="p-6 space-y-4">

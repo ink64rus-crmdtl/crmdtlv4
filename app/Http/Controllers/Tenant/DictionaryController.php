@@ -8,6 +8,7 @@ use App\Models\VehicleModel;
 use App\Models\Lookup;
 use App\Models\ServiceCategory;
 use App\Models\ProductCategory;
+use App\Models\BusinessDirection;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -18,14 +19,16 @@ class DictionaryController extends Controller
     {
         $makes = VehicleMake::with('models')->orderBy('name')->get();
         $lookups = Lookup::orderBy('value')->get()->groupBy('type');
-        $serviceCategories = ServiceCategory::orderBy('id')->get();
+        $serviceCategories = ServiceCategory::with('businessDirection')->orderBy('id')->get();
         $productCategories = ProductCategory::orderBy('id')->get();
+        $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
 
         return Inertia::render('Settings/Dictionaries/Index', [
             'makes' => $makes,
             'lookups' => $lookups,
             'serviceCategories' => $serviceCategories,
             'productCategories' => $productCategories,
+            'businessDirections' => $businessDirections,
         ]);
     }
 
@@ -97,17 +100,35 @@ class DictionaryController extends Controller
 
     public function storeServiceCategory(Request $request)
     {
-        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
-        ServiceCategory::create(['name' => [app()->getLocale() => $validated['name']], 'is_active' => true]);
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'business_direction_id' => ['nullable', 'exists:business_directions,id'],
+        ]);
+
+        ServiceCategory::create([
+            'name' => [app()->getLocale() => $validated['name']],
+            'business_direction_id' => $validated['business_direction_id'],
+            'is_active' => true
+        ]);
+
         return redirect()->back()->with('success', 'Категория услуг добавлена');
     }
 
     public function updateServiceCategory(Request $request, ServiceCategory $category)
     {
-        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'business_direction_id' => ['nullable', 'exists:business_directions,id'],
+        ]);
+
         $name = $category->name;
         $name[app()->getLocale()] = $validated['name'];
-        $category->update(['name' => $name]);
+
+        $category->update([
+            'name' => $name,
+            'business_direction_id' => $validated['business_direction_id']
+        ]);
+
         return redirect()->back()->with('success', 'Категория услуг обновлена');
     }
 
@@ -119,17 +140,31 @@ class DictionaryController extends Controller
 
     public function storeProductCategory(Request $request)
     {
-        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
-        ProductCategory::create(['name' => [app()->getLocale() => $validated['name']], 'is_active' => true]);
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255']
+        ]);
+
+        ProductCategory::create([
+            'name' => [app()->getLocale() => $validated['name']],
+            'is_active' => true
+        ]);
+
         return redirect()->back()->with('success', 'Категория товаров добавлена');
     }
 
     public function updateProductCategory(Request $request, ProductCategory $category)
     {
-        $validated = $request->validate(['name' => ['required', 'string', 'max:255']]);
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255']
+        ]);
+
         $name = $category->name;
         $name[app()->getLocale()] = $validated['name'];
-        $category->update(['name' => $name]);
+
+        $category->update([
+            'name' => $name
+        ]);
+
         return redirect()->back()->with('success', 'Категория товаров обновлена');
     }
 

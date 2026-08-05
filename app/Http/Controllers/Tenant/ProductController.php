@@ -14,18 +14,23 @@ use Inertia\Response;
 
 class ProductController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $query = Product::with(['category', 'preferredWarehouse']);
         
         $query = QueryFilterService::apply(
             $query,
-            request()->all(),
+            $request->all(),
             ['name', 'sku']
         );
 
-        if (!request()->has('sort_by')) {
+        if (!$request->has('sort_by')) {
             $query->orderBy('id', 'desc');
+        }
+
+        // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
+        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+            return response()->json($query->paginate(15));
         }
 
         $products = $query->paginate(15)->withQueryString();
@@ -36,7 +41,7 @@ class ProductController extends Controller
             'products' => $products,
             'categories' => $categories,
             'warehouses' => $warehouses,
-            'filters' => request()->all(),
+            'filters' => $request->all(),
         ]);
     }
 
