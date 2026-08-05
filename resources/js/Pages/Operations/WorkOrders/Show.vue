@@ -375,6 +375,49 @@ const submitDiscount = () => {
     });
 };
 
+// Инлайн-скидка в корзине пакетного добавления (сумма ₽ или %)
+const drawerDiscountMode = ref('amount'); // 'amount' | 'percent'
+const drawerDiscountValue = ref(0);
+
+const drawerTotalRub = computed(() => props.workOrder.total_amount / 100);
+
+const syncDrawerDiscountFromOrder = () => {
+    const amountRub = props.workOrder.discount_amount / 100;
+    if (drawerDiscountMode.value === 'amount') {
+        drawerDiscountValue.value = amountRub;
+    } else {
+        drawerDiscountValue.value = drawerTotalRub.value > 0
+            ? Math.round((amountRub / drawerTotalRub.value) * 10000) / 100
+            : 0;
+    }
+};
+
+const setDrawerDiscountMode = (mode) => {
+    if (mode === drawerDiscountMode.value) return;
+    drawerDiscountMode.value = mode;
+    syncDrawerDiscountFromOrder();
+};
+
+const drawerDiscountAmountRub = computed(() => {
+    const value = Number(drawerDiscountValue.value) || 0;
+    if (drawerDiscountMode.value === 'amount') {
+        return value;
+    }
+    return Math.round(drawerTotalRub.value * value) / 100;
+});
+
+const applyDrawerDiscount = () => {
+    const amount = Math.max(0, Math.min(drawerDiscountAmountRub.value, drawerTotalRub.value));
+    router.post(route('operations.work-orders.discount.update', props.workOrder.id), {
+        discount_amount: amount,
+    }, { preserveScroll: true });
+};
+
+watch(isBatchDrawerOpen, (open) => {
+    if (open) syncDrawerDiscountFromOrder();
+});
+watch(() => props.workOrder.discount_amount, syncDrawerDiscountFromOrder);
+
 // Форма оплаты
 const isPaymentModalOpen = ref(false);
 const paymentForm = useForm({
@@ -777,8 +820,8 @@ const formatMoney = (amount) => {
                 <!-- Двухколоночный сплит внутри слайдера -->
                 <div class="flex-1 overflow-hidden grid grid-cols-12 gap-0">
                     
-                    <!-- Левая часть (7 столбцов / 60%): Каталог с подсвечиванием добавленных -->
-                    <div class="col-span-12 lg:col-span-7 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-5 custom-scrollbar">
+                    <!-- Левая часть (4 столбца / 1/3): Каталог с подсвечиванием добавленных -->
+                    <div class="col-span-12 lg:col-span-4 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 space-y-5 custom-scrollbar">
                         
                         <!-- Рендеринг Услуг -->
                         <template v-if="drawerTab === 'services'">
@@ -862,8 +905,8 @@ const formatMoney = (amount) => {
 
                     </div>
 
-                    <!-- Правая часть (5 столбцов / 40%): Живая корзина состава заказа -->
-                    <div class="col-span-12 lg:col-span-5 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col h-full overflow-hidden">
+                    <!-- Правая часть (8 столбцов / 2/3): Живая корзина состава заказа -->
+                    <div class="col-span-12 lg:col-span-8 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col h-full overflow-hidden">
                         <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 flex justify-between items-center">
                             <span class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Состав заказа ({{ workOrder.items?.length || 0 }})</span>
                             <span class="text-xs font-bold text-primary">{{ formatMoney(workOrder.final_amount) }}</span>
@@ -936,6 +979,25 @@ const formatMoney = (amount) => {
                                 <span class="text-gray-500">Скидка:</span>
                                 <span class="font-bold text-danger">- {{ formatMoney(workOrder.discount_amount) }}</span>
                             </div>
+
+                            <!-- Инлайн-редактирование скидки: сумма (₽) или процент (%) -->
+                            <div class="flex items-center gap-1.5">
+                                <div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
+                                    <button type="button" @click="setDrawerDiscountMode('amount')" :class="[drawerDiscountMode === 'amount' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-2 py-1 text-[11px] font-bold transition-colors']">₽</button>
+                                    <button type="button" @click="setDrawerDiscountMode('percent')" :class="[drawerDiscountMode === 'percent' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-2 py-1 text-[11px] font-bold transition-colors border-l border-gray-200 dark:border-gray-700']">%</button>
+                                </div>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    :max="drawerDiscountMode === 'percent' ? 100 : drawerTotalRub"
+                                    v-model="drawerDiscountValue"
+                                    @keyup.enter="applyDrawerDiscount"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                />
+                                <button type="button" @click="applyDrawerDiscount" class="shrink-0 inline-flex items-center justify-center rounded px-2.5 py-1 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors">Применить</button>
+                            </div>
+
                             <div class="pt-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center">
                                 <span class="text-sm font-bold text-gray-800 dark:text-gray-200">Итого:</span>
                                 <span class="text-lg font-bold text-success">{{ formatMoney(workOrder.final_amount) }}</span>
