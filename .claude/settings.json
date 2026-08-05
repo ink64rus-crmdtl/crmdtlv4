@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Create",
+        "command": "php vendor/bin/pint $CLAUDE_FILE_PATH"
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Create",
+      "Read"
+    ],
+    "ask": [
+      "Bash(php artisan *)"
+    ]
+  }
+}
