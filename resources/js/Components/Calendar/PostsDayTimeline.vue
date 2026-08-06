@@ -9,6 +9,7 @@ const props = defineProps({
     date: { type: Date, required: true },
     loading: Boolean,
     cardFields: { type: Array, default: undefined },
+    slotMinutes: { type: Number, default: 30 }, // шаг сетки времени: 30 или 60 минут
 });
 
 const emit = defineEmits(['edit', 'create', 'reschedule', 'hover', 'unhover']);
@@ -21,13 +22,22 @@ const DAY_START = 7; // 07:00
 const DAY_END = 22; // 22:00
 const TOTAL_MIN = (DAY_END - DAY_START) * 60;
 
+// Значения — минуты, прошедшие от DAY_START (та же единица, что и у minutesSinceStart).
 const hourMarks = computed(() => {
+    const step = props.slotMinutes || 60;
     const marks = [];
-    for (let h = DAY_START; h <= DAY_END; h++) marks.push(h);
+    for (let m = 0; m <= TOTAL_MIN; m += step) marks.push(m);
     return marks;
 });
 
-const hourMarkPercent = (h) => ((h - DAY_START) / (DAY_END - DAY_START)) * 100;
+const hourMarkPercent = (m) => (m / TOTAL_MIN) * 100;
+
+const hourMarkLabel = (m) => {
+    const totalMin = DAY_START * 60 + m;
+    const h = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
 
 const isoDate = computed(() => {
     const d = props.date;
@@ -319,7 +329,7 @@ const rows = computed(() => {
                     :key="h"
                     class="absolute top-1 text-[10px] text-gray-400 -translate-x-1/2"
                     :style="{ left: hourMarkPercent(h) + '%' }"
-                >{{ h }}:00</span>
+                >{{ hourMarkLabel(h) }}</span>
             </div>
         </div>
 

@@ -12,6 +12,7 @@ const props = defineProps({
     date: { type: Date, required: true },
     loading: Boolean,
     cardFields: { type: Array, default: undefined },
+    slotMinutes: { type: Number, default: 30 }, // шаг сетки времени: 30 или 60 минут
 });
 
 const emit = defineEmits(['edit', 'create', 'reschedule', 'hover', 'unhover']);
@@ -35,6 +36,9 @@ const toLocalDateTimeStr = (date) => {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
+// "HH:MM:SS" — FullCalendar-формат для slotDuration/slotLabelInterval.
+const slotDurationStr = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:00`;
+
 const optionsFor = (post) => ({
     plugins: [timeGridPlugin, interactionPlugin],
     initialView: 'timeGridDay',
@@ -45,6 +49,11 @@ const optionsFor = (post) => ({
     height: 'auto',
     slotMinTime: '07:00:00',
     slotMaxTime: '22:00:00',
+    slotDuration: slotDurationStr(props.slotMinutes || 30),
+    // Без явного slotLabelInterval FullCalendar по умолчанию подписывает не
+    // каждую линию сетки (например, оставляет только часовые подписи даже при
+    // получасовом шаге) — подписываем каждую линию, раз шаг настраивается.
+    slotLabelInterval: slotDurationStr(props.slotMinutes || 30),
     nowIndicator: true,
     timeZone: 'local',
     allDaySlot: false,
@@ -102,7 +111,7 @@ const columns = computed(() => {
                 <i v-if="col.icon" :class="col.icon" class="text-gray-400"></i>
                 {{ col.label }}
             </div>
-            <FullCalendar :options="col.options" />
+            <FullCalendar :key="`${col.key}-${slotMinutes}`" :options="col.options" />
         </div>
     </div>
     <div v-if="loading" class="text-center py-4 text-xs text-gray-400">Загрузка...</div>

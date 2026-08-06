@@ -602,6 +602,32 @@ const goToPostsToday = () => {
     postsCalendarDate.value = new Date();
 };
 
+const isPostsToday = computed(() => toLocalISODate(postsCalendarDate.value) === toLocalISODate(new Date()));
+
+// Кнопка между стрелочками навигации открывает нативный календарь браузера
+// для выбора произвольной даты — быстрее, чем листать стрелками далеко вперёд/назад.
+const postsDatePickerInput = ref(null);
+
+const openPostsDatePicker = () => {
+    if (postsDatePickerInput.value?.showPicker) {
+        try {
+            postsDatePickerInput.value.showPicker();
+            return;
+        } catch (e) {
+            // showPicker() может бросить исключение вне пользовательского жеста в некоторых браузерах — просто фокусируемся.
+        }
+    }
+    postsDatePickerInput.value?.focus();
+};
+
+const onPostsDatePicked = (event) => {
+    if (!event.target.value) return;
+    postsCalendarDate.value = new Date(`${event.target.value}T00:00:00`);
+};
+
+// Гранулярность сетки времени в видах "День" (посты слева/сверху) — 30 минут или 1 час.
+const daySlotMinutes = ref(30);
+
 const handlePostsCreate = (payload) => {
     let { branch_id, post_id, start_at, end_at } = payload;
     if (!end_at && start_at) {
@@ -750,9 +776,42 @@ const toggleDefaultView = () => {
                         <!-- Навигация по дате — только для видов "по постам", у Месяца своя внутренняя навигация FullCalendar -->
                         <div v-if="calendarViewMode !== 'month'" class="flex items-center gap-2">
                             <button type="button" @click="navigatePosts(-1)" class="w-8 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i class="ri-arrow-left-s-line"></i></button>
-                            <button type="button" @click="goToPostsToday" class="px-3 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Сегодня</button>
+
+                            <div class="relative">
+                                <button
+                                    type="button"
+                                    @click="openPostsDatePicker"
+                                    class="px-3 h-8 inline-flex items-center gap-1.5 justify-center rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors capitalize"
+                                    title="Выбрать дату из календаря"
+                                >
+                                    <i class="ri-calendar-line"></i>
+                                    {{ isPostsToday ? 'Сегодня' : postsViewDateLabel }}
+                                </button>
+                                <input
+                                    ref="postsDatePickerInput"
+                                    type="date"
+                                    tabindex="-1"
+                                    class="absolute inset-0 w-full h-full opacity-0 pointer-events-none"
+                                    :value="toLocalISODate(postsCalendarDate)"
+                                    @change="onPostsDatePicked"
+                                />
+                            </div>
+
                             <button type="button" @click="navigatePosts(1)" class="w-8 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i class="ri-arrow-right-s-line"></i></button>
-                            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1 capitalize">{{ postsViewDateLabel }}</span>
+
+                            <button
+                                v-if="!isPostsToday"
+                                type="button"
+                                @click="goToPostsToday"
+                                class="w-8 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                title="Перейти к сегодняшнему дню"
+                            ><i class="ri-calendar-check-line"></i></button>
+
+                            <!-- Гранулярность сетки времени — только для видов с осью времени -->
+                            <div v-if="calendarViewMode === 'day-posts-left' || calendarViewMode === 'day-posts-top'" class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden ml-1">
+                                <button type="button" @click="daySlotMinutes = 30" :class="daySlotMinutes === 30 ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-2.5 h-8 text-xs font-medium transition-colors">30 мин</button>
+                                <button type="button" @click="daySlotMinutes = 60" :class="daySlotMinutes === 60 ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-2.5 h-8 text-xs font-medium border-l border-gray-200 dark:border-gray-700 transition-colors">1 час</button>
+                            </div>
                         </div>
                     </div>
 
@@ -777,6 +836,7 @@ const toggleDefaultView = () => {
                         :date="postsCalendarDate"
                         :loading="postsCalendarLoading"
                         :card-fields="calendarCardFields"
+                        :slot-minutes="daySlotMinutes"
                         @edit="handlePostsEdit"
                         @create="handlePostsCreate"
                         @reschedule="onChildReschedule"
@@ -790,6 +850,7 @@ const toggleDefaultView = () => {
                         :date="postsCalendarDate"
                         :loading="postsCalendarLoading"
                         :card-fields="calendarCardFields"
+                        :slot-minutes="daySlotMinutes"
                         @edit="handlePostsEdit"
                         @create="handlePostsCreate"
                         @reschedule="onChildReschedule"
