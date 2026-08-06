@@ -10,6 +10,7 @@ const props = defineProps({
     pricingBasis: String,
     bonusRubPerPoint: Number,
     defaultWorkingHours: { type: Array, default: () => null },
+    calendarColorSource: { type: String, default: 'status' },
 });
 
 const form = useForm({
@@ -17,6 +18,7 @@ const form = useForm({
     pricing_basis: props.pricingBasis || 'none',
     bonus_rub_per_point: props.bonusRubPerPoint ?? 1,
     default_working_hours: props.defaultWorkingHours || null,
+    calendar_color_source: props.calendarColorSource || 'status',
 });
 
 const submit = () => {
@@ -102,6 +104,19 @@ const submit = () => {
                         <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Часы работы по умолчанию</label>
                         <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Действует для всего детейлинг-центра. Если у конкретного филиала заданы свои часы работы (Настройки → Филиалы), они имеют приоритет над этим расписанием.</p>
                         <WorkingHoursEditor v-model="form.default_working_hours" />
+                    </div>
+
+                    <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Цвет записи в календаре</label>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Чем определяется цвет плашки записи в календаре (виды Месяц / Неделя / День). Свой цвет задаётся в карточке сотрудника или поста — если он не задан, используется цвет по статусу записи.</p>
+                        <select
+                            v-model="form.calendar_color_source"
+                            class="block w-full max-w-xs rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                        >
+                            <option value="status" class="bg-white dark:bg-gray-800">По статусу записи</option>
+                            <option value="employee" class="bg-white dark:bg-gray-800">По исполнителю (мастеру)</option>
+                            <option value="post" class="bg-white dark:bg-gray-800">По посту</option>
+                        </select>
                     </div>
 
                     <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">

@@ -5,6 +5,8 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import CalendarColorPicker from '@/Components/CalendarColorPicker.vue';
+import PostIconPicker from '@/Components/PostIconPicker.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
@@ -26,6 +28,8 @@ const form = useForm({
     name: '',
     is_active: true,
     prevent_overlapping_appointments: false,
+    calendar_color: null,
+    icon: null,
     business_direction_ids: [],
 });
 
@@ -78,11 +82,15 @@ const openModal = (post = null) => {
         form.name = post.name;
         form.is_active = Boolean(post.is_active);
         form.prevent_overlapping_appointments = Boolean(post.prevent_overlapping_appointments);
+        form.calendar_color = post.calendar_color || null;
+        form.icon = post.icon || null;
         form.business_direction_ids = post.business_directions ? post.business_directions.map(d => d.id) : [];
     } else {
         form.reset();
         form.is_active = true;
         form.prevent_overlapping_appointments = false;
+        form.calendar_color = null;
+        form.icon = null;
         form.business_direction_ids = [];
     }
     isModalOpen.value = true;
@@ -204,7 +212,7 @@ const deletePost = (post) => {
                                     </td>
                                     <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">
                                         <div class="flex items-center gap-2">
-                                            <i class="ri-tools-fill text-primary"></i>
+                                            <i :class="[post.icon || 'ri-tools-fill', !post.calendar_color ? 'text-primary' : '']" :style="post.calendar_color ? { color: post.calendar_color } : {}"></i>
                                             {{ post.name }}
                                         </div>
                                     </td>
@@ -304,6 +312,19 @@ const deletePost = (post) => {
                                 </label>
                             </div>
                             <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-11">Если включено, система не даст создать или перенести запись на этот пост, если её время пересекается с уже существующей (неотменённой) записью на нём. Отменённые записи в расчёт не берутся.</p>
+                        </div>
+
+                        <!-- Иконка и цвет в календаре -->
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Иконка поста</label>
+                                <PostIconPicker v-model="form.icon" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет в календаре записей</label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Используется, если в настройках CRM источник цвета записи — «Пост».</p>
+                                <CalendarColorPicker v-model="form.calendar_color" />
+                            </div>
                         </div>
 
                         <div class="flex items-center pt-4 border-t border-gray-200 dark:border-gray-700">

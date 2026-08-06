@@ -18,6 +18,8 @@ class Post extends Model
         'is_active',
         'sort_order',
         'prevent_overlapping_appointments',
+        'calendar_color',
+        'icon',
     ];
 
     protected function casts(): array

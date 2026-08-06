@@ -15,7 +15,7 @@ class Employee extends Model
         'user_id', 'branch_id', 'position_id', 'type', 
         'first_name', 'last_name', 'middle_name', 'phone', 'personal_email',
         'birth_date', 'hire_date', 'termination_date', 'passport_data',
-        'is_active'
+        'is_active', 'calendar_color'
     ];
 
     protected function casts(): array

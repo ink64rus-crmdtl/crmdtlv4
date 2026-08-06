@@ -235,8 +235,9 @@ class EmployeeController extends Controller
             'hire_date' => ['nullable', 'date'],
             'termination_date' => ['nullable', 'date'],
             'is_active' => ['boolean'],
+            'calendar_color' => ['nullable', 'string', Rule::in(\App\Support\CalendarPalette::COLORS)],
             'passport_data' => ['nullable', 'array'],
-            
+
             // CRM Access
             'has_crm_access' => ['boolean'],
             'email' => ['exclude_if:has_crm_access,false', 'required', 'email', 'unique:users,email'],
@@ -293,6 +294,7 @@ class EmployeeController extends Controller
                 'termination_date' => $validated['termination_date'] ?? null,
                 'passport_data' => $validated['passport_data'] ?? null,
                 'is_active' => $validated['is_active'] ?? true,
+                'calendar_color' => $validated['calendar_color'] ?? null,
             ]);
         });
 
@@ -324,8 +326,9 @@ class EmployeeController extends Controller
             'hire_date' => ['nullable', 'date'],
             'termination_date' => ['nullable', 'date'],
             'is_active' => ['boolean'],
+            'calendar_color' => ['nullable', 'string', Rule::in(\App\Support\CalendarPalette::COLORS)],
             'passport_data' => ['nullable', 'array'],
-            
+
             // CRM Access
             'has_crm_access' => ['boolean'],
             'email' => ['exclude_if:has_crm_access,false', 'required', 'email', 'unique:users,email,' . $employee->user_id],
@@ -411,6 +414,7 @@ class EmployeeController extends Controller
                 'termination_date' => $validated['termination_date'] ?? null,
                 'passport_data' => $validated['passport_data'] ?? null,
                 'is_active' => $validated['is_active'] ?? true,
+                'calendar_color' => $validated['calendar_color'] ?? null,
             ]);
         });
 

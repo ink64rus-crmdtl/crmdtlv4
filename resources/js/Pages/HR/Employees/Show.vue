@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
+import CalendarColorPicker from '@/Components/CalendarColorPicker.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 
@@ -55,7 +56,8 @@ const form = useForm({
     hire_date: '',
     termination_date: '',
     is_active: true,
-    
+    calendar_color: null,
+
     passport_data: {
         series: '',
         number: '',
@@ -98,6 +100,7 @@ const openModal = () => {
     form.hire_date = emp.hire_date ? emp.hire_date.substring(0, 10) : '';
     form.termination_date = emp.termination_date ? emp.termination_date.substring(0, 10) : '';
     form.is_active = Boolean(emp.is_active);
+    form.calendar_color = emp.calendar_color || null;
 
     form.passport_data = emp.passport_data || {
         series: '', number: '', issued_by: '', issue_date: '', department_code: '', registration_address: ''
@@ -523,6 +526,12 @@ const submit = () => {
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
                                 />
                             </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-gray-200 dark:border-gray-700 mt-4">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет в календаре записей</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Используется, если в настройках CRM источник цвета записи — «Исполнитель».</p>
+                            <CalendarColorPicker v-model="form.calendar_color" />
                         </div>
 
                         <!-- Toggle Switch -->

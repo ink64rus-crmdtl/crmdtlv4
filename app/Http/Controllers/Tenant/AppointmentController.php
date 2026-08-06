@@ -13,6 +13,7 @@ use App\Models\Service;
 use App\Models\Product;
 use App\Models\Lookup;
 use App\Models\ListView;
+use App\Models\Setting;
 use App\Services\QueryFilterService;
 use App\Services\TimezoneResolver;
 use App\Services\WorkingHoursResolver;
@@ -57,7 +58,7 @@ class AppointmentController extends Controller
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
-        $posts = Post::where('is_active', true)->orderBy('sort_order')->get(['id', 'branch_id', 'name']);
+        $posts = Post::where('is_active', true)->orderBy('sort_order')->get(['id', 'branch_id', 'name', 'icon']);
         $services = Service::where('is_active', true)->get(['id', 'name', 'price']);
         $products = Product::where('is_active', true)->get(['id', 'name']);
 
@@ -74,6 +75,25 @@ class AppointmentController extends Controller
         $listView = ListView::where('entity_type', 'appointment')->where('user_id', auth()->id())->first();
         $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
 
+        // Настраиваемый состав и порядок полей карточки записи в календаре
+        // (Неделя/День-слева/День-сверху) и всплывающей подсказки — тот же
+        // механизм list_views, что и у колонок таблицы выше, только с другим
+        // entity_type. Настраивается на странице Записей, кнопкой рядом с
+        // переключателем видов календаря.
+        $calendarFieldOptions = [
+            ['key' => 'time', 'label' => 'Время'],
+            ['key' => 'client', 'label' => 'Клиент'],
+            ['key' => 'vehicle', 'label' => 'Автомобиль'],
+            ['key' => 'phone', 'label' => 'Телефон'],
+            ['key' => 'branch', 'label' => 'Филиал'],
+            ['key' => 'employee', 'label' => 'Мастер'],
+            ['key' => 'post', 'label' => 'Пост'],
+            ['key' => 'status', 'label' => 'Статус'],
+            ['key' => 'comment', 'label' => 'Комментарий'],
+        ];
+        $cardListView = ListView::where('entity_type', 'appointment_calendar_card')->where('user_id', auth()->id())->first();
+        $tooltipListView = ListView::where('entity_type', 'appointment_calendar_tooltip')->where('user_id', auth()->id())->first();
+
         return Inertia::render('Operations/Appointments/Index', [
             'appointments' => $appointments,
             'filters' => $request->all(),
@@ -88,6 +108,9 @@ class AppointmentController extends Controller
             'listView' => ['visible_columns' => $visibleColumns],
             'appointmentStatuses' => $this->appointmentStatuses(),
             'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
+            'calendarFieldOptions' => $calendarFieldOptions,
+            'calendarCardFields' => $cardListView->visible_columns ?? ['time', 'client', 'vehicle', 'phone'],
+            'calendarTooltipFields' => $tooltipListView->visible_columns ?? ['time', 'client', 'vehicle', 'phone', 'branch', 'employee', 'post', 'comment'],
         ]);
     }
 
@@ -121,12 +144,21 @@ class AppointmentController extends Controller
             'info' => '#16a7e9', 'primary' => '#3e60d5', 'success' => '#47ad77',
             'danger' => '#f15776', 'warning' => '#ffc35a', 'gray' => '#6c757d',
         ];
+        // Источник цвета записи настраивается в Настройки → CRM: по статусу (по
+        // умолчанию), по исполнителю или по посту — см. Employee/Post.calendar_color.
+        // Если у выбранного источника цвет не задан, используем цвет по статусу.
+        $colorSource = Setting::where('key', 'calendar_color_source')->value('value') ?? 'status';
 
-        $events = $appointments->map(function (Appointment $appointment) use ($statusColors, $colorMap) {
+        $events = $appointments->map(function (Appointment $appointment) use ($statusColors, $colorMap, $colorSource) {
             $tz = TimezoneResolver::forBranch($appointment->branch_id);
             $startLocal = $appointment->start_at->copy()->setTimezone($tz);
             $endLocal = $appointment->end_at->copy()->setTimezone($tz);
-            $color = $colorMap[$statusColors[$appointment->status] ?? 'gray'] ?? '#9ca3af';
+            $statusColor = $colorMap[$statusColors[$appointment->status] ?? 'gray'] ?? '#9ca3af';
+            $color = match ($colorSource) {
+                'employee' => $appointment->employee?->calendar_color ?: $statusColor,
+                'post' => $appointment->post?->calendar_color ?: $statusColor,
+                default => $statusColor,
+            };
 
             $title = $appointment->client?->name ?: 'Без клиента';
             if ($appointment->vehicle?->plate_number) {

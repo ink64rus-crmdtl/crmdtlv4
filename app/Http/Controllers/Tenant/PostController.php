@@ -7,8 +7,10 @@ use App\Models\Post;
 use App\Models\Branch;
 use App\Models\BusinessDirection;
 use App\Services\QueryFilterService;
+use App\Support\CalendarPalette;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -52,6 +54,8 @@ class PostController extends Controller
                 'is_active' => $validated['is_active'] ?? true,
                 'sort_order' => $nextSortOrder,
                 'prevent_overlapping_appointments' => $validated['prevent_overlapping_appointments'] ?? false,
+                'calendar_color' => $validated['calendar_color'] ?? null,
+                'icon' => $validated['icon'] ?? null,
             ]);
 
             if (!empty($validated['business_direction_ids'])) {
@@ -72,6 +76,8 @@ class PostController extends Controller
                 'name' => $validated['name'],
                 'is_active' => $validated['is_active'] ?? true,
                 'prevent_overlapping_appointments' => $validated['prevent_overlapping_appointments'] ?? false,
+                'calendar_color' => $validated['calendar_color'] ?? null,
+                'icon' => $validated['icon'] ?? null,
             ]);
 
             $post->businessDirections()->sync($validated['business_direction_ids'] ?? []);
@@ -125,6 +131,8 @@ class PostController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'is_active' => ['boolean'],
             'prevent_overlapping_appointments' => ['boolean'],
+            'calendar_color' => ['nullable', 'string', Rule::in(CalendarPalette::COLORS)],
+            'icon' => ['nullable', 'string', Rule::in(CalendarPalette::POST_ICONS)],
             'business_direction_ids' => ['nullable', 'array'],
             'business_direction_ids.*' => ['exists:business_directions,id'],
         ]);

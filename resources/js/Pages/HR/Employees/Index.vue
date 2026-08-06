@@ -4,6 +4,7 @@ import Offcanvas from '@/Components/Offcanvas.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import CalendarColorPicker from '@/Components/CalendarColorPicker.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -167,7 +168,8 @@ const form = useForm({
     hire_date: '',
     termination_date: '',
     is_active: true,
-    
+    calendar_color: null,
+
     passport_data: {
         series: '',
         number: '',
@@ -240,6 +242,7 @@ const openModal = (employee = null) => {
         form.hire_date = employee.hire_date ? employee.hire_date.substring(0, 10) : '';
         form.termination_date = employee.termination_date ? employee.termination_date.substring(0, 10) : '';
         form.is_active = Boolean(employee.is_active);
+        form.calendar_color = employee.calendar_color || null;
 
         form.passport_data = employee.passport_data || {
             series: '', number: '', issued_by: '', issue_date: '', department_code: '', registration_address: ''
@@ -903,6 +906,12 @@ const employeeTypes = {
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
                                 />
                             </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-gray-200 dark:border-gray-700 mt-4">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет в календаре записей</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Используется, если в настройках CRM источник цвета записи — «Исполнитель».</p>
+                            <CalendarColorPicker v-model="form.calendar_color" />
                         </div>
 
                         <!-- Toggle Switch -->

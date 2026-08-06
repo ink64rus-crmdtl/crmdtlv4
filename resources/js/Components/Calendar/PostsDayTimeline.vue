@@ -1,15 +1,17 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { usePostRowHeight } from '@/Composables/usePostRowHeight.js';
+import { appointmentCardLines } from '@/Utils/appointmentCard.js';
 
 const props = defineProps({
     posts: { type: Array, default: () => [] },
     appointments: { type: Array, default: () => [] },
     date: { type: Date, required: true },
     loading: Boolean,
+    cardFields: { type: Array, default: undefined },
 });
 
-const emit = defineEmits(['edit', 'create']);
+const emit = defineEmits(['edit', 'create', 'reschedule', 'hover', 'unhover']);
 
 const scrollContainerRef = ref(null);
 const rowsCount = computed(() => props.posts.length + 1); // + строка "Без поста"
@@ -63,11 +65,16 @@ const pluralizeRecords = (n) => {
 
 const layoutForPost = (postId) => {
     const items = appointmentsForPost(postId)
-        .map(a => ({
-            appt: a,
-            startMin: Math.min(TOTAL_MIN, Math.max(0, minutesSinceStart(a.start_at_local))),
-            endMin: Math.min(TOTAL_MIN, Math.max(0, minutesSinceStart(a.end_at_local))),
-        }))
+        .map(a => {
+            // Пока запись перетаскивается/растягивается — подставляем временные
+            // границы из превью, а не реальные данные, для живой визуальной обратной связи.
+            const preview = dragPreview.value && dragPreview.value.apptId === a.id ? dragPreview.value : null;
+            return {
+                appt: a,
+                startMin: preview ? preview.startMin : Math.min(TOTAL_MIN, Math.max(0, minutesSinceStart(a.start_at_local))),
+                endMin: preview ? preview.endMin : Math.min(TOTAL_MIN, Math.max(0, minutesSinceStart(a.end_at_local))),
+            };
+        })
         .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
 
     // Группируем в кластеры пересекающихся по времени записей — записи из
@@ -182,17 +189,102 @@ onUnmounted(() => {
     document.removeEventListener('keydown', onGlobalKeydown);
 });
 
+// --- ПЕРЕТАСКИВАНИЕ ЗАПИСИ МЫШЬЮ: перенос (за тело) и растягивание краёв
+// (начало/конец) — с шагом 15 минут. Пока идёт перетаскивание, реальные данные
+// не трогаем — только dragPreview для визуальной обратной связи; запрос на
+// сервер уходит один раз в момент отпускания кнопки мыши. ---
+const SNAP_MINUTES = 15;
+const MIN_DURATION_MINUTES = 15;
+
+const dragPreview = ref(null); // { apptId, startMin, endMin }
+let dragCtx = null;
+let suppressNextRowClick = false;
+
+const clampMin = (m) => Math.min(TOTAL_MIN, Math.max(0, m));
+const snapMin = (m) => Math.round(m / SNAP_MINUTES) * SNAP_MINUTES;
+
+const toTimeStr = (totalMinutes) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    const h = DAY_START + Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${isoDate.value}T${pad(h)}:${pad(m)}`;
+};
+
+const onBarMouseDown = (event, bar, mode) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    emit('unhover');
+    const track = event.currentTarget.closest('[data-timeline-track]');
+    const rect = track.getBoundingClientRect();
+    dragCtx = {
+        mode,
+        appt: bar.appt,
+        trackWidth: rect.width,
+        originClientX: event.clientX,
+        originStartMin: Math.min(TOTAL_MIN, Math.max(0, minutesSinceStart(bar.appt.start_at_local))),
+        originEndMin: Math.min(TOTAL_MIN, Math.max(0, minutesSinceStart(bar.appt.end_at_local))),
+    };
+    dragPreview.value = { apptId: dragCtx.appt.id, startMin: dragCtx.originStartMin, endMin: dragCtx.originEndMin };
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+};
+
+const onDragMove = (e) => {
+    if (!dragCtx) return;
+    const deltaMin = ((e.clientX - dragCtx.originClientX) / dragCtx.trackWidth) * TOTAL_MIN;
+    let newStart = dragCtx.originStartMin;
+    let newEnd = dragCtx.originEndMin;
+
+    if (dragCtx.mode === 'move') {
+        const duration = dragCtx.originEndMin - dragCtx.originStartMin;
+        newStart = snapMin(dragCtx.originStartMin + deltaMin);
+        newStart = Math.max(0, Math.min(newStart, TOTAL_MIN - duration));
+        newEnd = newStart + duration;
+    } else if (dragCtx.mode === 'resize-start') {
+        newStart = clampMin(snapMin(dragCtx.originStartMin + deltaMin));
+        newStart = Math.min(newStart, dragCtx.originEndMin - MIN_DURATION_MINUTES);
+        newEnd = dragCtx.originEndMin;
+    } else {
+        newEnd = clampMin(snapMin(dragCtx.originEndMin + deltaMin));
+        newEnd = Math.max(newEnd, dragCtx.originStartMin + MIN_DURATION_MINUTES);
+        newStart = dragCtx.originStartMin;
+    }
+
+    dragPreview.value = { apptId: dragCtx.appt.id, startMin: newStart, endMin: newEnd };
+};
+
+const onDragEnd = (e) => {
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    if (!dragCtx) return;
+
+    const wasClick = Math.abs(e.clientX - dragCtx.originClientX) < 4;
+    const { appt } = dragCtx;
+    const preview = dragPreview.value;
+    dragCtx = null;
+    dragPreview.value = null;
+
+    if (wasClick) {
+        emit('edit', appt);
+        return;
+    }
+
+    suppressNextRowClick = true;
+    const newStartLocal = toTimeStr(preview.startMin);
+    const newEndLocal = toTimeStr(preview.endMin);
+    if (newStartLocal === appt.start_at_local && newEndLocal === appt.end_at_local) return;
+    emit('reschedule', { appointment: appt, start_at_local: newStartLocal, end_at_local: newEndLocal });
+};
+
 const onRowClick = (post, event) => {
+    if (suppressNextRowClick) {
+        suppressNextRowClick = false;
+        return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
     const stepMinutes = Math.round((fraction * TOTAL_MIN) / 15) * 15;
-    const pad = (n) => String(n).padStart(2, '0');
-
-    const toTimeStr = (totalMinutes) => {
-        const h = DAY_START + Math.floor(totalMinutes / 60);
-        const m = totalMinutes % 60;
-        return `${isoDate.value}T${pad(h)}:${pad(m)}`;
-    };
 
     emit('create', {
         branch_id: post ? post.branch_id : null,
@@ -200,6 +292,11 @@ const onRowClick = (post, event) => {
         start_at: toTimeStr(stepMinutes),
         end_at: toTimeStr(Math.min(TOTAL_MIN, stepMinutes + 60)),
     });
+};
+
+const onBarHover = (event, appt) => {
+    if (dragCtx) return;
+    emit('hover', appt, event.currentTarget);
 };
 
 const rows = computed(() => {
@@ -227,22 +324,29 @@ const rows = computed(() => {
         </div>
 
         <div v-for="row in rows" :key="row.key" class="relative flex border-b border-gray-100 dark:border-gray-700/50 last:border-b-0 group" :style="{ height: rowHeight + 'px' }">
-            <div class="w-40 shrink-0 flex items-center px-3 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-50/30 dark:bg-gray-800/20 overflow-hidden">
-                {{ row.post ? row.post.name : 'Без поста' }}
+            <div class="w-40 shrink-0 flex items-center gap-1.5 px-3 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-50/30 dark:bg-gray-800/20 overflow-hidden">
+                <i v-if="row.post?.icon" :class="row.post.icon" class="shrink-0 text-gray-400"></i>
+                <span class="truncate">{{ row.post ? row.post.name : 'Без поста' }}</span>
             </div>
-            <div class="relative flex-1 cursor-pointer" @click="onRowClick(row.post, $event)">
+            <div class="relative flex-1 cursor-pointer" data-timeline-track @click="onRowClick(row.post, $event)">
                 <div class="absolute inset-0 flex pointer-events-none">
                     <div v-for="h in hourMarks.slice(0, -1)" :key="h" class="flex-1 border-l border-gray-100 dark:border-gray-700/30"></div>
                 </div>
                 <div
                     v-for="bar in rowLayouts[row.key].bars"
                     :key="bar.appt.id"
-                    @click.stop="emit('edit', bar.appt)"
-                    class="absolute rounded px-2 py-1 text-[11px] text-white cursor-pointer overflow-hidden shadow-sm hover:opacity-90 transition-opacity"
+                    @mouseenter="onBarHover($event, bar.appt)"
+                    @mouseleave="emit('unhover')"
+                    class="absolute rounded text-[11px] text-white overflow-hidden shadow-sm hover:opacity-90 transition-opacity"
                     :style="{ left: bar.left, width: bar.width, top: bar.top, height: bar.height, backgroundColor: bar.appt.color }"
-                    :title="bar.appt.title"
                 >
-                    {{ bar.appt.title }}
+                    <div class="absolute inset-0 px-2 py-1 cursor-move flex flex-col justify-center gap-px overflow-hidden" @mousedown="onBarMouseDown($event, bar, 'move')">
+                        <div v-for="line in appointmentCardLines(bar.appt, cardFields)" :key="line.key" class="flex items-center gap-1 text-[12px] leading-tight truncate">
+                            <i :class="line.icon" class="shrink-0"></i><span class="truncate">{{ line.text }}</span>
+                        </div>
+                    </div>
+                    <div class="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/40" @mousedown.stop="onBarMouseDown($event, bar, 'resize-start')"></div>
+                    <div class="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/40" @mousedown.stop="onBarMouseDown($event, bar, 'resize-end')"></div>
                 </div>
                 <div
                     v-for="group in rowLayouts[row.key].overflowGroups"

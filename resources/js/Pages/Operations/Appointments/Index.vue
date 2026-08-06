@@ -16,6 +16,7 @@ import ruLocale from '@fullcalendar/core/locales/ru';
 import PostsWeekTable from '@/Components/Calendar/PostsWeekTable.vue';
 import PostsDayTimeline from '@/Components/Calendar/PostsDayTimeline.vue';
 import PostsDayColumns from '@/Components/Calendar/PostsDayColumns.vue';
+import { appointmentCardLines, APPOINTMENT_FIELDS, DEFAULT_CARD_FIELDS, DEFAULT_TOOLTIP_FIELDS } from '@/Utils/appointmentCard.js';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -35,11 +36,21 @@ const props = defineProps({
     listView: { type: Object, default: () => ({ visible_columns: [] }) },
     appointmentStatuses: { type: Array, default: () => [] },
     defaultWorkingHours: { type: Array, default: () => null },
+    calendarFieldOptions: { type: Array, default: () => [] },
+    calendarCardFields: { type: Array, default: () => DEFAULT_CARD_FIELDS },
+    calendarTooltipFields: { type: Array, default: () => DEFAULT_TOOLTIP_FIELDS },
 });
 
 const isModalOpen = ref(false);
 const editingAppointment = ref(null);
 const isColumnsModalOpen = ref(false);
+const isCardFieldsModalOpen = ref(false);
+const isTooltipFieldsModalOpen = ref(false);
+
+// Каталог полей карточки/тултипа с бэкенда (Настройки → полный набор с русскими
+// названиями), но подстраховываемся тем же каталогом на фронте (APPOINTMENT_FIELDS),
+// чтобы модалка настройки никогда не показывала "сырые" ключи вида time/client.
+const calendarFieldCatalog = computed(() => (props.calendarFieldOptions && props.calendarFieldOptions.length) ? props.calendarFieldOptions : APPOINTMENT_FIELDS);
 const activeTab = ref('main');
 
 const activeColumns = computed(() => {
@@ -340,6 +351,50 @@ const onCalendarEventClick = (info) => {
     openModal(info.event.extendedProps.appointment);
 };
 
+// --- ИЗМЕНЕНИЕ ВРЕМЕНИ/ДНЯ ПЕРЕТАСКИВАНИЕМ МЫШЬЮ (любой вид просмотра) ---
+// Полный payload собирается из уже загруженных данных записи (без items —
+// его отсутствие в теле запроса означает "не трогать позиции сметы", см.
+// AppointmentController::update()), поэтому отдельный лёгкий backend-эндпоинт
+// не нужен — переиспользуем обычный PUT records.update.
+const rescheduleAppointment = (appointment, patch, revert = null) => {
+    const payload = {
+        branch_id: appointment.branch_id,
+        client_id: appointment.client_id,
+        vehicle_id: appointment.vehicle_id || '',
+        employee_id: appointment.employee_id || '',
+        post_id: (patch.post_id !== undefined ? patch.post_id : appointment.post_id) || '',
+        start_at: patch.start_at_local,
+        end_at: patch.end_at_local,
+        status: appointment.status,
+        comment: appointment.comment || '',
+    };
+
+    router.put(route('operations.appointments.update', appointment.id), payload, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            if (viewMode.value === 'calendar' && calendarViewMode.value !== 'month') {
+                fetchPostsCalendarAppointments();
+            }
+        },
+        onError: (errors) => {
+            if (revert) revert();
+            alert(Object.values(errors).flat().join('\n') || 'Не удалось изменить время записи.');
+        },
+    });
+};
+
+const onChildReschedule = ({ appointment, start_at_local, end_at_local, post_id, revert }) => {
+    rescheduleAppointment(appointment, { start_at_local, end_at_local, post_id }, revert);
+};
+
+const onCalendarEventDrop = (info) => {
+    rescheduleAppointment(info.event.extendedProps.appointment, {
+        start_at_local: toLocalDateTimeInput(info.event.start),
+        end_at_local: toLocalDateTimeInput(info.event.end),
+    }, info.revert);
+};
+
 const onCalendarDateClick = (info) => {
     openModal();
     const hasTime = info.dateStr.includes('T');
@@ -350,40 +405,89 @@ const onCalendarDateClick = (info) => {
     form.end_at = toLocalDateTimeInput(endDate);
 };
 
-// --- ВСПЛЫВАЮЩАЯ ПОДСКАЗКА ПРИ НАВЕДЕНИИ НА ЗАПИСЬ (вид "Месяц") ---
+// --- ВСПЛЫВАЮЩАЯ ПОДСКАЗКА ПРИ НАВЕДЕНИИ НА ЗАПИСЬ (все режимы просмотра) ---
 const calendarTooltip = ref(null);
 
 const appointmentStatusInfo = (value) => props.appointmentStatuses.find(s => s.value === value) || null;
 
+const clientById = (id) => props.clients.find(c => c.id === id) || null;
+
+const vehicleLabel = (id) => {
+    const v = props.vehicles.find(x => x.id === id);
+    if (!v) return null;
+    return `${v.make ? v.make.name : ''} ${v.vehicle_model ? v.vehicle_model.name : ''}${v.plate_number ? ` [${v.plate_number}]` : ''}`.replace(/\s+/g, ' ').trim();
+};
+
 const employeeNameById = (id) => {
-    if (!id) return 'Не назначен';
+    if (!id) return null;
     const e = props.employees.find(x => x.id === id);
-    return e ? `${e.first_name} ${e.last_name}` : 'Не назначен';
+    return e ? `${e.first_name} ${e.last_name}` : null;
 };
 
 const postNameById = (id) => {
-    if (!id) return 'Не назначен';
+    if (!id) return null;
     const p = props.posts.find(x => x.id === id);
-    return p ? p.name : 'Не назначен';
+    return p ? p.name : null;
 };
 
 const branchNameById = (id) => {
     const b = props.branches.find(x => x.id === id);
-    return b ? b.name : '—';
+    return b ? b.name : null;
 };
 
-const onCalendarEventMouseEnter = (info) => {
-    const rect = info.el.getBoundingClientRect();
+// Дополняет "сырую" запись (только ID-поля из calendarEvents()/postsCalendarAppointments)
+// человекочитаемыми значениями — единая точка для appointmentCardLines(), используется
+// и карточками (Неделя/День-слева/День-сверху), и тултипом (в т.ч. для FullCalendar,
+// где extendedProps.appointment изначально содержит только ID).
+const enrichAppointment = (appt) => {
+    const client = clientById(appt.client_id);
+    const status = appointmentStatusInfo(appt.status);
+    return {
+        ...appt,
+        client_name: client ? client.name : null,
+        client_phone: client ? client.phone : null,
+        vehicle_label: vehicleLabel(appt.vehicle_id),
+        branch_name: branchNameById(appt.branch_id),
+        employee_name: employeeNameById(appt.employee_id),
+        post_name: postNameById(appt.post_id),
+        status_label: status ? (status.label || status.value) : appt.status,
+    };
+};
+
+// Показ тултипа единообразен для FullCalendar (Месяц/День-посты-сверху, через
+// info.el) и для собственных Vue-компонентов (Неделя/День-посты-слева, через
+// @hover-событие с DOM-элементом записи) — оба пути используют один и тот же
+// calendarTooltip и один и тот же Teleport-блок в шаблоне.
+const showAppointmentTooltip = (appointment, el, color) => {
+    const rect = el.getBoundingClientRect();
     const left = Math.min(Math.max(8, rect.left), window.innerWidth - 300);
     calendarTooltip.value = {
-        title: info.event.title,
-        color: info.event.backgroundColor,
-        appointment: info.event.extendedProps.appointment,
+        color,
+        appointment,
         style: { position: 'fixed', top: `${rect.bottom + 6}px`, left: `${left}px` },
     };
 };
 
+const tooltipLines = computed(() => {
+    if (!calendarTooltip.value) return [];
+    return appointmentCardLines(calendarTooltip.value.appointment, props.calendarTooltipFields);
+});
+
+const onCalendarEventMouseEnter = (info) => {
+    // info.event.extendedProps.appointment для Месяца содержит только ID — дополняем.
+    showAppointmentTooltip(enrichAppointment(info.event.extendedProps.appointment), info.el, info.event.backgroundColor);
+};
+
 const onCalendarEventMouseLeave = () => {
+    calendarTooltip.value = null;
+};
+
+const onChildAppointmentHover = (appt, el) => {
+    // Записи из postsCalendarAppointments уже обогащены в fetchPostsCalendarAppointments().
+    showAppointmentTooltip(appt, el, appt.color);
+};
+
+const onChildAppointmentUnhover = () => {
     calendarTooltip.value = null;
 };
 
@@ -400,10 +504,14 @@ const calendarOptions = {
     firstDay: 1,
     height: 'auto',
     timeZone: 'local',
+    editable: true,
+    eventResizableFromStart: true,
     events: fetchCalendarEvents,
     eventClick: onCalendarEventClick,
     eventMouseEnter: onCalendarEventMouseEnter,
     eventMouseLeave: onCalendarEventMouseLeave,
+    eventDrop: onCalendarEventDrop,
+    eventResize: onCalendarEventDrop,
     dateClick: onCalendarDateClick,
 };
 
@@ -465,7 +573,7 @@ const fetchPostsCalendarAppointments = async () => {
             params: { start: start.toISOString(), end: end.toISOString() },
         });
         postsCalendarAppointments.value = response.data.map(e => ({
-            ...e.extendedProps.appointment,
+            ...enrichAppointment(e.extendedProps.appointment),
             title: e.title,
             color: e.color,
             start: e.start,
@@ -624,6 +732,21 @@ const toggleDefaultView = () => {
                             <button type="button" @click="calendarViewMode = 'day-posts-top'" :class="calendarViewMode === 'day-posts-top' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'" class="px-3 py-1.5 text-xs font-medium border-l border-gray-200 dark:border-gray-700 transition-colors">День (посты сверху)</button>
                         </div>
 
+                        <div class="flex items-center gap-2">
+                            <button
+                                type="button"
+                                @click="isCardFieldsModalOpen = true"
+                                class="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                title="Какие поля и в каком порядке показывать в карточке записи (Неделя/День)"
+                            ><i class="ri-layout-line"></i> Карточка: поля</button>
+                            <button
+                                type="button"
+                                @click="isTooltipFieldsModalOpen = true"
+                                class="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                                title="Какие поля и в каком порядке показывать во всплывающей подсказке при наведении"
+                            ><i class="ri-chat-check-line"></i> Тултип: поля</button>
+                        </div>
+
                         <!-- Навигация по дате — только для видов "по постам", у Месяца своя внутренняя навигация FullCalendar -->
                         <div v-if="calendarViewMode !== 'month'" class="flex items-center gap-2">
                             <button type="button" @click="navigatePosts(-1)" class="w-8 h-8 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i class="ri-arrow-left-s-line"></i></button>
@@ -640,8 +763,12 @@ const toggleDefaultView = () => {
                         :appointments="postsCalendarAppointments"
                         :week-days="weekDays"
                         :loading="postsCalendarLoading"
+                        :card-fields="calendarCardFields"
                         @edit="handlePostsEdit"
                         @create="handlePostsCreate"
+                        @reschedule="onChildReschedule"
+                        @hover="onChildAppointmentHover"
+                        @unhover="onChildAppointmentUnhover"
                     />
                     <PostsDayTimeline
                         v-else-if="calendarViewMode === 'day-posts-left'"
@@ -649,8 +776,12 @@ const toggleDefaultView = () => {
                         :appointments="postsCalendarAppointments"
                         :date="postsCalendarDate"
                         :loading="postsCalendarLoading"
+                        :card-fields="calendarCardFields"
                         @edit="handlePostsEdit"
                         @create="handlePostsCreate"
+                        @reschedule="onChildReschedule"
+                        @hover="onChildAppointmentHover"
+                        @unhover="onChildAppointmentUnhover"
                     />
                     <PostsDayColumns
                         v-else-if="calendarViewMode === 'day-posts-top'"
@@ -658,32 +789,31 @@ const toggleDefaultView = () => {
                         :appointments="postsCalendarAppointments"
                         :date="postsCalendarDate"
                         :loading="postsCalendarLoading"
+                        :card-fields="calendarCardFields"
                         @edit="handlePostsEdit"
                         @create="handlePostsCreate"
+                        @reschedule="onChildReschedule"
+                        @hover="onChildAppointmentHover"
+                        @unhover="onChildAppointmentUnhover"
                     />
 
                     <Teleport to="body">
                         <div
                             v-if="calendarTooltip"
-                            :style="calendarTooltip.style"
+                            :style="[calendarTooltip.style, calendarTooltip.color ? { borderLeftColor: calendarTooltip.color, borderLeftWidth: '4px' } : {}]"
                             class="z-[300] w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg p-3 pointer-events-none"
                         >
-                            <div class="flex items-center justify-between gap-2 mb-2">
-                                <span class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{{ calendarTooltip.title }}</span>
-                                <span
-                                    v-if="appointmentStatusInfo(calendarTooltip.appointment.status)"
-                                    class="text-[10px] font-medium px-2 py-0.5 rounded-full text-white shrink-0"
-                                    :style="{ backgroundColor: calendarTooltip.color }"
-                                >{{ appointmentStatusInfo(calendarTooltip.appointment.status).label || calendarTooltip.appointment.status }}</span>
-                            </div>
-                            <dl class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
-                                <div class="flex items-center gap-1.5"><i class="ri-time-line text-gray-400"></i> {{ calendarTooltip.appointment.start_at_local.slice(11, 16) }}–{{ calendarTooltip.appointment.end_at_local.slice(11, 16) }}</div>
-                                <div class="flex items-center gap-1.5"><i class="ri-store-2-line text-gray-400"></i> {{ branchNameById(calendarTooltip.appointment.branch_id) }}</div>
-                                <div class="flex items-center gap-1.5"><i class="ri-user-star-line text-gray-400"></i> {{ employeeNameById(calendarTooltip.appointment.employee_id) }}</div>
-                                <div class="flex items-center gap-1.5"><i class="ri-parking-box-line text-gray-400"></i> {{ postNameById(calendarTooltip.appointment.post_id) }}</div>
-                                <div v-if="calendarTooltip.appointment.comment" class="flex items-start gap-1.5 pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700">
-                                    <i class="ri-chat-3-line text-gray-400 mt-0.5"></i> <span class="truncate">{{ calendarTooltip.appointment.comment }}</span>
+                            <dl class="space-y-1.5 text-xs text-gray-600 dark:text-gray-400">
+                                <div
+                                    v-for="(line, idx) in tooltipLines"
+                                    :key="line.key"
+                                    :class="idx === 0 ? 'text-sm font-bold text-gray-800 dark:text-gray-100' : ''"
+                                    class="flex items-center gap-1.5"
+                                >
+                                    <i :class="line.icon" class="text-gray-400 w-3.5 text-center shrink-0"></i>
+                                    <span class="truncate">{{ line.text }}</span>
                                 </div>
+                                <p v-if="tooltipLines.length === 0" class="text-gray-400 italic">Нет полей для отображения — настройте в «Тултип: поля»</p>
                             </dl>
                         </div>
                     </Teleport>
@@ -963,6 +1093,24 @@ const toggleDefaultView = () => {
             :visible-columns="listView.visible_columns"
             @close="isColumnsModalOpen = false"
             @saved="isColumnsModalOpen = false"
+        />
+
+        <ColumnSettingsModal
+            :show="isCardFieldsModalOpen"
+            entity-type="appointment_calendar_card"
+            :available-columns="calendarFieldCatalog"
+            :visible-columns="calendarCardFields"
+            @close="isCardFieldsModalOpen = false"
+            @saved="isCardFieldsModalOpen = false"
+        />
+
+        <ColumnSettingsModal
+            :show="isTooltipFieldsModalOpen"
+            entity-type="appointment_calendar_tooltip"
+            :available-columns="calendarFieldCatalog"
+            :visible-columns="calendarTooltipFields"
+            @close="isTooltipFieldsModalOpen = false"
+            @saved="isTooltipFieldsModalOpen = false"
         />
     </AuthenticatedLayout>
 </template>
