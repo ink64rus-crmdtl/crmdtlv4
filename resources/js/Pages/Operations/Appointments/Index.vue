@@ -7,6 +7,7 @@ import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -33,6 +34,7 @@ const props = defineProps({
     availableColumns: { type: Array, default: () => [] },
     listView: { type: Object, default: () => ({ visible_columns: [] }) },
     appointmentStatuses: { type: Array, default: () => [] },
+    defaultWorkingHours: { type: Array, default: () => null },
 });
 
 const isModalOpen = ref(false);
@@ -85,6 +87,96 @@ const filteredVehicles = computed(() => {
     if (!form.client_id) return [];
     return props.vehicles.filter(v => v.client_id === form.client_id);
 });
+
+// --- ОПЦИИ ДЛЯ SearchableSelect ---
+const branchOptions = computed(() => props.branches.map(b => ({ value: b.id, label: b.name })));
+const employeeOptions = computed(() => props.employees.map(e => ({ value: e.id, label: `${e.first_name} ${e.last_name}` })));
+const postOptions = computed(() => filteredPosts.value.map(p => ({ value: p.id, label: p.name })));
+const clientOptions = computed(() => props.clients.map(c => ({ value: c.id, label: `${c.name}${c.phone ? ` (${c.phone})` : ''}` })));
+const vehicleOptions = computed(() => filteredVehicles.value.map(v => ({
+    value: v.id,
+    label: `${v.make ? v.make.name : ''} ${v.vehicle_model ? v.vehicle_model.name : ''}${v.plate_number ? ` [${v.plate_number}]` : ''}`.replace(/\s+/g, ' ').trim(),
+})));
+
+// --- ВЫБОР ВРЕМЕНИ СЛОТАМИ ИЗ ЧАСОВ РАБОТЫ ---
+// День недели JS (Date.getDay(): 0 = воскресенье) -> ключ дня в working_hours.
+const JS_DOW_TO_KEY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const FALLBACK_HOURS = { open: '07:00', close: '22:00' };
+const TIME_SLOT_STEP_MINUTES = 30;
+
+// Часы работы филиала (если задано своё расписание), иначе — расписание центра по умолчанию.
+const effectiveWorkingHours = computed(() => {
+    const branch = props.branches.find(b => b.id === form.branch_id);
+    return (branch && branch.working_hours) || props.defaultWorkingHours || null;
+});
+
+const hoursForDate = (dateStr) => {
+    if (!dateStr) return null;
+    const wh = effectiveWorkingHours.value;
+    if (!wh) return { ...FALLBACK_HOURS, closed: false };
+    const dow = JS_DOW_TO_KEY[new Date(`${dateStr}T00:00:00`).getDay()];
+    const dayEntry = wh.find(d => d.day === dow);
+    if (!dayEntry) return { ...FALLBACK_HOURS, closed: false };
+    if (!dayEntry.is_open) return { ...FALLBACK_HOURS, closed: true };
+    return { open: dayEntry.open, close: dayEntry.close, closed: false };
+};
+
+const buildTimeSlots = (dateStr) => {
+    const hours = hoursForDate(dateStr);
+    if (!hours) return [];
+    const [openH, openM] = hours.open.split(':').map(Number);
+    const [closeH, closeM] = hours.close.split(':').map(Number);
+    const startTotal = openH * 60 + openM;
+    const endTotal = closeH * 60 + closeM;
+    const slots = [];
+    for (let t = startTotal; t <= endTotal; t += TIME_SLOT_STEP_MINUTES) {
+        const h = String(Math.floor(t / 60)).padStart(2, '0');
+        const m = String(t % 60).padStart(2, '0');
+        slots.push(`${h}:${m}`);
+    }
+    return slots;
+};
+
+// Дата/время храним раздельно в UI, но собираем обратно в единую строку
+// "YYYY-MM-DDTHH:mm" в form.start_at/end_at — этот контракт уже используется
+// бэкендом и предзаполнением из видов календаря "по постам".
+const startDate = computed({
+    get: () => (form.start_at ? form.start_at.slice(0, 10) : ''),
+    set: (val) => {
+        const time = form.start_at ? form.start_at.slice(11, 16) : '';
+        form.start_at = val ? `${val}T${time}` : '';
+    },
+});
+const startTime = computed({
+    get: () => (form.start_at ? form.start_at.slice(11, 16) : ''),
+    set: (val) => {
+        const date = startDate.value || toLocalISODate(new Date());
+        form.start_at = val ? `${date}T${val}` : '';
+    },
+});
+const endDate = computed({
+    get: () => (form.end_at ? form.end_at.slice(0, 10) : ''),
+    set: (val) => {
+        const time = form.end_at ? form.end_at.slice(11, 16) : '';
+        form.end_at = val ? `${val}T${time}` : '';
+    },
+});
+const endTime = computed({
+    get: () => (form.end_at ? form.end_at.slice(11, 16) : ''),
+    set: (val) => {
+        const date = endDate.value || startDate.value || toLocalISODate(new Date());
+        form.end_at = val ? `${date}T${val}` : '';
+    },
+});
+
+// Текущее значение всегда включаем в список слотов, даже если оно не попадает
+// в шаг сетки или выходит за пределы графика (правка старой записи, смена филиала) —
+// иначе выбранное время пропадёт из выпадающего списка незаметно для пользователя.
+const withCurrentValue = (slots, current) => (current && !slots.includes(current) ? [...slots, current].sort() : slots);
+
+const startTimeSlots = computed(() => withCurrentValue(buildTimeSlots(startDate.value), startTime.value));
+const endTimeSlots = computed(() => withCurrentValue(buildTimeSlots(endDate.value), endTime.value));
+const startDayClosed = computed(() => hoursForDate(startDate.value)?.closed || false);
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -596,55 +688,84 @@ const handlePostsEdit = (appointment) => {
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал <span class="text-danger">*</span></label>
-                                <select v-model="form.branch_id" @change="form.post_id = ''" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
-                                    <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
-                                </select>
+                                <SearchableSelect
+                                    v-model="form.branch_id"
+                                    :options="branchOptions"
+                                    placeholder="Выберите филиал..."
+                                    searchPlaceholder="Поиск филиала..."
+                                    @update:model-value="form.post_id = ''"
+                                />
                                 <p v-if="form.errors.branch_id" class="mt-1 text-xs text-danger">{{ form.errors.branch_id }}</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Мастер</label>
-                                <select v-model="form.employee_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" class="bg-white dark:bg-gray-800">Не назначен</option>
-                                    <option v-for="e in employees" :key="e.id" :value="e.id" class="bg-white dark:bg-gray-800">{{ e.first_name }} {{ e.last_name }}</option>
-                                </select>
+                                <SearchableSelect
+                                    v-model="form.employee_id"
+                                    :options="employeeOptions"
+                                    placeholder="Не назначен"
+                                    searchPlaceholder="Поиск сотрудника..."
+                                    clearable
+                                />
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Пост</label>
-                                <select v-model="form.post_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" class="bg-white dark:bg-gray-800">Не назначен</option>
-                                    <option v-for="p in filteredPosts" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ p.name }}</option>
-                                </select>
+                                <SearchableSelect
+                                    v-model="form.post_id"
+                                    :options="postOptions"
+                                    placeholder="Не назначен"
+                                    searchPlaceholder="Поиск поста..."
+                                    clearable
+                                />
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Клиент <span class="text-danger">*</span></label>
-                                <select v-model="form.client_id" @change="form.vehicle_id = ''" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите клиента...</option>
-                                    <option v-for="client in clients" :key="client.id" :value="client.id" class="bg-white dark:bg-gray-800">{{ client.name }} {{ client.phone ? `(${client.phone})` : '' }}</option>
-                                </select>
+                                <SearchableSelect
+                                    v-model="form.client_id"
+                                    :options="clientOptions"
+                                    placeholder="Выберите клиента..."
+                                    searchPlaceholder="Поиск клиента..."
+                                    @update:model-value="form.vehicle_id = ''"
+                                />
                                 <p v-if="form.errors.client_id" class="mt-1 text-xs text-danger">{{ form.errors.client_id }}</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Автомобиль</label>
-                                <select v-model="form.vehicle_id" :disabled="!form.client_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 disabled:bg-gray-100 dark:disabled:bg-gray-800">
-                                    <option value="" class="bg-white dark:bg-gray-800">Без автомобиля</option>
-                                    <option v-for="vehicle in filteredVehicles" :key="vehicle.id" :value="vehicle.id" class="bg-white dark:bg-gray-800">{{ vehicle.make ? vehicle.make.name : '' }} {{ vehicle.vehicle_model ? vehicle.vehicle_model.name : '' }} {{ vehicle.plate_number ? `[${vehicle.plate_number}]` : '' }}</option>
-                                </select>
+                                <SearchableSelect
+                                    v-model="form.vehicle_id"
+                                    :options="vehicleOptions"
+                                    :disabled="!form.client_id"
+                                    placeholder="Без автомобиля"
+                                    searchPlaceholder="Поиск автомобиля..."
+                                    clearable
+                                />
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Начало <span class="text-danger">*</span></label>
-                                <input v-model="form.start_at" type="datetime-local" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <div class="flex gap-2">
+                                    <input v-model="startDate" type="date" required class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    <select v-model="startTime" required class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                        <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                        <option v-for="slot in startTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                    </select>
+                                </div>
+                                <p v-if="startDate && startDayClosed" class="mt-1 text-xs text-warning">По графику этот день нерабочий — время можно выбрать вручную, запись всё равно будет создана.</p>
                                 <p v-if="form.errors.start_at" class="mt-1 text-xs text-danger">{{ form.errors.start_at }}</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Окончание <span class="text-danger">*</span></label>
-                                <input v-model="form.end_at" type="datetime-local" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <div class="flex gap-2">
+                                    <input v-model="endDate" type="date" required class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    <select v-model="endTime" required class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                        <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                        <option v-for="slot in endTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                    </select>
+                                </div>
                                 <p v-if="form.errors.end_at" class="mt-1 text-xs text-danger">{{ form.errors.end_at }}</p>
                             </div>
                         </div>

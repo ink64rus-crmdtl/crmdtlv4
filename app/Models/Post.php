@@ -17,6 +17,7 @@ class Post extends Model
         'name',
         'is_active',
         'sort_order',
+        'prevent_overlapping_appointments',
     ];
 
     protected function casts(): array
@@ -24,6 +25,7 @@ class Post extends Model
         return [
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            'prevent_overlapping_appointments' => 'boolean',
         ];
     }
 

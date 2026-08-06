@@ -1,180 +1,155 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue';
-import { useDebounceFn } from '@vueuse/core';
-import axios from 'axios';
+/**
+ * Обязательный компонент для любого выпадающего списка в системе, где
+ * реально длинный список вариантов (клиенты, авто, сотрудники, филиалы,
+ * услуги/товары, посты и т.п.) — см. CLAUDE.md, раздел про UI-конвенции.
+ * Короткие фиксированные списки (2-6 пунктов, статусы и т.п.) можно
+ * оставлять обычным <select>.
+ *
+ * Фильтрация — локальная, по уже переданному массиву options. Компонент
+ * не делает собственных HTTP-запросов: страница как и раньше загружает
+ * список целиком (как это уже сделано почти везде в проекте), а поиск
+ * просто сужает то, что показано в открытом списке.
+ */
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 
 const props = defineProps({
-    modelValue: [String, Number],
-    loadUrl: String, // e.g., '/crm/clients' or '/crm/vehicles'
-    placeholder: {
-        type: String,
-        default: 'Выберите значение...'
-    },
-    initialLabel: {
-        type: String,
-        default: ''
-    }
+    modelValue: { type: [String, Number], default: '' },
+    options: { type: Array, default: () => [] }, // [{ value, label }]
+    placeholder: { type: String, default: 'Выберите...' },
+    searchPlaceholder: { type: String, default: 'Поиск...' },
+    disabled: { type: Boolean, default: false },
+    clearable: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['update:modelValue', 'change']);
+const emit = defineEmits(['update:modelValue']);
 
 const isOpen = ref(false);
 const search = ref('');
-const options = ref([]);
-const page = ref(1);
-const hasMore = ref(true);
-const isLoading = ref(false);
-const selectedLabel = ref(props.initialLabel);
-
 const containerRef = ref(null);
-const scrollRef = ref(null);
+const buttonRef = ref(null);
+const panelRef = ref(null);
+const panelStyle = ref({});
+const searchInputRef = ref(null);
 
-// Watch for internal value changes to sync selection label
-watch(() => props.modelValue, (newVal) => {
-    if (!newVal) {
-        selectedLabel.value = '';
-    }
+const current = computed(() => props.options.find(o => o.value === props.modelValue));
+
+const filteredOptions = computed(() => {
+    if (!search.value.trim()) return props.options;
+    const q = search.value.trim().toLowerCase();
+    return props.options.filter(o => String(o.label ?? '').toLowerCase().includes(q));
 });
 
-watch(() => props.initialLabel, (newVal) => {
-    if (newVal) {
-        selectedLabel.value = newVal;
-    }
-});
-
-const fetchOptions = async (reset = false) => {
-    if (isLoading.value) return;
-    if (reset) {
-        page.value = 1;
-        options.value = [];
-        hasMore.value = true;
-    }
-    if (!hasMore.value) return;
-
-    isLoading.value = true;
-    try {
-        const response = await axios.get(props.loadUrl, {
-            params: {
-                search: search.value,
-                page: page.value,
-            },
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-            }
-        });
-
-        const data = response.data;
-        const newOptions = data.data || [];
-        
-        options.value = [...options.value, ...newOptions.map(opt => ({
-            id: opt.id,
-            label: opt.name || opt.plate_number || opt.value || `${opt.first_name || ''} ${opt.last_name || ''}`.trim()
-        }))];
-
-        page.value++;
-        hasMore.value = data.next_page_url !== null;
-    } catch (error) {
-        console.error('Failed to load searchable select options', error);
-    } finally {
-        isLoading.value = false;
-    }
+const updatePosition = () => {
+    if (!buttonRef.value) return;
+    const rect = buttonRef.value.getBoundingClientRect();
+    panelStyle.value = {
+        position: 'fixed',
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        width: `${rect.width}px`,
+    };
 };
 
-const handleSearchInput = useDebounceFn(() => {
-    fetchOptions(true);
-}, 300);
-
-const handleScroll = (e) => {
-    const el = e.target;
-    if (el.scrollHeight - el.scrollTop <= el.clientHeight + 10) {
-        fetchOptions();
-    }
-};
-
-const selectOption = (opt) => {
-    selectedLabel.value = opt.label;
-    emit('update:modelValue', opt.id);
-    emit('change', opt.id);
-    isOpen.value = false;
-    search.value = '';
-};
-
-const toggleDropdown = () => {
+const toggle = async () => {
+    if (props.disabled) return;
     isOpen.value = !isOpen.value;
     if (isOpen.value) {
-        fetchOptions(true);
+        search.value = '';
+        await nextTick();
+        updatePosition();
+        searchInputRef.value?.focus();
     }
+};
+
+const select = (option) => {
+    isOpen.value = false;
+    emit('update:modelValue', option.value);
+};
+
+const clearSelection = (e) => {
+    e.stopPropagation();
+    emit('update:modelValue', '');
 };
 
 const closeDropdown = (e) => {
-    if (containerRef.value && !containerRef.value.contains(e.target)) {
+    if (
+        containerRef.value && !containerRef.value.contains(e.target) &&
+        panelRef.value && !panelRef.value.contains(e.target)
+    ) {
         isOpen.value = false;
-        search.value = '';
     }
 };
 
+const closeOnScrollOrResize = () => {
+    if (isOpen.value) isOpen.value = false;
+};
+
+watch(() => props.disabled, (disabled) => {
+    if (disabled) isOpen.value = false;
+});
+
 onMounted(() => {
     document.addEventListener('click', closeDropdown);
+    window.addEventListener('scroll', closeOnScrollOrResize, true);
+    window.addEventListener('resize', closeOnScrollOrResize);
 });
 
 onUnmounted(() => {
     document.removeEventListener('click', closeDropdown);
+    window.removeEventListener('scroll', closeOnScrollOrResize, true);
+    window.removeEventListener('resize', closeOnScrollOrResize);
 });
 </script>
 
 <template>
-    <div class="relative w-full" ref="containerRef">
-        <div 
-            @click="toggleDropdown"
-            class="flex items-center justify-between w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 cursor-pointer focus:border-primary"
+    <div class="relative" ref="containerRef">
+        <button
+            type="button"
+            ref="buttonRef"
+            @click.stop="toggle"
+            :disabled="disabled"
+            class="flex items-center justify-between w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-left transition-colors focus:border-primary focus:ring-0 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
         >
-            <span :class="selectedLabel ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'">
-                {{ selectedLabel || placeholder }}
+            <span :class="current ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'" class="truncate">{{ current ? current.label : placeholder }}</span>
+            <span class="flex items-center gap-1.5 shrink-0 ml-2">
+                <i v-if="clearable && current" @click="clearSelection" class="ri-close-line text-gray-400 hover:text-danger transition-colors"></i>
+                <i class="ri-arrow-down-s-line text-gray-400"></i>
             </span>
-            <i class="ri-arrow-down-s-line text-gray-400"></i>
-        </div>
+        </button>
 
-        <Transition
-            enter-active-class="transition ease-out duration-100"
-            enter-from-class="transform opacity-0 scale-95"
-            enter-to-class="transform opacity-100 scale-100"
-            leave-active-class="transition ease-in duration-75"
-            leave-from-class="transform opacity-100 scale-100"
-            leave-to-class="transform opacity-0 scale-95"
-        >
-            <div v-if="isOpen" class="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg flex flex-col overflow-hidden">
-                <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
+        <Teleport to="body">
+            <div
+                v-if="isOpen"
+                ref="panelRef"
+                :style="panelStyle"
+                @click.stop
+                class="z-[250] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg overflow-hidden"
+            >
+                <div class="p-2 border-b border-gray-100 dark:border-gray-700">
                     <input
-                        type="text"
+                        ref="searchInputRef"
                         v-model="search"
-                        @input="handleSearchInput"
-                        placeholder="Поиск..."
-                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 px-2.5 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
-                        focus
+                        type="text"
+                        :placeholder="searchPlaceholder"
+                        class="block w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                        @keydown.escape="isOpen = false"
                     />
                 </div>
-                <ul 
-                    ref="scrollRef"
-                    @scroll="handleScroll"
-                    class="max-h-56 overflow-y-auto custom-scrollbar py-1 text-sm text-gray-700 dark:text-gray-300"
-                >
-                    <li 
-                        v-for="opt in options" 
-                        :key="opt.id"
-                        @click="selectOption(opt)"
-                        class="px-3 py-2 hover:bg-primary/10 hover:text-primary cursor-pointer transition-colors"
+                <div class="max-h-56 overflow-y-auto custom-scrollbar py-1">
+                    <button
+                        v-for="option in filteredOptions"
+                        :key="option.value"
+                        type="button"
+                        @click="select(option)"
+                        :class="option.value === modelValue ? 'bg-primary/10 text-primary font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60'"
+                        class="w-full text-left px-3 py-1.5 text-sm transition-colors truncate"
                     >
-                        {{ opt.label }}
-                    </li>
-                    <li v-if="options.length === 0 && !isLoading" class="px-3 py-3 text-center text-xs text-gray-400 dark:text-gray-500">
-                        Ничего не найдено
-                    </li>
-                    <li v-if="isLoading" class="px-3 py-2 text-center text-xs text-gray-400 dark:text-gray-500 flex items-center justify-center gap-1.5">
-                        <i class="ri-loader-4-line animate-spin"></i> Загрузка...
-                    </li>
-                </ul>
+                        {{ option.label }}
+                    </button>
+                    <p v-if="filteredOptions.length === 0" class="px-3 py-4 text-center text-xs text-gray-400 dark:text-gray-500">Ничего не найдено</p>
+                </div>
             </div>
-        </Transition>
+        </Teleport>
     </div>
 </template>

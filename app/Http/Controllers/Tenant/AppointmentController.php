@@ -15,10 +15,12 @@ use App\Models\Lookup;
 use App\Models\ListView;
 use App\Services\QueryFilterService;
 use App\Services\TimezoneResolver;
+use App\Services\WorkingHoursResolver;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -51,7 +53,7 @@ class AppointmentController extends Controller
             return $appointment;
         });
 
-        $branches = Branch::forSelect()->get(['id', 'name']);
+        $branches = Branch::forSelect()->get(['id', 'name', 'working_hours']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
@@ -85,6 +87,7 @@ class AppointmentController extends Controller
             'availableColumns' => $availableColumns,
             'listView' => ['visible_columns' => $visibleColumns],
             'appointmentStatuses' => $this->appointmentStatuses(),
+            'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
         ]);
     }
 
@@ -167,16 +170,20 @@ class AppointmentController extends Controller
     {
         $validated = $this->validateAppointment($request);
         $branchTz = TimezoneResolver::forBranch($validated['branch_id']);
+        $startAtUtc = Carbon::parse($validated['start_at'], $branchTz)->utc();
+        $endAtUtc = Carbon::parse($validated['end_at'], $branchTz)->utc();
 
-        DB::transaction(function () use ($validated, $branchTz) {
+        $this->assertNoOverlap($validated['post_id'] ?? null, $startAtUtc, $endAtUtc);
+
+        DB::transaction(function () use ($validated, $startAtUtc, $endAtUtc) {
             $appointment = Appointment::create([
                 'branch_id' => $validated['branch_id'],
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'employee_id' => $validated['employee_id'] ?? null,
                 'post_id' => $validated['post_id'] ?? null,
-                'start_at' => Carbon::parse($validated['start_at'], $branchTz)->utc(),
-                'end_at' => Carbon::parse($validated['end_at'], $branchTz)->utc(),
+                'start_at' => $startAtUtc,
+                'end_at' => $endAtUtc,
                 'status' => $validated['status'],
                 'comment' => $validated['comment'] ?? null,
             ]);
@@ -195,16 +202,20 @@ class AppointmentController extends Controller
 
         $validated = $this->validateAppointment($request, $appointment);
         $branchTz = TimezoneResolver::forBranch($validated['branch_id']);
+        $startAtUtc = Carbon::parse($validated['start_at'], $branchTz)->utc();
+        $endAtUtc = Carbon::parse($validated['end_at'], $branchTz)->utc();
 
-        DB::transaction(function () use ($validated, $appointment, $branchTz) {
+        $this->assertNoOverlap($validated['post_id'] ?? null, $startAtUtc, $endAtUtc, $appointment->id);
+
+        DB::transaction(function () use ($validated, $appointment, $startAtUtc, $endAtUtc) {
             $appointment->update([
                 'branch_id' => $validated['branch_id'],
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'employee_id' => $validated['employee_id'] ?? null,
                 'post_id' => $validated['post_id'] ?? null,
-                'start_at' => Carbon::parse($validated['start_at'], $branchTz)->utc(),
-                'end_at' => Carbon::parse($validated['end_at'], $branchTz)->utc(),
+                'start_at' => $startAtUtc,
+                'end_at' => $endAtUtc,
                 'status' => $validated['status'],
                 'comment' => $validated['comment'] ?? null,
             ]);
@@ -215,6 +226,36 @@ class AppointmentController extends Controller
         });
 
         return redirect()->back()->with('success', 'Запись обновлена');
+    }
+
+    /**
+     * Проверка пересечения по времени включена только для постов с
+     * Post::prevent_overlapping_appointments = true — по умолчанию посты
+     * это разрешают (например когда фактическая параллельная работа возможна).
+     */
+    private function assertNoOverlap(?int $postId, Carbon $startAtUtc, Carbon $endAtUtc, ?int $excludeAppointmentId = null): void
+    {
+        if (!$postId) {
+            return;
+        }
+
+        $post = Post::find($postId);
+        if (!$post || !$post->prevent_overlapping_appointments) {
+            return;
+        }
+
+        $overlaps = Appointment::where('post_id', $postId)
+            ->where('status', '!=', 'cancelled')
+            ->when($excludeAppointmentId, fn ($query) => $query->where('id', '!=', $excludeAppointmentId))
+            ->where('start_at', '<', $endAtUtc)
+            ->where('end_at', '>', $startAtUtc)
+            ->exists();
+
+        if ($overlaps) {
+            throw ValidationException::withMessages([
+                'post_id' => 'На этот пост уже есть запись, пересекающаяся по времени. Выберите другое время или другой пост.',
+            ]);
+        }
     }
 
     public function destroy(Appointment $appointment)

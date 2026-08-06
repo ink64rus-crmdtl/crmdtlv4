@@ -25,6 +25,7 @@ const form = useForm({
     branch_id: '',
     name: '',
     is_active: true,
+    prevent_overlapping_appointments: false,
     business_direction_ids: [],
 });
 
@@ -76,10 +77,12 @@ const openModal = (post = null) => {
         form.branch_id = post.branch_id || '';
         form.name = post.name;
         form.is_active = Boolean(post.is_active);
+        form.prevent_overlapping_appointments = Boolean(post.prevent_overlapping_appointments);
         form.business_direction_ids = post.business_directions ? post.business_directions.map(d => d.id) : [];
     } else {
         form.reset();
         form.is_active = true;
+        form.prevent_overlapping_appointments = false;
         form.business_direction_ids = [];
     }
     isModalOpen.value = true;
@@ -288,6 +291,19 @@ const deletePost = (post) => {
                                 </label>
                             </div>
                             <p v-else class="text-xs text-gray-400">Направления деятельности ещё не добавлены (Настройки → Направления).</p>
+                        </div>
+
+                        <!-- Запрет пересекающихся записей -->
+                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                            <div class="flex items-center">
+                                <div @click="form.prevent_overlapping_appointments = !form.prevent_overlapping_appointments" :class="[form.prevent_overlapping_appointments ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                    <div :class="[form.prevent_overlapping_appointments ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                                </div>
+                                <label class="ml-2.5 block text-sm font-semibold text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.prevent_overlapping_appointments = !form.prevent_overlapping_appointments">
+                                    Не допускать пересекающиеся записи на этот пост
+                                </label>
+                            </div>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-11">Если включено, система не даст создать или перенести запись на этот пост, если её время пересекается с уже существующей (неотменённой) записью на нём. Отменённые записи в расчёт не берутся.</p>
                         </div>
 
                         <div class="flex items-center pt-4 border-t border-gray-200 dark:border-gray-700">

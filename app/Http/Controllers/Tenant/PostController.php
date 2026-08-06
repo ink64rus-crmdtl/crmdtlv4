@@ -51,6 +51,7 @@ class PostController extends Controller
                 'name' => $validated['name'],
                 'is_active' => $validated['is_active'] ?? true,
                 'sort_order' => $nextSortOrder,
+                'prevent_overlapping_appointments' => $validated['prevent_overlapping_appointments'] ?? false,
             ]);
 
             if (!empty($validated['business_direction_ids'])) {
@@ -70,6 +71,7 @@ class PostController extends Controller
                 'branch_id' => $validated['branch_id'] ?? null,
                 'name' => $validated['name'],
                 'is_active' => $validated['is_active'] ?? true,
+                'prevent_overlapping_appointments' => $validated['prevent_overlapping_appointments'] ?? false,
             ]);
 
             $post->businessDirections()->sync($validated['business_direction_ids'] ?? []);
@@ -122,6 +124,7 @@ class PostController extends Controller
             'branch_id' => $branchRule,
             'name' => ['required', 'string', 'max:255'],
             'is_active' => ['boolean'],
+            'prevent_overlapping_appointments' => ['boolean'],
             'business_direction_ids' => ['nullable', 'array'],
             'business_direction_ids.*' => ['exists:business_directions,id'],
         ]);
