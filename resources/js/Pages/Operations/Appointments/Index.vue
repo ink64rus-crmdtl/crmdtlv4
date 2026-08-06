@@ -301,8 +301,23 @@ const changeStatus = (appointment, status) => {
     router.patch(route('operations.appointments.status.update', appointment.id), { status });
 };
 
+// --- ВИД ПО УМОЛЧАНИЮ: запоминается локально в браузере (localStorage), т.к.
+// это личная настройка отображения, а не бизнес-данные тенанта. ---
+const DEFAULT_VIEW_STORAGE_KEY = 'crm:appointments:defaultView';
+
+const loadDefaultView = () => {
+    try {
+        const raw = localStorage.getItem(DEFAULT_VIEW_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+};
+
+const defaultView = ref(loadDefaultView());
+
 // --- ВИД: СПИСОК / КАЛЕНДАРЬ (Фаза 9.1) ---
-const viewMode = ref('list'); // 'list' | 'calendar'
+const viewMode = ref(defaultView.value?.viewMode || 'list'); // 'list' | 'calendar'
 
 const toLocalDateTimeInput = (date) => {
     const pad = (n) => String(n).padStart(2, '0');
@@ -321,6 +336,7 @@ const fetchCalendarEvents = (fetchInfo, successCallback, failureCallback) => {
 };
 
 const onCalendarEventClick = (info) => {
+    calendarTooltip.value = null;
     openModal(info.event.extendedProps.appointment);
 };
 
@@ -332,6 +348,43 @@ const onCalendarDateClick = (info) => {
 
     form.start_at = toLocalDateTimeInput(startDate);
     form.end_at = toLocalDateTimeInput(endDate);
+};
+
+// --- ВСПЛЫВАЮЩАЯ ПОДСКАЗКА ПРИ НАВЕДЕНИИ НА ЗАПИСЬ (вид "Месяц") ---
+const calendarTooltip = ref(null);
+
+const appointmentStatusInfo = (value) => props.appointmentStatuses.find(s => s.value === value) || null;
+
+const employeeNameById = (id) => {
+    if (!id) return 'Не назначен';
+    const e = props.employees.find(x => x.id === id);
+    return e ? `${e.first_name} ${e.last_name}` : 'Не назначен';
+};
+
+const postNameById = (id) => {
+    if (!id) return 'Не назначен';
+    const p = props.posts.find(x => x.id === id);
+    return p ? p.name : 'Не назначен';
+};
+
+const branchNameById = (id) => {
+    const b = props.branches.find(x => x.id === id);
+    return b ? b.name : '—';
+};
+
+const onCalendarEventMouseEnter = (info) => {
+    const rect = info.el.getBoundingClientRect();
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - 300);
+    calendarTooltip.value = {
+        title: info.event.title,
+        color: info.event.backgroundColor,
+        appointment: info.event.extendedProps.appointment,
+        style: { position: 'fixed', top: `${rect.bottom + 6}px`, left: `${left}px` },
+    };
+};
+
+const onCalendarEventMouseLeave = () => {
+    calendarTooltip.value = null;
 };
 
 const calendarOptions = {
@@ -349,11 +402,13 @@ const calendarOptions = {
     timeZone: 'local',
     events: fetchCalendarEvents,
     eventClick: onCalendarEventClick,
+    eventMouseEnter: onCalendarEventMouseEnter,
+    eventMouseLeave: onCalendarEventMouseLeave,
     dateClick: onCalendarDateClick,
 };
 
 // --- ВИДЫ "ПО ПОСТАМ" (Фаза 9.5): Неделя (слева) / День (слева) / День (сверху) ---
-const calendarViewMode = ref('month'); // 'month' | 'week-posts' | 'day-posts-left' | 'day-posts-top'
+const calendarViewMode = ref((defaultView.value?.viewMode === 'calendar' && defaultView.value?.calendarViewMode) || 'month'); // 'month' | 'week-posts' | 'day-posts-left' | 'day-posts-top'
 const postsCalendarDate = ref(new Date());
 const postsCalendarAppointments = ref([]);
 const postsCalendarLoading = ref(false);
@@ -455,6 +510,36 @@ const handlePostsCreate = (payload) => {
 const handlePostsEdit = (appointment) => {
     openModal(appointment);
 };
+
+// --- ПЕРЕКЛЮЧАТЕЛЬ "ПРОСМОТР ПО УМОЛЧАНИЮ" (для текущего активного режима) ---
+const calendarViewModeLabels = {
+    month: 'Месяц',
+    'week-posts': 'Неделя (посты слева)',
+    'day-posts-left': 'День (посты слева)',
+    'day-posts-top': 'День (посты сверху)',
+};
+
+const currentViewLabel = computed(() => {
+    return viewMode.value === 'list' ? 'Список' : (calendarViewModeLabels[calendarViewMode.value] || '');
+});
+
+const isCurrentViewDefault = computed(() => {
+    if (!defaultView.value || defaultView.value.viewMode !== viewMode.value) return false;
+    return viewMode.value === 'calendar' ? defaultView.value.calendarViewMode === calendarViewMode.value : true;
+});
+
+const toggleDefaultView = () => {
+    if (isCurrentViewDefault.value) {
+        defaultView.value = null;
+        localStorage.removeItem(DEFAULT_VIEW_STORAGE_KEY);
+        return;
+    }
+    defaultView.value = {
+        viewMode: viewMode.value,
+        calendarViewMode: viewMode.value === 'calendar' ? calendarViewMode.value : null,
+    };
+    localStorage.setItem(DEFAULT_VIEW_STORAGE_KEY, JSON.stringify(defaultView.value));
+};
 </script>
 
 <template>
@@ -501,6 +586,22 @@ const handlePostsEdit = (appointment) => {
                             <i class="ri-calendar-line"></i> Календарь
                         </button>
                     </div>
+
+                    <button
+                        type="button"
+                        @click="toggleDefaultView"
+                        class="inline-flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"
+                        :title="isCurrentViewDefault ? `«${currentViewLabel}» — вид по умолчанию` : `Сделать «${currentViewLabel}» видом по умолчанию`"
+                    >
+                        <span
+                            :class="isCurrentViewDefault ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700'"
+                            class="flex items-center h-5 w-9 rounded-full transition-all duration-200 relative shrink-0"
+                        >
+                            <span :class="isCurrentViewDefault ? 'translate-x-4' : 'translate-x-1'" class="h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute"></span>
+                        </span>
+                        Просмотр по умолчанию
+                    </button>
+
                     <button
                         @click="openModal()"
                         class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
@@ -560,6 +661,32 @@ const handlePostsEdit = (appointment) => {
                         @edit="handlePostsEdit"
                         @create="handlePostsCreate"
                     />
+
+                    <Teleport to="body">
+                        <div
+                            v-if="calendarTooltip"
+                            :style="calendarTooltip.style"
+                            class="z-[300] w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg p-3 pointer-events-none"
+                        >
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <span class="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{{ calendarTooltip.title }}</span>
+                                <span
+                                    v-if="appointmentStatusInfo(calendarTooltip.appointment.status)"
+                                    class="text-[10px] font-medium px-2 py-0.5 rounded-full text-white shrink-0"
+                                    :style="{ backgroundColor: calendarTooltip.color }"
+                                >{{ appointmentStatusInfo(calendarTooltip.appointment.status).label || calendarTooltip.appointment.status }}</span>
+                            </div>
+                            <dl class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                                <div class="flex items-center gap-1.5"><i class="ri-time-line text-gray-400"></i> {{ calendarTooltip.appointment.start_at_local.slice(11, 16) }}–{{ calendarTooltip.appointment.end_at_local.slice(11, 16) }}</div>
+                                <div class="flex items-center gap-1.5"><i class="ri-store-2-line text-gray-400"></i> {{ branchNameById(calendarTooltip.appointment.branch_id) }}</div>
+                                <div class="flex items-center gap-1.5"><i class="ri-user-star-line text-gray-400"></i> {{ employeeNameById(calendarTooltip.appointment.employee_id) }}</div>
+                                <div class="flex items-center gap-1.5"><i class="ri-parking-box-line text-gray-400"></i> {{ postNameById(calendarTooltip.appointment.post_id) }}</div>
+                                <div v-if="calendarTooltip.appointment.comment" class="flex items-start gap-1.5 pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700">
+                                    <i class="ri-chat-3-line text-gray-400 mt-0.5"></i> <span class="truncate">{{ calendarTooltip.appointment.comment }}</span>
+                                </div>
+                            </dl>
+                        </div>
+                    </Teleport>
                 </div>
 
                 <!-- Вид: Список -->
