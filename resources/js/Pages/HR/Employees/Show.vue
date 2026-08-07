@@ -18,6 +18,11 @@ const props = defineProps({
     customFieldDefs: Array,
     activities: { type: Array, default: () => [] },
     comments: { type: Array, default: () => [] },
+    personalPayrollRules: { type: Array, default: () => [] },
+    serviceCategories: { type: Array, default: () => [] },
+    services: { type: Array, default: () => [] },
+    payrollEntries: { type: Array, default: () => [] },
+    payoutAccounts: { type: Array, default: () => [] },
 });
 
 const activeTimelineTab = ref('history'); // 'history', 'comments'
@@ -32,6 +37,10 @@ const getLocalizedLabel = (label) => {
         }
     }
     return label['ru'] || label['en'] || Object.values(label)[0] || '';
+};
+
+const formatMoney = (cents) => {
+    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format((cents || 0) / 100);
 };
 
 const employeeTypes = {
@@ -57,6 +66,9 @@ const form = useForm({
     
     branch_id: '',
     position_id: '',
+    secondary_position_id: '',
+    salary_amount: '',
+    self_employed_tax_percent: '',
     type: 'staff',
     hire_date: '',
     termination_date: '',
@@ -88,9 +100,9 @@ const form = useForm({
     }
 });
 
-const openModal = () => {
+const openModal = (tab = 'main') => {
     const emp = props.employee;
-    activeTab.value = 'main';
+    activeTab.value = tab;
     
     form.first_name = emp.first_name;
     form.last_name = emp.last_name || '';
@@ -101,6 +113,9 @@ const openModal = () => {
     
     form.branch_id = emp.branch_id;
     form.position_id = emp.position_id || '';
+    form.secondary_position_id = emp.secondary_position_id || '';
+    form.salary_amount = emp.salary_amount ? emp.salary_amount / 100 : '';
+    form.self_employed_tax_percent = emp.self_employed_tax_percent ?? '';
     form.type = emp.type;
     form.hire_date = emp.hire_date ? emp.hire_date.substring(0, 10) : '';
     form.termination_date = emp.termination_date ? emp.termination_date.substring(0, 10) : '';
@@ -146,6 +161,150 @@ const submit = () => {
         onSuccess: () => closeModal(),
     });
 };
+
+// --- ПЕРСОНАЛЬНЫЕ СТАВКИ ЗП (Фаза 10.1) ---
+const isRuleModalOpen = ref(false);
+const editingRule = ref(null);
+
+const ruleForm = useForm({
+    employee_id: props.employee.id,
+    target: 'category',
+    service_id: '',
+    service_category_id: '',
+    branch_id: '',
+    type: 'percentage',
+    fixed_amount: 0,
+    percentage_value: 0,
+});
+
+const filteredServices = computed(() => {
+    if (!ruleForm.service_category_id) return props.services;
+    return props.services.filter(s => s.service_category_id === Number(ruleForm.service_category_id));
+});
+
+const openRuleModal = (rule = null) => {
+    editingRule.value = rule;
+    if (rule) {
+        ruleForm.target = rule.is_default_for_unlisted ? 'default' : (rule.service_id ? 'service' : 'category');
+        ruleForm.service_id = rule.service_id ?? '';
+        ruleForm.service_category_id = rule.service_category_id ?? '';
+        ruleForm.branch_id = rule.branch_id ?? '';
+        ruleForm.type = rule.type;
+        ruleForm.fixed_amount = (rule.fixed_amount || 0) / 100;
+        ruleForm.percentage_value = rule.percentage_value || 0;
+    } else {
+        ruleForm.reset();
+        ruleForm.employee_id = props.employee.id;
+        ruleForm.target = 'category';
+        ruleForm.type = 'percentage';
+    }
+    isRuleModalOpen.value = true;
+};
+
+const closeRuleModal = () => {
+    isRuleModalOpen.value = false;
+    editingRule.value = null;
+    ruleForm.clearErrors();
+};
+
+const submitRule = () => {
+    if (editingRule.value) {
+        ruleForm.put(route('settings.payroll.rules.update', editingRule.value.id), { onSuccess: closeRuleModal, preserveScroll: true });
+    } else {
+        ruleForm.post(route('settings.payroll.rules.store'), { onSuccess: closeRuleModal, preserveScroll: true });
+    }
+};
+
+const deleteRule = (rule) => {
+    if (confirm('Удалить эту персональную ставку?')) {
+        useForm({}).delete(route('settings.payroll.rules.destroy', rule.id), { preserveScroll: true });
+    }
+};
+
+const ruleTargetLabel = (rule) => {
+    if (rule.is_default_for_unlisted) return 'По умолчанию (вне справочника)';
+    if (rule.service) return `Услуга: ${getLocalizedLabel(rule.service.name)}`;
+    if (rule.service_category) return `Категория: ${getLocalizedLabel(rule.service_category.name)}`;
+    return '—';
+};
+
+const ruleValueLabel = (rule) => {
+    return rule.type === 'fixed'
+        ? `${(rule.fixed_amount / 100).toLocaleString('ru-RU')} ₽`
+        : `${rule.percentage_value}%`;
+};
+
+// --- НАЧИСЛЕНИЯ И ВЫПЛАТЫ (Фаза 10.3) ---
+const isAccrualModalOpen = ref(false);
+const accrualForm = useForm({
+    employee_id: props.employee.id,
+    type: 'accrual',
+    amount: '',
+    comment: '',
+});
+
+const openAccrualModal = (type) => {
+    accrualForm.reset();
+    accrualForm.employee_id = props.employee.id;
+    accrualForm.type = type;
+    isAccrualModalOpen.value = true;
+};
+
+const closeAccrualModal = () => {
+    isAccrualModalOpen.value = false;
+    accrualForm.clearErrors();
+};
+
+const submitAccrual = () => {
+    accrualForm.post(route('hr.payroll.store'), { onSuccess: closeAccrualModal, preserveScroll: true });
+};
+
+const isPayoutFormOpen = ref(false);
+const payoutTarget = ref(null);
+const payoutForm = useForm({ account_id: '' });
+
+const openPayoutForm = (entry) => {
+    payoutTarget.value = entry;
+    payoutForm.reset();
+    isPayoutFormOpen.value = true;
+};
+
+const closePayoutForm = () => {
+    isPayoutFormOpen.value = false;
+    payoutTarget.value = null;
+    payoutForm.clearErrors();
+};
+
+const submitPayout = () => {
+    payoutForm.post(route('hr.payroll.payout', payoutTarget.value.id), { onSuccess: closePayoutForm, preserveScroll: true });
+};
+
+const cancelPayrollEntry = (entry) => {
+    if (confirm('Отменить эту запись?')) {
+        useForm({}).delete(route('hr.payroll.cancel', entry.id), { preserveScroll: true });
+    }
+};
+
+const payrollRoleLabels = {
+    admin: 'Администратор (заказ)',
+    worker: 'Исполнитель (заказ)',
+    salary: 'Оклад',
+    manual: 'Вручную',
+};
+
+const payrollStatusClasses = {
+    pending: 'bg-warning/10 text-warning',
+    paid: 'bg-success/10 text-success',
+    canceled: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+};
+
+const payrollStatusLabels = {
+    pending: 'Ожидает',
+    paid: 'Выплачено',
+    canceled: 'Отменено',
+};
+
+const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 </script>
 
 <template>
@@ -161,7 +320,7 @@ const submit = () => {
                     <span class="text-gray-400">/</span>
                     <span class="font-semibold text-gray-800 dark:text-gray-200">{{ employee.last_name }} {{ employee.first_name }} {{ employee.middle_name || '' }}</span>
                 </div>
-                <button @click="openModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                <button @click="openModal()" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
                     <i class="ri-pencil-line mr-1.5"></i> Редактировать
                 </button>
             </div>
@@ -291,6 +450,68 @@ const submit = () => {
 
             <!-- Правая колонка: Связи (Associations / Scopes) -->
             <CollapsiblePanel storage-key="show-card-right" side="right">
+                <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Зарплата</h3>
+                        <button @click="openModal('payroll')" class="text-primary hover:text-primary-600 transition-colors" title="Настроить"><i class="ri-settings-3-line"></i></button>
+                    </div>
+                    <div class="p-6 space-y-3">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Оклад:</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ employee.salary_amount ? formatMoney(employee.salary_amount) + ' / мес' : 'Не задан' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Совмещаемая должность:</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ employee.secondary_position ? getLocalizedLabel(employee.secondary_position.name) : '—' }}</span>
+                        </div>
+                        <div v-if="employee.type === 'self_employed'" class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Компенсация налога:</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ employee.self_employed_tax_percent !== null ? employee.self_employed_tax_percent + '%' : 'По умолчанию тенанта' }}</span>
+                        </div>
+                        <div class="pt-3 border-t border-gray-100 dark:border-gray-700/50 flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Персональных ставок по услугам:</span>
+                            <span class="font-bold text-primary">{{ personalPayrollRules.length }}</span>
+                        </div>
+                        <button @click="openModal('payroll')" class="w-full mt-2 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white">
+                            <i class="ri-money-dollar-circle-line mr-1.5"></i> Настроить зарплату
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Начисления и выплаты (Фаза 10.3) -->
+                <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Начисления и выплаты</h3>
+                        <div class="flex gap-1.5">
+                            <button @click="openAccrualModal('accrual')" title="Начислить премию" class="text-success hover:text-success-600 transition-colors"><i class="ri-add-circle-line text-lg"></i></button>
+                            <button @click="openAccrualModal('deduction')" title="Оформить штраф" class="text-danger hover:text-danger-600 transition-colors"><i class="ri-subtract-line text-lg"></i></button>
+                        </div>
+                    </div>
+                    <div class="divide-y divide-gray-100 dark:divide-gray-700/50 max-h-96 overflow-y-auto custom-scrollbar">
+                        <div v-for="entry in payrollEntries" :key="entry.id" class="p-4">
+                            <div class="flex justify-between items-start gap-2">
+                                <div>
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span :class="[entry.type === 'deduction' ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success', 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase']">{{ entry.type === 'deduction' ? 'Штраф' : 'Начисление' }}</span>
+                                        <span class="text-xs text-gray-400">{{ payrollRoleLabels[entry.role] || entry.role }}</span>
+                                    </div>
+                                    <p v-if="entry.comment" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ entry.comment }}</p>
+                                    <p class="text-[11px] text-gray-400 mt-1">{{ formatDate(entry.created_at) }}</p>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <div :class="entry.type === 'deduction' ? 'text-danger' : 'text-gray-800 dark:text-gray-200'" class="text-sm font-bold">{{ entry.type === 'deduction' ? '−' : '' }}{{ formatMoney(entry.amount) }}</div>
+                                    <span :class="[payrollStatusClasses[entry.status], 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mt-1']">{{ payrollStatusLabels[entry.status] }}</span>
+                                </div>
+                            </div>
+                            <div v-if="entry.status === 'pending'" class="flex gap-2 mt-2">
+                                <button v-if="entry.type === 'accrual'" @click="openPayoutForm(entry)" class="text-xs font-medium text-primary hover:underline">Выплатить</button>
+                                <button @click="cancelPayrollEntry(entry)" class="text-xs font-medium text-gray-400 hover:text-danger">Отменить</button>
+                            </div>
+                        </div>
+                        <div v-if="payrollEntries.length === 0" class="p-6 text-center text-sm text-gray-400">Начислений пока нет.</div>
+                    </div>
+                </div>
+
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
                         <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Системный доступ</h3>
@@ -743,14 +964,78 @@ const submit = () => {
                     </div>
 
                     <!-- Вкладка 6: Зарплата -->
-                    <div v-show="activeTab === 'payroll'" class="p-6 flex flex-col items-center justify-center text-center py-16">
-                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                            <i class="ri-money-dollar-circle-line text-3xl text-gray-400 dark:text-gray-500"></i>
+                    <div v-show="activeTab === 'payroll'" class="p-6 space-y-5">
+                        <div class="bg-info/10 border border-info/20 rounded-md p-4 flex gap-3 items-start text-sm text-gray-600 dark:text-gray-400">
+                            <i class="ri-information-fill text-info text-xl shrink-0 mt-0.5"></i>
+                            <div>
+                                Персональные ставки ниже переопределяют
+                                <a :href="route('settings.payroll.index')" target="_blank" class="text-primary hover:underline">общие ставки должности (Настройки → Зарплата)</a>
+                                только для этого сотрудника. Разово изменить сумму/% на конкретной услуге можно прямо в заказ-наряде, кликнув на позицию.
+                            </div>
                         </div>
-                        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">Настройки мотивации</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md">
-                            Вкладка зарезервирована для модуля расчета заработной платы (оклады, проценты от услуг, KPI). Данный функционал будет доступен в следующих обновлениях.
-                        </p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Совмещаемая должность</label>
+                                <select v-model="form.secondary_position_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                    <option value="">Не совмещает</option>
+                                    <option v-for="position in positions" :key="position.id" :value="position.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(position.name) }}</option>
+                                </select>
+                                <p class="text-xs text-gray-400 mt-1">Если сотрудник назначен исполнителем на услугу не по основной должности (например, администратор сам оклеил авто), ЗП за эту работу считается по ставке совмещаемой должности.</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Оклад</label>
+                                <div class="flex items-center gap-2">
+                                    <input v-model="form.salary_amount" type="number" step="0.01" min="0" placeholder="Не задан" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                    <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">₽ / мес</span>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-1">Фиксированная периодическая выплата, независимо от заказов. Можно сочетать с % от услуг ниже.</p>
+                            </div>
+                        </div>
+
+                        <div v-if="form.type === 'self_employed'" class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Личная ставка компенсации налога</label>
+                            <div class="flex items-center gap-2 max-w-xs">
+                                <input v-model="form.self_employed_tax_percent" type="number" step="0.01" min="0" max="100" placeholder="По умолчанию тенанта" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">%</span>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">Пусто — берётся общая ставка из Настройки → Зарплата.</p>
+                        </div>
+
+                        <div class="pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">Персональные ставки по услугам</h4>
+                                <button type="button" @click="openRuleModal()" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white gap-1.5">
+                                    <i class="ri-add-line"></i> Добавить ставку
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-md">
+                                <table class="min-w-full text-left">
+                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                                        <tr>
+                                            <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Применяется к</th>
+                                            <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Филиал</th>
+                                            <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Ставка</th>
+                                            <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Действия</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                        <tr v-for="rule in personalPayrollRules" :key="rule.id">
+                                            <td class="py-2.5 px-4 text-sm text-gray-700 dark:text-gray-300">{{ ruleTargetLabel(rule) }}</td>
+                                            <td class="py-2.5 px-4 text-sm text-gray-500 dark:text-gray-400">{{ rule.branch ? rule.branch.name : 'Все филиалы' }}</td>
+                                            <td class="py-2.5 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ ruleValueLabel(rule) }}</td>
+                                            <td class="py-2.5 px-4 text-right space-x-1.5">
+                                                <button type="button" @click="openRuleModal(rule)" class="inline-flex items-center justify-center rounded px-2 py-1 text-xs bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"><i class="ri-pencil-line"></i></button>
+                                                <button type="button" @click="deleteRule(rule)" class="inline-flex items-center justify-center rounded px-2 py-1 text-xs bg-danger/10 text-danger hover:bg-danger hover:text-white transition-colors"><i class="ri-delete-bin-line"></i></button>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="personalPayrollRules.length === 0">
+                                            <td colspan="4" class="py-6 px-4 text-center text-sm text-gray-400">Персональных ставок нет — действует общая ставка должности.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
@@ -760,6 +1045,164 @@ const submit = () => {
                         <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
                             Сохранить
                         </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Модалка добавления/редактирования персональной ставки ЗП -->
+        <div v-if="isRuleModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-xl my-8 mx-auto flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingRule ? 'Редактирование ставки' : 'Новая персональная ставка' }}</h3>
+                    <button @click="closeRuleModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                </div>
+
+                <form @submit.prevent="submitRule" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div v-if="ruleForm.errors.target || ruleForm.errors.type" class="p-3 rounded-md bg-danger/10 border border-danger/20 text-sm text-danger flex gap-2">
+                            <i class="ri-error-warning-line shrink-0 mt-0.5"></i>
+                            <span>{{ ruleForm.errors.target || ruleForm.errors.type }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Применяется к</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <label :class="[ruleForm.target === 'category' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" v-model="ruleForm.target" value="category" class="sr-only" /> <span class="w-full">Группа услуг</span>
+                                </label>
+                                <label :class="[ruleForm.target === 'service' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" v-model="ruleForm.target" value="service" class="sr-only" /> <span class="w-full">Конкретная услуга</span>
+                                </label>
+                                <label :class="[ruleForm.target === 'default' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" v-model="ruleForm.target" value="default" class="sr-only" /> <span class="w-full">По умолчанию</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div v-if="ruleForm.target === 'category'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа услуг <span class="text-danger">*</span></label>
+                            <select v-model="ruleForm.service_category_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled>Выберите группу</option>
+                                <option v-for="c in serviceCategories" :key="c.id" :value="c.id">{{ getLocalizedLabel(c.name) }}</option>
+                            </select>
+                        </div>
+
+                        <template v-if="ruleForm.target === 'service'">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Фильтр по группе (необязательно)</label>
+                                <select v-model="ruleForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="">Все группы</option>
+                                    <option v-for="c in serviceCategories" :key="c.id" :value="c.id">{{ getLocalizedLabel(c.name) }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Услуга <span class="text-danger">*</span></label>
+                                <select v-model="ruleForm.service_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" disabled>Выберите услугу</option>
+                                    <option v-for="s in filteredServices" :key="s.id" :value="s.id">{{ getLocalizedLabel(s.name) }}</option>
+                                </select>
+                            </div>
+                        </template>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал</label>
+                            <select v-model="ruleForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="">Все филиалы</option>
+                                <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип ставки <span class="text-danger">*</span></label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label :class="[ruleForm.type === 'percentage' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" v-model="ruleForm.type" value="percentage" class="sr-only" /> <span class="w-full">% от базы</span>
+                                </label>
+                                <label :class="[ruleForm.type === 'fixed' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" v-model="ruleForm.type" value="fixed" class="sr-only" /> <span class="w-full">Фикс. сумма</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div v-if="ruleForm.type === 'percentage'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Процент <span class="text-danger">*</span></label>
+                            <div class="flex items-center gap-2 max-w-xs">
+                                <input v-model="ruleForm.percentage_value" type="number" step="0.01" min="0" max="100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">%</span>
+                            </div>
+                        </div>
+                        <div v-else>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма за услугу <span class="text-danger">*</span></label>
+                            <div class="flex items-center gap-2 max-w-xs">
+                                <input v-model="ruleForm.fixed_amount" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">₽</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeRuleModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="ruleForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Модалка ручного начисления/штрафа -->
+        <div v-if="isAccrualModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ accrualForm.type === 'deduction' ? 'Оформить штраф' : 'Начислить премию' }}</h3>
+                    <button @click="closeAccrualModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitAccrual" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма <span class="text-danger">*</span></label>
+                            <div class="flex items-center gap-2">
+                                <input v-model="accrualForm.amount" type="number" step="0.01" min="0.01" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">₽</span>
+                            </div>
+                            <p v-if="accrualForm.errors.amount" class="text-xs text-danger mt-1">{{ accrualForm.errors.amount }}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Комментарий</label>
+                            <textarea v-model="accrualForm.comment" rows="2" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"></textarea>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeAccrualModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="accrualForm.processing" :class="accrualForm.type === 'deduction' ? 'bg-danger hover:bg-danger-600' : 'bg-success hover:bg-success-600'" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 text-white disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Модалка выплаты -->
+        <div v-if="isPayoutFormOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Выплата</h3>
+                    <button @click="closePayoutForm()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitPayout" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div class="p-3 rounded-md bg-gray-50 dark:bg-gray-800/50 flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">{{ payoutTarget ? (payrollRoleLabels[payoutTarget.role] || payoutTarget.role) : '' }}</span>
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ payoutTarget ? formatMoney(payoutTarget.amount) : '' }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Счёт <span class="text-danger">*</span></label>
+                            <select v-model="payoutForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled>Выберите счёт</option>
+                                <option v-for="acc in payoutAccounts" :key="acc.id" :value="acc.id">{{ acc.name }}</option>
+                            </select>
+                            <p v-if="payoutForm.errors.account_id" class="text-xs text-danger mt-1">{{ payoutForm.errors.account_id }}</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closePayoutForm()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="payoutForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-success text-white hover:bg-success-600 disabled:opacity-50">Провести выплату</button>
                     </div>
                 </form>
             </div>

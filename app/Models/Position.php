@@ -10,7 +10,7 @@ class Position extends Model
 {
     use SoftDeletes, HasTranslations;
 
-    protected $fillable = ['name', 'is_active'];
+    protected $fillable = ['name', 'is_active', 'payroll_role'];
     public array $translatable = ['name'];
 
     protected function casts(): array

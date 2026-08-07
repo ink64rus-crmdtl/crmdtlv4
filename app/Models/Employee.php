@@ -13,10 +13,11 @@ class Employee extends Model
     use SoftDeletes, HasActivityLog;
 
     protected $fillable = [
-        'user_id', 'branch_id', 'position_id', 'type', 
+        'user_id', 'branch_id', 'position_id', 'type',
         'first_name', 'last_name', 'middle_name', 'phone', 'personal_email',
         'birth_date', 'hire_date', 'termination_date', 'passport_data',
-        'is_active', 'calendar_color'
+        'is_active', 'calendar_color',
+        'secondary_position_id', 'salary_amount', 'self_employed_tax_percent',
     ];
 
     protected function casts(): array
@@ -27,6 +28,8 @@ class Employee extends Model
             'hire_date' => 'date',
             'termination_date' => 'date',
             'passport_data' => 'array',
+            'salary_amount' => 'integer',
+            'self_employed_tax_percent' => 'decimal:2',
         ];
     }
 
@@ -48,5 +51,10 @@ class Employee extends Model
     public function position(): BelongsTo
     {
         return $this->belongsTo(Position::class);
+    }
+
+    public function secondaryPosition(): BelongsTo
+    {
+        return $this->belongsTo(Position::class, 'secondary_position_id');
     }
 }

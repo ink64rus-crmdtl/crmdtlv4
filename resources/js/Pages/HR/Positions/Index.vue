@@ -19,6 +19,7 @@ const editingPosition = ref(null);
 const form = useForm({
     name: '',
     is_active: true,
+    payroll_role: 'worker',
 });
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
@@ -91,9 +92,11 @@ const openModal = (position = null) => {
     if (position) {
         form.name = getLocalizedLabel(position.name);
         form.is_active = Boolean(position.is_active);
+        form.payroll_role = position.payroll_role || 'worker';
     } else {
         form.reset();
         form.is_active = true;
+        form.payroll_role = 'worker';
     }
     isModalOpen.value = true;
 };
@@ -180,6 +183,7 @@ const deletePosition = (position) => {
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Роль в расчёте ЗП</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
@@ -194,6 +198,16 @@ const deletePosition = (position) => {
                                         <i class="ri-medal-line text-primary"></i>
                                         {{ getLocalizedLabel(position.name) }}
                                     </div>
+                                </td>
+                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
+                                    <span
+                                        :class="[
+                                            position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+                                            'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
+                                        ]"
+                                    >
+                                        {{ position.payroll_role === 'admin' ? 'Администратор' : 'Исполнитель' }}
+                                    </span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span
@@ -223,7 +237,7 @@ const deletePosition = (position) => {
                                 </td>
                             </tr>
                             <tr v-if="positions.data.length === 0">
-                                <td colspan="4" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Должности еще не добавлены. Нажмите "Добавить должность".
                                 </td>
                             </tr>
@@ -258,6 +272,18 @@ const deletePosition = (position) => {
                                 placeholder="Например: Менеджер по работе с клиентами" 
                                 class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
                             />
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль в расчёте ЗП <span class="text-danger">*</span></label>
+                            <select v-model="form.payroll_role" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                <option value="worker">Исполнитель — ЗП считается с базы услуги (доля бригады)</option>
+                                <option value="admin">Администратор — ЗП считается % от чека, начисляется по каждой услуге заказа</option>
+                            </select>
+                            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                Определяет, по какой формуле считается зарплата сотрудников с этой должностью. Сами ставки (% или фикс. сумма) настраиваются в
+                                <a :href="route('settings.payroll.index')" class="text-primary hover:underline">Настройки → Зарплата</a>.
+                            </p>
                         </div>
 
                         <!-- Toggle Switch (Attex Style) -->

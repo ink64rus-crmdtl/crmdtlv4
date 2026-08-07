@@ -39,11 +39,13 @@ class PositionController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'is_active' => ['boolean'],
+            'payroll_role' => ['required', 'string', 'in:admin,worker'],
         ]);
 
         Position::create([
             'name' => [app()->getLocale() => $validated['name']],
             'is_active' => $validated['is_active'] ?? true,
+            'payroll_role' => $validated['payroll_role'],
         ]);
 
         return redirect()->back()->with('success', 'Должность успешно создана');
@@ -54,6 +56,7 @@ class PositionController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'is_active' => ['boolean'],
+            'payroll_role' => ['required', 'string', 'in:admin,worker'],
         ]);
 
         $name = $position->getTranslations('name');
@@ -62,6 +65,7 @@ class PositionController extends Controller
         $position->update([
             'name' => $name,
             'is_active' => $validated['is_active'] ?? true,
+            'payroll_role' => $validated['payroll_role'],
         ]);
 
         return redirect()->back()->with('success', 'Должность обновлена');

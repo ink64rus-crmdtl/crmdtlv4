@@ -35,6 +35,8 @@ use App\Http\Controllers\Tenant\TransactionCategoryController;
 use App\Http\Controllers\Tenant\TransactionController;
 use App\Http\Controllers\Tenant\AccountSnapshotController;
 use App\Http\Controllers\Tenant\PeriodClosureController;
+use App\Http\Controllers\Tenant\PayrollSettingsController;
+use App\Http\Controllers\Tenant\PayrollController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -167,6 +169,13 @@ Route::middleware([
         Route::get('/settings/crm', [CrmSettingsController::class, 'index'])->name('settings.crm.index');
         Route::post('/settings/crm', [CrmSettingsController::class, 'store'])->name('settings.crm.store');
 
+        // Настройки: Зарплата (Фаза 10.1)
+        Route::get('/settings/payroll', [PayrollSettingsController::class, 'index'])->name('settings.payroll.index');
+        Route::post('/settings/payroll/general', [PayrollSettingsController::class, 'storeGeneral'])->name('settings.payroll.general.store');
+        Route::post('/settings/payroll/rules', [PayrollSettingsController::class, 'storeRule'])->name('settings.payroll.rules.store');
+        Route::put('/settings/payroll/rules/{rule}', [PayrollSettingsController::class, 'updateRule'])->name('settings.payroll.rules.update');
+        Route::delete('/settings/payroll/rules/{rule}', [PayrollSettingsController::class, 'destroyRule'])->name('settings.payroll.rules.destroy');
+
         // HR: Должности
         Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');
         Route::post('/hr/positions', [PositionController::class, 'store'])->name('hr.positions.store');
@@ -184,6 +193,11 @@ Route::middleware([
         Route::post('/hr/employees/{employee}/comment', [EmployeeController::class, 'addComment'])->name('hr.employees.comment');
         Route::post('/hr/employees/bulk-delete', [EmployeeController::class, 'bulkDestroy'])->name('hr.employees.bulk-destroy');
         Route::post('/hr/employees/bulk-export', [EmployeeController::class, 'bulkExport'])->name('hr.employees.bulk-export');
+
+        // HR: Начисления/выплаты ЗП (Фаза 10.3)
+        Route::post('/hr/payroll', [PayrollController::class, 'store'])->name('hr.payroll.store');
+        Route::post('/hr/payroll/{payroll}/payout', [PayrollController::class, 'payout'])->name('hr.payroll.payout');
+        Route::delete('/hr/payroll/{payroll}', [PayrollController::class, 'cancel'])->name('hr.payroll.cancel');
 
         // CRM: Клиенты
         Route::get('/crm/clients', [ClientController::class, 'index'])->name('crm.clients.index');
@@ -226,6 +240,9 @@ Route::middleware([
         Route::post('/operations/work-orders/{workOrder}/complete', [WorkOrderController::class, 'completeOrder'])->name('operations.work-orders.complete');
         Route::patch('/operations/work-orders/{workOrder}/status', [WorkOrderController::class, 'updateStatus'])->name('operations.work-orders.status.update');
         Route::post('/operations/work-orders/{workOrder}/comment', [WorkOrderController::class, 'addComment'])->name('operations.work-orders.comment');
+        Route::patch('/operations/work-orders/{workOrder}/admin', [WorkOrderController::class, 'updateAdmin'])->name('operations.work-orders.admin.update');
+        Route::put('/operations/work-orders/{workOrder}/items/{item}/payout', [WorkOrderController::class, 'updateItemPayout'])->name('operations.work-orders.items.payout');
+        Route::get('/operations/work-orders/{workOrder}/payroll-preview', [WorkOrderController::class, 'payrollPreview'])->name('operations.work-orders.payroll-preview');
         
         // Operations: Прайс-лист услуг (Перенесено из Warehouse в Operations)
         Route::get('/operations/services', [ServiceController::class, 'index'])->name('operations.services.index');

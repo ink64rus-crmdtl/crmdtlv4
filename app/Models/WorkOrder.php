@@ -25,6 +25,9 @@ class WorkOrder extends Model
         'discount_amount',
         'final_amount',
         'currency_id',
+        'created_by',
+        'default_admin_employee_id',
+        'admin_assignment_mode',
     ];
 
     protected function casts(): array
@@ -56,6 +59,16 @@ class WorkOrder extends Model
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function defaultAdminEmployee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'default_admin_employee_id');
     }
 
     public function items(): HasMany

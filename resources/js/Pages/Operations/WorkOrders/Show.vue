@@ -6,9 +6,11 @@ import Modal from '@/Components/Modal.vue';
 import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
+import WorkOrderItemPayoutModal from '@/Components/WorkOrderItemPayoutModal.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
+import axios from 'axios';
 
 const props = defineProps({
     workOrder: Object,
@@ -49,6 +51,39 @@ const openAppointment = (appointmentId) => {
     router.visit(route('operations.appointments.index', { appointment: appointmentId }));
 };
 const activeMainTab = ref('items'); // 'items', 'comments', 'history'
+
+// --- ЗАРПЛАТА (Фаза 10.1): администратор заказа + распределение выплат по позиции ---
+const adminEligibleEmployees = computed(() => props.employees.filter(e => e.position?.payroll_role === 'admin'));
+
+const updateOrderAdmin = (employeeId) => {
+    router.patch(route('operations.work-orders.admin.update', props.workOrder.id), {
+        employee_id: employeeId || null,
+    }, { preserveScroll: true });
+};
+
+const payrollPreview = ref(null);
+const payrollPreviewLoading = ref(false);
+
+const openPayrollTab = () => {
+    activeMainTab.value = 'payroll';
+    payrollPreviewLoading.value = true;
+    axios.get(route('operations.work-orders.payroll-preview', props.workOrder.id))
+        .then(res => { payrollPreview.value = res.data; })
+        .finally(() => { payrollPreviewLoading.value = false; });
+};
+
+const isPayoutModalOpen = ref(false);
+const payoutItem = ref(null);
+
+const openPayoutModal = (item) => {
+    payoutItem.value = item;
+    isPayoutModalOpen.value = true;
+};
+
+const closePayoutModal = () => {
+    isPayoutModalOpen.value = false;
+    payoutItem.value = null;
+};
 
 const statusColorClasses = {
     info: 'bg-info/10 text-info',
@@ -739,6 +774,9 @@ const formatMoney = (amount) => {
                         <button @click="activeMainTab = 'history'" :class="[activeMainTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-history-line"></i> История
                         </button>
+                        <button @click="openPayrollTab" :class="[activeMainTab === 'payroll' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-money-dollar-circle-line"></i> Зарплата
+                        </button>
                     </div>
 
                     <div v-if="activeMainTab === 'items'" class="flex-1 flex flex-col">
@@ -824,8 +862,9 @@ const formatMoney = (amount) => {
                                                 <span v-else class="text-gray-400">—</span>
                                             </td>
                                             <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.total) }}</td>
-                                            <td class="py-3 px-6 text-sm text-right">
-                                                <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line"></i></button>
+                                            <td class="py-3 px-6 text-sm text-right whitespace-nowrap">
+                                                <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-money-dollar-circle-line text-lg"></i></button>
+                                                <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                             </td>
                                         </tr>
                                     </template>
@@ -862,6 +901,61 @@ const formatMoney = (amount) => {
                     <div v-if="activeMainTab === 'history'" class="flex-1 flex flex-col min-h-0">
                         <ActivityTimeline :activities="activities" />
                     </div>
+
+                    <div v-if="activeMainTab === 'payroll'" class="flex-1 flex flex-col min-h-0">
+                        <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-info/5">
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                <i class="ri-information-line text-info"></i>
+                                Предварительный расчёт по текущим ставкам и составу бригады — пересчитывается каждый раз при открытии вкладки. Итоговое начисление создаётся при переводе заказа в статус «Завершён» и может отличаться, если до этого момента изменится состав исполнителей, цены или ставки.
+                            </p>
+                        </div>
+
+                        <div v-if="payrollPreviewLoading" class="flex-1 flex items-center justify-center text-sm text-gray-400 py-12">
+                            <i class="ri-loader-4-line animate-spin mr-2"></i> Считаем...
+                        </div>
+
+                        <div v-else-if="payrollPreview" class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-5">
+                            <div v-if="payrollPreview.items.length === 0" class="text-center text-sm text-gray-400 py-8">
+                                В заказе нет услуг с назначенными исполнителями/администратором.
+                            </div>
+
+                            <div v-for="item in payrollPreview.items" :key="item.item_id" class="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+                                <div class="px-4 py-2.5 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+                                    <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ item.item_name }}</h4>
+                                </div>
+                                <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                    <div v-if="item.admin" class="flex justify-between items-center px-4 py-2.5 bg-primary/5">
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-primary/10 text-primary">Админ</span>
+                                            <span class="text-gray-700 dark:text-gray-300">{{ item.admin.name }}</span>
+                                        </div>
+                                        <span class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(item.admin.amount) }}</span>
+                                    </div>
+                                    <div v-for="w in item.workers" :key="w.employee_id" class="flex justify-between items-center px-4 py-2.5">
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <span v-if="w.type === 'outsource'" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Аутсорс</span>
+                                            <span v-else-if="w.type === 'self_employed'" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Самозанятый</span>
+                                            <span v-else class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-success/10 text-success">Исполнитель</span>
+                                            <span class="text-gray-700 dark:text-gray-300">{{ w.name }}</span>
+                                        </div>
+                                        <span class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(w.amount) }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="payrollPreview.skipped.length > 0" class="p-4 rounded-md bg-warning/10 border border-warning/20 text-sm text-gray-700 dark:text-gray-300">
+                                <p class="font-bold text-warning flex items-center gap-1.5 mb-1.5"><i class="ri-error-warning-line"></i> Не рассчитано (нет настроенной ставки):</p>
+                                <ul class="list-disc list-inside space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                    <li v-for="(reason, idx) in payrollPreview.skipped" :key="idx">{{ reason }}</li>
+                                </ul>
+                            </div>
+
+                            <div v-if="payrollPreview.items.length > 0" class="pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                                <span class="font-bold text-gray-800 dark:text-gray-200">Итого к начислению:</span>
+                                <span class="text-lg font-bold text-primary">{{ formatMoney(payrollPreview.total) }}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -894,6 +988,23 @@ const formatMoney = (amount) => {
                                 <i class="ri-link"></i> Привязать к этому заказу
                             </button>
                         </template>
+                    </div>
+                </div>
+
+                <!-- Администратор заказа (Фаза 10.1): по умолчанию — для расчёта ЗП по каждой позиции; переопределяется на уровне отдельной услуги через модалку выплат -->
+                <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Администратор заказа</h3>
+                        <span :class="[workOrder.admin_assignment_mode === 'auto' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' : 'bg-primary/10 text-primary', 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase']">
+                            {{ workOrder.admin_assignment_mode === 'auto' ? 'Авто' : 'Вручную' }}
+                        </span>
+                    </div>
+                    <div class="p-6 space-y-3">
+                        <select :value="workOrder.default_admin_employee_id || ''" @change="updateOrderAdmin($event.target.value)" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="">Не назначен</option>
+                            <option v-for="e in adminEligibleEmployees" :key="e.id" :value="e.id">{{ e.last_name }} {{ e.first_name }}</option>
+                        </select>
+                        <p class="text-xs text-gray-400">ЗП администратора считается по каждой услуге заказа. Для отдельной услуги можно назначить другого администратора или убрать его — клик на позицию в таблице услуг.</p>
                     </div>
                 </div>
 
@@ -1127,7 +1238,8 @@ const formatMoney = (amount) => {
                                         />
                                         <span class="text-gray-400">=</span>
                                         <span class="text-sm font-bold text-primary w-20 text-right">{{ formatMoney(item.total) }}</span>
-                                        <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-base"></i></button>
+                                        <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-money-dollar-circle-line text-lg"></i></button>
+                                        <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-lg"></i></button>
                                     </div>
                                 </div>
 
@@ -1610,6 +1722,14 @@ const formatMoney = (amount) => {
                 </div>
             </div>
         </Teleport>
+
+        <WorkOrderItemPayoutModal
+            :show="isPayoutModalOpen"
+            :item="payoutItem"
+            :work-order="workOrder"
+            :employees="employees"
+            @close="closePayoutModal"
+        />
 
     </AuthenticatedLayout>
 </template>

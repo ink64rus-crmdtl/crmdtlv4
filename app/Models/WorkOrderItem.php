@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class WorkOrderItem extends Model
@@ -21,6 +22,9 @@ class WorkOrderItem extends Model
         'total',
         'currency_id',
         'sort_order',
+        'admin_override',
+        'admin_employee_id',
+        'linked_item_id',
     ];
 
     protected function casts(): array
@@ -53,6 +57,30 @@ class WorkOrderItem extends Model
 
     public function employees(): BelongsToMany
     {
-        return $this->belongsToMany(Employee::class, 'work_order_item_employees')->withTimestamps();
+        return $this->belongsToMany(Employee::class, 'work_order_item_employees')
+            ->withTimestamps()
+            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override']);
+    }
+
+    public function adminEmployee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'admin_employee_id');
+    }
+
+    /**
+     * Позиция-услуга, к которой привязана эта позиция-материал (для вычета
+     * стоимости материалов из базы расчёта ЗП именно этой услуги).
+     */
+    public function linkedItem(): BelongsTo
+    {
+        return $this->belongsTo(WorkOrderItem::class, 'linked_item_id');
+    }
+
+    /**
+     * Обратная связь: материалы, привязанные к этой позиции-услуге.
+     */
+    public function materials(): HasMany
+    {
+        return $this->hasMany(WorkOrderItem::class, 'linked_item_id');
     }
 }

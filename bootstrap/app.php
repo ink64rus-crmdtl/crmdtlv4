@@ -28,6 +28,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('tenants:run snapshots:accounts')
             ->hourly()
             ->withoutOverlapping();
+
+        // Начисление оклада (Фаза 10.3) — тот же принцип: ежечасно, команда сама
+        // решает, у какого часового пояса сейчас полночь И совпадает ли сегодняшнее
+        // число с настроенным днём начисления. См. AccruePayrollSalaries.
+        $schedule->command('tenants:run payroll:accrue-salaries')
+            ->hourly()
+            ->withoutOverlapping();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

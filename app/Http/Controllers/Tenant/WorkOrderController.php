@@ -29,6 +29,8 @@ use App\Services\StockService;
 use App\Services\FinanceService;
 use App\Services\TimezoneResolver;
 use App\Services\ActivityLogger;
+use App\Services\PayrollCalculationService;
+use App\Models\Payroll;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -132,7 +134,7 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'transactions.account']);
+        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee']);
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'work_order')->where('entity_id', $workOrder->id)->get();
@@ -161,7 +163,7 @@ class WorkOrderController extends Controller
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
         $serviceCategories = ServiceCategory::where('is_active', true)->get(['id', 'name', 'business_direction_id']);
         $productCategories = ProductCategory::where('is_active', true)->get(['id', 'name']);
-        $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
+        $employees = Employee::where('is_active', true)->with('position:id,payroll_role')->get(['id', 'first_name', 'last_name', 'type', 'position_id']);
 
         // Фаза 9.4: связь с записью, из которой создан заказ (если создан через
         // конвертацию), либо — если заказ создан напрямую — подсказка привязать
@@ -230,6 +232,17 @@ class WorkOrderController extends Controller
         ]);
 
         DB::transaction(function () use ($validated) {
+            // Автоназначение администратора заказа: если создатель — сотрудник
+            // на должности с ролью "администратор" (payroll_role), он сразу
+            // становится default_admin_employee_id (ЗП по каждой позиции
+            // считается от него). Менеджер может переопределить вручную в
+            // любой момент — тогда admin_assignment_mode переключится на
+            // 'manual' и автоматика больше не будет перезаписывать выбор.
+            $creatorEmployee = Employee::where('user_id', auth()->id())->with('position')->first();
+            $defaultAdminEmployeeId = ($creatorEmployee && $creatorEmployee->position?->payroll_role === 'admin')
+                ? $creatorEmployee->id
+                : null;
+
             $workOrder = WorkOrder::create([
                 'branch_id' => $validated['branch_id'],
                 'client_id' => $validated['client_id'],
@@ -240,6 +253,9 @@ class WorkOrderController extends Controller
                 'total_amount' => 0,
                 'discount_amount' => 0,
                 'final_amount' => 0,
+                'created_by' => auth()->id(),
+                'default_admin_employee_id' => $defaultAdminEmployeeId,
+                'admin_assignment_mode' => 'auto',
             ]);
 
             if (!empty($validated['custom_fields'])) {
@@ -310,6 +326,121 @@ class WorkOrderController extends Controller
         ActivityLogger::log($workOrder, $validated['comment'], [], 'comment');
 
         return redirect()->back()->with('success', 'Комментарий добавлен');
+    }
+
+    /**
+     * Ручное назначение/снятие администратора заказа (Фаза 10.1). После ручного
+     * выбора admin_assignment_mode переключается на 'manual' — автоназначение
+     * по создателю заказа больше не должно перезаписывать выбор менеджера.
+     */
+    public function updateAdmin(Request $request, WorkOrder $workOrder)
+    {
+        $validated = $request->validate([
+            'employee_id' => ['nullable', 'exists:employees,id'],
+        ]);
+
+        $workOrder->update([
+            'default_admin_employee_id' => $validated['employee_id'] ?? null,
+            'admin_assignment_mode' => 'manual',
+        ]);
+
+        $adminEmployee = $validated['employee_id'] ? Employee::find($validated['employee_id']) : null;
+        $label = $adminEmployee ? trim($adminEmployee->first_name . ' ' . $adminEmployee->last_name) : null;
+
+        ActivityLogger::log($workOrder, $label ? "Администратор заказа изменён на «{$label}»" : 'Администратор заказа снят', [], 'admin_changed');
+
+        return redirect()->back()->with('success', 'Администратор заказа обновлён');
+    }
+
+    /**
+     * Распределение выплат по конкретной позиции-услуге (Фаза 10.1): кто на
+     * ней администратор (наследует от заказа / свой / отсутствует) и ручные
+     * переопределения ставки/доли для каждого уже прикреплённого исполнителя.
+     * Список самих исполнителей (кто прикреплён) правится отдельно, через
+     * updateItem() — здесь только метаданные расчёта ЗП для уже прикреплённых.
+     */
+    public function updateItemPayout(Request $request, WorkOrder $workOrder, WorkOrderItem $item)
+    {
+        if ($item->work_order_id !== $workOrder->id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'admin_override' => ['required', 'string', 'in:inherit,custom,none'],
+            'admin_employee_id' => ['nullable', 'required_if:admin_override,custom', 'exists:employees,id'],
+            'assignments' => ['array'],
+            'assignments.*.employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'assignments.*.share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'assignments.*.manual_amount_override' => ['nullable', 'numeric', 'min:0'],
+            'assignments.*.manual_percent_override' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $assignments = $validated['assignments'] ?? [];
+        $totalShare = collect($assignments)->sum(fn ($a) => $a['share_percent'] ?? 0);
+        if ($totalShare > 100.001) {
+            return redirect()->back()->withErrors(['assignments' => 'Суммарный объём работ бригады превышает 100%.']);
+        }
+
+        DB::transaction(function () use ($item, $validated, $assignments) {
+            $item->update([
+                'admin_override' => $validated['admin_override'],
+                'admin_employee_id' => $validated['admin_override'] === 'custom' ? $validated['admin_employee_id'] : null,
+            ]);
+
+            foreach ($assignments as $assignment) {
+                $item->employees()->updateExistingPivot($assignment['employee_id'], [
+                    'share_percent' => $assignment['share_percent'] ?? null,
+                    'manual_amount_override' => isset($assignment['manual_amount_override']) ? (int) round($assignment['manual_amount_override'] * 100) : null,
+                    'manual_percent_override' => $assignment['manual_percent_override'] ?? null,
+                ]);
+            }
+        });
+
+        return redirect()->back()->with('success', 'Распределение выплат по позиции сохранено');
+    }
+
+    /**
+     * Предварительный расчёт ЗП для вкладки "Зарплата" — считается заново
+     * при каждом открытии вкладки (PayrollCalculationService::calculate()
+     * дешёвый и детерминированный, кэш не используется намеренно: закешированный
+     * предрасчёт мог бы разойтись с фактическим начислением при завершении
+     * заказа, если между просмотром и завершением поменяли состав бригады,
+     * цену, долю или ставку — а на реальных деньгах это недопустимо).
+     * Не Inertia-рендер, а JSON — подгружается лениво по клику на вкладку.
+     */
+    public function payrollPreview(WorkOrder $workOrder)
+    {
+        $workOrder->load(['items.employees', 'items.itemable']);
+
+        $result = PayrollCalculationService::calculate($workOrder);
+
+        $employeeIds = collect($result['rows'])->pluck('employee_id')->unique();
+        $employees = Employee::whereIn('id', $employeeIds)->get(['id', 'first_name', 'last_name', 'type'])->keyBy('id');
+        $items = $workOrder->items->keyBy('id');
+
+        $employeeInfo = fn (int $id) => [
+            'employee_id' => $id,
+            'name' => $employees->has($id) ? trim($employees[$id]->first_name . ' ' . $employees[$id]->last_name) : '—',
+            'type' => $employees[$id]->type ?? null,
+        ];
+
+        $byItem = collect($result['rows'])->groupBy('work_order_item_id')->map(function ($rows, $itemId) use ($items, $employeeInfo) {
+            $admin = $rows->firstWhere('role', 'admin');
+            $workers = $rows->where('role', 'worker')->values();
+
+            return [
+                'item_id' => (int) $itemId,
+                'item_name' => $items->get((int) $itemId)?->name,
+                'admin' => $admin ? array_merge($employeeInfo($admin['employee_id']), ['amount' => $admin['amount']]) : null,
+                'workers' => $workers->map(fn ($w) => array_merge($employeeInfo($w['employee_id']), ['amount' => $w['amount']]))->all(),
+            ];
+        })->values();
+
+        return response()->json([
+            'items' => $byItem,
+            'skipped' => $result['skipped'],
+            'total' => collect($result['rows'])->sum('amount'),
+        ]);
     }
 
     public function bulkDestroy(Request $request)
@@ -646,6 +777,35 @@ class WorkOrderController extends Controller
 
                 $workOrder->update(['status' => 'completed']);
                 ActivityLogger::log($workOrder, 'Заказ завершён, материалы списаны со склада', [], 'completed');
+
+                // Фаза 10.2: автоматическое начисление ЗП по факту завершения
+                // заказа. Не блокирует завершение, если для кого-то из
+                // назначенных не настроена ставка — такие начисления
+                // пропускаются с пояснением в "Истории", а не превращаются
+                // в блокер для менеджера, который просто хочет закрыть заказ.
+                $payroll = PayrollCalculationService::calculate($workOrder);
+
+                foreach ($payroll['rows'] as $row) {
+                    Payroll::create([
+                        'employee_id' => $row['employee_id'],
+                        'branch_id' => $workOrder->branch_id,
+                        'work_order_id' => $workOrder->id,
+                        'work_order_item_id' => $row['work_order_item_id'],
+                        'type' => 'accrual',
+                        'role' => $row['role'],
+                        'amount' => $row['amount'],
+                        'status' => 'pending',
+                        'created_by' => auth()->id(),
+                    ]);
+                }
+
+                if (!empty($payroll['rows'])) {
+                    ActivityLogger::log($workOrder, 'Начислена зарплата по ' . count($payroll['rows']) . ' позициям', [], 'payroll_accrued');
+                }
+
+                if (!empty($payroll['skipped'])) {
+                    ActivityLogger::log($workOrder, "Не начислена ЗП для части исполнителей — не настроена ставка:\n" . implode("\n", $payroll['skipped']), [], 'payroll_skipped');
+                }
             });
 
             return redirect()->back()->with('success', 'Заказ успешно завершен, материалы списаны со склада');

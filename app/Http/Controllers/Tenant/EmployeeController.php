@@ -15,6 +15,10 @@ use App\Models\Account;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
 use App\Models\ListView;
+use App\Models\PayrollRule;
+use App\Models\Payroll;
+use App\Models\Service;
+use App\Models\ServiceCategory;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
 use App\Services\ActivityLogger;
@@ -160,7 +164,7 @@ class EmployeeController extends Controller
 
     public function show(Employee $employee): Response
     {
-        $employee->load(['user.roles', 'branch', 'position']);
+        $employee->load(['user.roles', 'branch', 'position', 'secondaryPosition']);
         
         $resolvedScopes = [];
         $userScopes = [];
@@ -203,6 +207,22 @@ class EmployeeController extends Controller
         // на employee_id; появится в Фазе 10 вместе с начислениями зарплаты).
         ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($employee));
 
+        // Фаза 10.1: персональные ставки сотрудника — самый приоритетный
+        // уровень каскада (выше общей ставки должности из Settings → Зарплата).
+        $personalPayrollRules = PayrollRule::where('employee_id', $employee->id)
+            ->with(['service', 'serviceCategory', 'branch'])
+            ->orderBy('id', 'desc')
+            ->get();
+
+        // Фаза 10.3: начисления/штрафы/оклад и их выплата.
+        $payrollEntries = Payroll::where('employee_id', $employee->id)
+            ->with('transaction:id,transaction_date')
+            ->orderBy('id', 'desc')
+            ->limit(50)
+            ->get();
+
+        $payoutAccounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type']);
+
         return Inertia::render('HR/Employees/Show', [
             'employee' => $employee,
             'resolvedScopes' => $resolvedScopes,
@@ -214,6 +234,11 @@ class EmployeeController extends Controller
             'tenantCountry' => $tenantCountry,
             'activities' => $activities,
             'comments' => $comments,
+            'personalPayrollRules' => $personalPayrollRules,
+            'serviceCategories' => ServiceCategory::where('is_active', true)->get(['id', 'name']),
+            'services' => Service::where('is_active', true)->get(['id', 'name', 'service_category_id']),
+            'payrollEntries' => $payrollEntries,
+            'payoutAccounts' => $payoutAccounts,
         ]);
     }
 
@@ -238,6 +263,9 @@ class EmployeeController extends Controller
             'birth_date' => ['nullable', 'date'],
             'branch_id' => ['required', 'exists:branches,id'],
             'position_id' => ['required', 'exists:positions,id'],
+            'secondary_position_id' => ['nullable', 'different:position_id', 'exists:positions,id'],
+            'salary_amount' => ['nullable', 'numeric', 'min:0'],
+            'self_employed_tax_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'type' => ['required', 'string', 'in:staff,self_employed,outsource'],
             'hire_date' => ['nullable', 'date'],
             'termination_date' => ['nullable', 'date'],
@@ -290,6 +318,9 @@ class EmployeeController extends Controller
                 'user_id' => $userId,
                 'branch_id' => $validated['branch_id'],
                 'position_id' => $validated['position_id'],
+                'secondary_position_id' => $validated['secondary_position_id'] ?? null,
+                'salary_amount' => isset($validated['salary_amount']) ? (int) round($validated['salary_amount'] * 100) : null,
+                'self_employed_tax_percent' => $validated['self_employed_tax_percent'] ?? null,
                 'type' => $validated['type'],
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],
@@ -331,6 +362,9 @@ class EmployeeController extends Controller
             'birth_date' => ['nullable', 'date'],
             'branch_id' => ['required', 'exists:branches,id'],
             'position_id' => ['required', 'exists:positions,id'],
+            'secondary_position_id' => ['nullable', 'different:position_id', 'exists:positions,id'],
+            'salary_amount' => ['nullable', 'numeric', 'min:0'],
+            'self_employed_tax_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'type' => ['required', 'string', 'in:staff,self_employed,outsource'],
             'hire_date' => ['nullable', 'date'],
             'termination_date' => ['nullable', 'date'],
@@ -412,6 +446,9 @@ class EmployeeController extends Controller
                 'user_id' => $userId,
                 'branch_id' => $validated['branch_id'],
                 'position_id' => $validated['position_id'],
+                'secondary_position_id' => $validated['secondary_position_id'] ?? null,
+                'salary_amount' => isset($validated['salary_amount']) ? (int) round($validated['salary_amount'] * 100) : null,
+                'self_employed_tax_percent' => $validated['self_employed_tax_percent'] ?? null,
                 'type' => $validated['type'],
                 'first_name' => $validated['first_name'],
                 'last_name' => $validated['last_name'],

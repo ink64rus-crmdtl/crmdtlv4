@@ -12,8 +12,8 @@ class Payroll extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'employee_id', 'branch_id', 'work_order_id', 'type', 
-        'amount', 'currency_id', 'status', 'comment', 'created_by'
+        'employee_id', 'branch_id', 'work_order_id', 'work_order_item_id', 'type', 'role',
+        'amount', 'currency_id', 'status', 'comment', 'created_by', 'paid_transaction_id',
     ];
 
     protected function casts(): array
@@ -42,5 +42,15 @@ class Payroll extends Model
     public function workOrder(): BelongsTo
     {
         return $this->belongsTo(WorkOrder::class);
+    }
+
+    public function workOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(WorkOrderItem::class);
+    }
+
+    public function transaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'paid_transaction_id');
     }
 }
