@@ -304,14 +304,29 @@ onMounted(() => {
     }
 });
 
+// Календарные виды (Неделя/День-слева/День-сверху и Месяц) тянут данные не из
+// обычных Inertia-пропсов, а отдельными запросами (axios / FullCalendar events
+// callback) — поэтому обычный редирект Inertia после создания/правки/удаления
+// записи их не обновляет сам по себе, нужно дёргать явно.
+const fullCalendarRef = ref(null);
+
+const refreshCalendarViews = () => {
+    if (viewMode.value !== 'calendar') return;
+    if (calendarViewMode.value === 'month') {
+        fullCalendarRef.value?.getApi()?.refetchEvents();
+    } else {
+        fetchPostsCalendarAppointments();
+    }
+};
+
 const submit = () => {
     if (editingAppointment.value) {
         form.put(route('operations.appointments.update', editingAppointment.value.id), {
-            onSuccess: () => closeModal(),
+            onSuccess: () => { closeModal(); refreshCalendarViews(); },
         });
     } else {
         form.post(route('operations.appointments.store'), {
-            onSuccess: () => closeModal(),
+            onSuccess: () => { closeModal(); refreshCalendarViews(); },
         });
     }
 };
@@ -328,7 +343,9 @@ const deleteAppointment = (appointment) => {
         ? `Запись ${clientLabel} уже оформлена в заказ-наряд. Удалить всё равно? Связь с заказом (если он ещё существует) не удаляется — отвяжите его отдельно при необходимости.`
         : `Удалить запись ${clientLabel}?`;
     if (confirm(message)) {
-        router.delete(route('operations.appointments.destroy', appointment.id));
+        router.delete(route('operations.appointments.destroy', appointment.id), {
+            onSuccess: () => refreshCalendarViews(),
+        });
     }
 };
 
@@ -344,7 +361,9 @@ const convertAppointment = (appointment) => {
 };
 
 const changeStatus = (appointment, status) => {
-    router.patch(route('operations.appointments.status.update', appointment.id), { status });
+    router.patch(route('operations.appointments.status.update', appointment.id), { status }, {
+        onSuccess: () => refreshCalendarViews(),
+    });
 };
 
 // --- ВИД ПО УМОЛЧАНИЮ: запоминается локально в браузере (localStorage), т.к.
@@ -407,11 +426,7 @@ const rescheduleAppointment = (appointment, patch, revert = null) => {
     router.put(route('operations.appointments.update', appointment.id), payload, {
         preserveScroll: true,
         preserveState: true,
-        onSuccess: () => {
-            if (viewMode.value === 'calendar' && calendarViewMode.value !== 'month') {
-                fetchPostsCalendarAppointments();
-            }
-        },
+        onSuccess: () => refreshCalendarViews(),
         onError: (errors) => {
             if (revert) revert();
             alert(Object.values(errors).flat().join('\n') || 'Не удалось изменить время записи.');
@@ -882,7 +897,7 @@ const toggleDefaultView = () => {
                         </div>
                     </div>
 
-                    <FullCalendar v-if="calendarViewMode === 'month'" :options="calendarOptions" />
+                    <FullCalendar v-if="calendarViewMode === 'month'" ref="fullCalendarRef" :options="calendarOptions" />
                     <PostsWeekTable
                         v-else-if="calendarViewMode === 'week-posts'"
                         :posts="posts"

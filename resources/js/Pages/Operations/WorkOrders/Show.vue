@@ -35,10 +35,6 @@ const page = usePage();
 
 const isModalOpen = ref(false);
 
-// Подсказку "привязать запись" можно скрыть до конца текущего просмотра
-// страницы, не трогая ничего на сервере — она не критична, просто ускоряет ввод.
-const candidateBannerDismissed = ref(false);
-
 const linkCandidateAppointment = () => {
     if (!props.candidateAppointment) return;
     router.post(route('operations.appointments.link-work-order', props.candidateAppointment.id), {
@@ -630,18 +626,6 @@ const formatMoney = (amount) => {
             </div>
         </div>
 
-        <!-- Подсказка: у клиента есть подходящая запись в календаре, которую можно привязать к этому заказу -->
-        <div v-if="candidateAppointment && !candidateBannerDismissed" class="w-[99%] mx-auto mb-4 p-4 bg-info/10 border border-info/20 rounded-md text-sm text-gray-700 dark:text-gray-300 flex items-start gap-3">
-            <i class="ri-calendar-event-line text-xl text-info shrink-0"></i>
-            <div class="flex-1">
-                <p>У этого клиента есть запись в календаре на <strong>{{ candidateAppointment.start_at_local }}</strong>, не привязанная ни к одному заказу. Привязать её к этому заказу-наряду?</p>
-            </div>
-            <div class="flex gap-2 shrink-0">
-                <button @click="linkCandidateAppointment" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-info text-white hover:bg-info/80 transition-colors">Привязать</button>
-                <button @click="candidateBannerDismissed = true" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Не сейчас</button>
-            </div>
-        </div>
-
         <!-- TRI-STATE 2: Полная карточка (w-[99%] mx-auto для Fluid-дизайна) -->
         <div class="w-[99%] mx-auto flex flex-col lg:flex-row gap-6 font-sans text-slate-600">
             
@@ -664,14 +648,6 @@ const formatMoney = (amount) => {
                             {{ statuses[workOrder.status]?.label || workOrder.status }}
                         </span>
                     </div>
-                    <button
-                        v-if="linkedAppointment"
-                        @click="openAppointment(linkedAppointment.id)"
-                        class="mt-3 inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-primary transition-colors"
-                        title="Открыть запись, из которой создан этот заказ"
-                    >
-                        <i class="ri-calendar-check-line"></i> Создан из записи от {{ linkedAppointment.start_at_local }}
-                    </button>
                 </div>
 
                 <!-- Клиент -->
@@ -886,6 +862,35 @@ const formatMoney = (amount) => {
 
             <!-- Правая колонка: Финансы -->
             <CollapsiblePanel storage-key="show-card-right" side="right">
+
+                <!-- Запись, из которой создан заказ (или запись того же клиента, которую можно привязать) -->
+                <div v-if="linkedAppointment || candidateAppointment" class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Запись</h3>
+                        <span v-if="linkedAppointment" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-success/10 text-success">Привязана</span>
+                        <span v-else class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">Не привязана</span>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <template v-if="linkedAppointment">
+                            <p class="text-sm text-gray-600 dark:text-gray-400">Этот заказ-наряд создан из записи в календаре на <strong class="text-gray-800 dark:text-gray-200">{{ linkedAppointment.start_at_local }}</strong>.</p>
+                            <button
+                                @click="openAppointment(linkedAppointment.id)"
+                                class="w-full inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 shadow-sm"
+                            >
+                                <i class="ri-calendar-check-line"></i> Открыть запись
+                            </button>
+                        </template>
+                        <template v-else-if="candidateAppointment">
+                            <p class="text-sm text-gray-600 dark:text-gray-400">У этого клиента есть незакрытая запись в календаре на <strong class="text-gray-800 dark:text-gray-200">{{ candidateAppointment.start_at_local }}</strong>, не привязанная ни к одному заказу.</p>
+                            <button
+                                @click="linkCandidateAppointment"
+                                class="w-full inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-all duration-300 bg-info text-white hover:bg-info/80 shadow-sm"
+                            >
+                                <i class="ri-link"></i> Привязать к этому заказу
+                            </button>
+                        </template>
+                    </div>
+                </div>
 
                 <!-- Финансовый блок -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
