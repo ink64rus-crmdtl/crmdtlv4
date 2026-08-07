@@ -28,6 +28,7 @@ use App\Services\WarehouseResolver;
 use App\Services\StockService;
 use App\Services\FinanceService;
 use App\Services\TimezoneResolver;
+use App\Services\ActivityLogger;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -171,6 +172,12 @@ class WorkOrderController extends Controller
             $linkedAppointment->setAttribute('start_at_local', $linkedAppointment->start_at->copy()->setTimezone($tz)->format('d.m.Y H:i'));
         }
 
+        // Лента "История"/"Комментарии" — записывается вручную через ActivityLogger
+        // в местах, где что-то реально произошло, не автологированием диффов
+        // полей. Комментарии (event = 'comment') отдельно от системных событий —
+        // см. CLAUDE.md, п.7.
+        ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($workOrder));
+
         $candidateAppointment = null;
         if (!$linkedAppointment) {
             $now = now();
@@ -206,6 +213,8 @@ class WorkOrderController extends Controller
             'workOrderStatuses' => $this->workOrderStatuses(),
             'linkedAppointment' => $linkedAppointment,
             'candidateAppointment' => $candidateAppointment,
+            'activities' => $activities,
+            'comments' => $comments,
         ]);
     }
 
@@ -236,6 +245,8 @@ class WorkOrderController extends Controller
             if (!empty($validated['custom_fields'])) {
                 $this->saveCustomFields($workOrder, $validated['custom_fields']);
             }
+
+            ActivityLogger::log($workOrder, 'Заказ-наряд создан', [], 'created');
         });
 
         return redirect()->back()->with('success', 'Заказ-наряд успешно создан');
@@ -284,7 +295,21 @@ class WorkOrderController extends Controller
 
         $workOrder->update(['status' => $validated['status']]);
 
+        $statusLabel = Lookup::where('type', 'work_order_status')->where('value', $validated['status'])->value('label') ?? $validated['status'];
+        ActivityLogger::log($workOrder, "Статус изменён на «{$statusLabel}»", [], 'status_changed');
+
         return redirect()->back()->with('success', 'Статус обновлён');
+    }
+
+    public function addComment(Request $request, WorkOrder $workOrder)
+    {
+        $validated = $request->validate([
+            'comment' => ['required', 'string', 'max:2000'],
+        ]);
+
+        ActivityLogger::log($workOrder, $validated['comment'], [], 'comment');
+
+        return redirect()->back()->with('success', 'Комментарий добавлен');
     }
 
     public function bulkDestroy(Request $request)
@@ -395,6 +420,8 @@ class WorkOrderController extends Controller
             if (!empty($validated['employee_ids'])) {
                 $item->employees()->sync($validated['employee_ids']);
             }
+
+            ActivityLogger::log($workOrder, "Добавлена позиция «{$item->name}»", [], 'item_added');
         });
 
         $this->recalculateTotals($workOrder);
@@ -447,8 +474,10 @@ class WorkOrderController extends Controller
             abort(403);
         }
 
+        $itemName = $item->name;
         $item->delete();
         $this->recalculateTotals($workOrder);
+        ActivityLogger::log($workOrder, "Удалена позиция «{$itemName}»", [], 'item_removed');
 
         return redirect()->back()->with('success', 'Позиция удалена');
     }
@@ -502,6 +531,7 @@ class WorkOrderController extends Controller
         $workOrder->save();
 
         $this->recalculateTotals($workOrder);
+        ActivityLogger::log($workOrder, 'Скидка изменена на ' . $this->formatMoney($workOrder->discount_amount), [], 'discount_updated');
 
         return redirect()->back()->with('success', 'Скидка обновлена');
     }
@@ -572,6 +602,7 @@ class WorkOrderController extends Controller
                 }
 
                 $workOrder->syncPaymentStatus();
+                ActivityLogger::log($workOrder, 'Принята оплата ' . $this->formatMoney($amountCents) . " ({$account->name})", [], 'payment_received');
             });
 
             return redirect()->back()->with('success', 'Оплата успешно принята');
@@ -614,6 +645,7 @@ class WorkOrderController extends Controller
                 }
 
                 $workOrder->update(['status' => 'completed']);
+                ActivityLogger::log($workOrder, 'Заказ завершён, материалы списаны со склада', [], 'completed');
             });
 
             return redirect()->back()->with('success', 'Заказ успешно завершен, материалы списаны со склада');
@@ -662,6 +694,11 @@ class WorkOrderController extends Controller
             ->where('is_active', true)
             ->pluck('value')
             ->all();
+    }
+
+    private function formatMoney(int $cents): string
+    {
+        return number_format($cents / 100, 2, ',', ' ') . ' ₽';
     }
 
     private function recalculateTotals(WorkOrder $workOrder)

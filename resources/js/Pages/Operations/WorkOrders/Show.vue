@@ -5,6 +5,7 @@ import Offcanvas from '@/Components/Offcanvas.vue';
 import Modal from '@/Components/Modal.vue';
 import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
+import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
@@ -29,6 +30,8 @@ const props = defineProps({
     bonusRubPerPoint: { type: Number, default: 1 },
     linkedAppointment: { type: Object, default: () => null },
     candidateAppointment: { type: Object, default: () => null },
+    activities: { type: Array, default: () => [] },
+    comments: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -45,7 +48,7 @@ const linkCandidateAppointment = () => {
 const openAppointment = (appointmentId) => {
     router.visit(route('operations.appointments.index', { appointment: appointmentId }));
 };
-const activeMainTab = ref('items'); // 'items', 'history'
+const activeMainTab = ref('items'); // 'items', 'comments', 'history'
 
 const statusColorClasses = {
     info: 'bg-info/10 text-info',
@@ -723,17 +726,21 @@ const formatMoney = (amount) => {
             <!-- Центральная колонка: Работы и Таймлайн -->
             <div class="w-full lg:flex-1 lg:min-w-0 space-y-6">
                 
-                <!-- Вкладки (Работы / История) -->
+                <!-- Вкладки (Работы / Комментарии / История) -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col h-full min-h-[600px]">
                     <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/50">
                         <button @click="activeMainTab = 'items'" :class="[activeMainTab === 'items' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-tools-line"></i> Работы и Запчасти
                         </button>
+                        <button @click="activeMainTab = 'comments'" :class="[activeMainTab === 'comments' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-chat-3-line"></i> Комментарии
+                            <span v-if="comments.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{{ comments.length }}</span>
+                        </button>
                         <button @click="activeMainTab = 'history'" :class="[activeMainTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-history-line"></i> История
                         </button>
                     </div>
-                    
+
                     <div v-if="activeMainTab === 'items'" class="flex-1 flex flex-col">
                         <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-white dark:bg-[#313a46]">
                             <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Позиции заказа</h3>
@@ -848,14 +855,12 @@ const formatMoney = (amount) => {
                         </div>
                     </div>
 
-                    <div v-if="activeMainTab === 'history'" class="flex-1 p-6 flex flex-col items-center justify-center text-center">
-                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                            <i class="ri-history-line text-3xl text-gray-400 dark:text-gray-500"></i>
-                        </div>
-                        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">История действий</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-                            Здесь будет отображаться история изменения статусов и комментарии менеджеров (ожидает подключения пакета активности).
-                        </p>
+                    <div v-if="activeMainTab === 'comments'" class="flex-1 flex flex-col min-h-0">
+                        <ActivityTimeline :activities="comments" :comment-url="route('operations.work-orders.comment', workOrder.id)" />
+                    </div>
+
+                    <div v-if="activeMainTab === 'history'" class="flex-1 flex flex-col min-h-0">
+                        <ActivityTimeline :activities="activities" />
                     </div>
                 </div>
             </div>

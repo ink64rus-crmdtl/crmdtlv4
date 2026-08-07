@@ -17,6 +17,7 @@ use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
+use App\Services\ActivityLogger;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -198,6 +199,10 @@ class EmployeeController extends Controller
 
         $tenantCountry = config('tenant.country_code', 'RU');
 
+        // "История"/"Комментарии" — без roll-up (пока нет событий, ссылающихся
+        // на employee_id; появится в Фазе 10 вместе с начислениями зарплаты).
+        ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($employee));
+
         return Inertia::render('HR/Employees/Show', [
             'employee' => $employee,
             'resolvedScopes' => $resolvedScopes,
@@ -207,6 +212,8 @@ class EmployeeController extends Controller
             'scopes' => $scopes,
             'userScopes' => $userScopes,
             'tenantCountry' => $tenantCountry,
+            'activities' => $activities,
+            'comments' => $comments,
         ]);
     }
 
@@ -279,7 +286,7 @@ class EmployeeController extends Controller
                 $userId = $user->id;
             }
 
-            Employee::create([
+            $employee = Employee::create([
                 'user_id' => $userId,
                 'branch_id' => $validated['branch_id'],
                 'position_id' => $validated['position_id'],
@@ -296,6 +303,8 @@ class EmployeeController extends Controller
                 'is_active' => $validated['is_active'] ?? true,
                 'calendar_color' => $validated['calendar_color'] ?? null,
             ]);
+
+            ActivityLogger::log($employee, 'Сотрудник добавлен', [], 'created');
         });
 
         return redirect()->back()->with('success', 'Сотрудник успешно добавлен');
@@ -416,9 +425,22 @@ class EmployeeController extends Controller
                 'is_active' => $validated['is_active'] ?? true,
                 'calendar_color' => $validated['calendar_color'] ?? null,
             ]);
+
+            ActivityLogger::log($employee, 'Данные сотрудника обновлены', [], 'updated');
         });
 
         return redirect()->back()->with('success', 'Данные сотрудника обновлены');
+    }
+
+    public function addComment(Request $request, Employee $employee)
+    {
+        $validated = $request->validate([
+            'comment' => ['required', 'string', 'max:2000'],
+        ]);
+
+        ActivityLogger::log($employee, $validated['comment'], [], 'comment');
+
+        return redirect()->back()->with('success', 'Комментарий добавлен');
     }
 
     public function destroy(Employee $employee)

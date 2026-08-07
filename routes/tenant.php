@@ -181,6 +181,7 @@ Route::middleware([
         Route::get('/hr/employees/{employee}', [EmployeeController::class, 'show'])->name('hr.employees.show');
         Route::put('/hr/employees/{employee}', [EmployeeController::class, 'update'])->name('hr.employees.update');
         Route::delete('/hr/employees/{employee}', [EmployeeController::class, 'destroy'])->name('hr.employees.destroy');
+        Route::post('/hr/employees/{employee}/comment', [EmployeeController::class, 'addComment'])->name('hr.employees.comment');
         Route::post('/hr/employees/bulk-delete', [EmployeeController::class, 'bulkDestroy'])->name('hr.employees.bulk-destroy');
         Route::post('/hr/employees/bulk-export', [EmployeeController::class, 'bulkExport'])->name('hr.employees.bulk-export');
 
@@ -191,6 +192,7 @@ Route::middleware([
         Route::get('/crm/clients/{client}', [ClientController::class, 'show'])->name('crm.clients.show');
         Route::put('/crm/clients/{client}', [ClientController::class, 'update'])->name('crm.clients.update');
         Route::delete('/crm/clients/{client}', [ClientController::class, 'destroy'])->name('crm.clients.destroy');
+        Route::post('/crm/clients/{client}/comment', [ClientController::class, 'addComment'])->name('crm.clients.comment');
         Route::post('/crm/clients/bulk-delete', [ClientController::class, 'bulkDestroy'])->name('crm.clients.bulk-destroy');
         Route::post('/crm/clients/bulk-export', [ClientController::class, 'bulkExport'])->name('crm.clients.bulk-export');
 
@@ -200,6 +202,7 @@ Route::middleware([
         Route::get('/crm/vehicles/{vehicle}', [VehicleController::class, 'show'])->name('crm.vehicles.show');
         Route::put('/crm/vehicles/{vehicle}', [VehicleController::class, 'update'])->name('crm.vehicles.update');
         Route::delete('/crm/vehicles/{vehicle}', [VehicleController::class, 'destroy'])->name('crm.vehicles.destroy');
+        Route::post('/crm/vehicles/{vehicle}/comment', [VehicleController::class, 'addComment'])->name('crm.vehicles.comment');
         Route::post('/crm/vehicles/bulk-delete', [VehicleController::class, 'bulkDestroy'])->name('crm.vehicles.bulk-destroy');
         Route::post('/crm/vehicles/bulk-export', [VehicleController::class, 'bulkExport'])->name('crm.vehicles.bulk-export');
 
@@ -222,6 +225,7 @@ Route::middleware([
         Route::post('/operations/work-orders/{workOrder}/payment', [WorkOrderController::class, 'processPayment'])->name('operations.work-orders.payment.store');
         Route::post('/operations/work-orders/{workOrder}/complete', [WorkOrderController::class, 'completeOrder'])->name('operations.work-orders.complete');
         Route::patch('/operations/work-orders/{workOrder}/status', [WorkOrderController::class, 'updateStatus'])->name('operations.work-orders.status.update');
+        Route::post('/operations/work-orders/{workOrder}/comment', [WorkOrderController::class, 'addComment'])->name('operations.work-orders.comment');
         
         // Operations: Прайс-лист услуг (Перенесено из Warehouse в Operations)
         Route::get('/operations/services', [ServiceController::class, 'index'])->name('operations.services.index');

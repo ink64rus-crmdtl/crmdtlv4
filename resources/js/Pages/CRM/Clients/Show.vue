@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
+import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -16,7 +17,11 @@ const props = defineProps({
     customFieldDefs: Array,
     workOrders: { type: Array, default: () => [] },
     workOrderStatuses: { type: Array, default: () => [] },
+    activities: { type: Array, default: () => [] },
+    comments: { type: Array, default: () => [] },
 });
+
+const activeTimelineTab = ref('history'); // 'history', 'comments'
 
 const statusColorClasses = {
     info: 'bg-info/10 text-info',
@@ -362,19 +367,23 @@ const currentCountrySchema = computed(() => {
                     </div>
                 </div>
 
-                <!-- Таймлайн -->
+                <!-- Лента активности: История (системные события, в т.ч. связанных Записей и Заказов) / Комментарии -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col h-full min-h-[400px]">
-                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Лента активности</h3>
+                    <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/30">
+                        <button @click="activeTimelineTab = 'history'" :class="[activeTimelineTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-history-line"></i> История
+                        </button>
+                        <button @click="activeTimelineTab = 'comments'" :class="[activeTimelineTab === 'comments' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-chat-3-line"></i> Комментарии
+                            <span v-if="comments.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{{ comments.length }}</span>
+                        </button>
                     </div>
-                    <div class="flex-1 p-6 flex flex-col items-center justify-center text-center">
-                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                            <i class="ri-history-line text-3xl text-gray-400 dark:text-gray-500"></i>
-                        </div>
-                        <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">История взаимодействия</h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-sm">
-                            Здесь будет отображаться история звонков, сообщений в мессенджерах, изменения статусов и комментарии менеджеров (ожидает подключения пакета активности).
-                        </p>
+
+                    <div v-if="activeTimelineTab === 'history'" class="flex-1 flex flex-col min-h-0">
+                        <ActivityTimeline :activities="activities" />
+                    </div>
+                    <div v-if="activeTimelineTab === 'comments'" class="flex-1 flex flex-col min-h-0">
+                        <ActivityTimeline :activities="comments" :comment-url="route('crm.clients.comment', client.id)" />
                     </div>
                 </div>
             </div>

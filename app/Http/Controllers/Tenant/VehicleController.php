@@ -15,6 +15,7 @@ use App\Models\WorkOrder;
 use App\Models\Lookup;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
+use App\Services\ActivityLogger;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -167,6 +168,10 @@ class VehicleController extends Controller
 
         $workOrderStatuses = Lookup::where('type', 'work_order_status')->orderBy('sort_order')->get(['value', 'label', 'color']);
 
+        // "История"/"Комментарии" с roll-up событий связанных Записей и
+        // Заказ-нарядов по vehicle_id (см. App\Services\ActivityLogger).
+        ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($vehicle, 'vehicle_id'));
+
         return Inertia::render('CRM/Vehicles/Show', [
             'vehicle' => $vehicle,
             'customFieldsData' => $customFieldsData,
@@ -178,6 +183,8 @@ class VehicleController extends Controller
             'customFieldDefs' => $customFieldDefs,
             'workOrders' => $workOrders,
             'workOrderStatuses' => $workOrderStatuses,
+            'activities' => $activities,
+            'comments' => $comments,
         ]);
     }
 
@@ -223,6 +230,8 @@ class VehicleController extends Controller
             if (!empty($validated['custom_fields'])) {
                 $this->saveCustomFields($vehicle, $validated['custom_fields']);
             }
+
+            ActivityLogger::log($vehicle, 'Автомобиль добавлен', [], 'created');
         });
 
         return redirect()->back()->with('success', 'Автомобиль успешно добавлен');
@@ -269,9 +278,22 @@ class VehicleController extends Controller
             if (isset($validated['custom_fields'])) {
                 $this->saveCustomFields($vehicle, $validated['custom_fields']);
             }
+
+            ActivityLogger::log($vehicle, 'Данные автомобиля обновлены', [], 'updated');
         });
 
         return redirect()->back()->with('success', 'Данные автомобиля обновлены');
+    }
+
+    public function addComment(Request $request, Vehicle $vehicle)
+    {
+        $validated = $request->validate([
+            'comment' => ['required', 'string', 'max:2000'],
+        ]);
+
+        ActivityLogger::log($vehicle, $validated['comment'], [], 'comment');
+
+        return redirect()->back()->with('success', 'Комментарий добавлен');
     }
 
     public function destroy(Vehicle $vehicle)

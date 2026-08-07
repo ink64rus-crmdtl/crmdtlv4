@@ -18,6 +18,7 @@ use App\Models\WorkOrder;
 use App\Services\QueryFilterService;
 use App\Services\TimezoneResolver;
 use App\Services\WorkingHoursResolver;
+use App\Services\ActivityLogger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -381,6 +382,13 @@ class AppointmentController extends Controller
                 'status' => 'converted',
             ]);
 
+            ActivityLogger::log($workOrder, 'Заказ-наряд создан из записи в календаре', [
+                ['type' => 'appointment', 'id' => $appointment->id, 'label' => 'Открыть запись'],
+            ], 'created');
+            ActivityLogger::log($appointment, 'Запись оформлена в заказ-наряд', [
+                ['type' => 'work_order', 'id' => $workOrder->id, 'label' => 'Открыть заказ-наряд'],
+            ], 'appointment_linked');
+
             return $workOrder;
         });
 
@@ -418,6 +426,13 @@ class AppointmentController extends Controller
             'work_order_id' => $workOrder->id,
             'status' => 'converted',
         ]);
+
+        ActivityLogger::log($workOrder, 'Запись из календаря привязана к заказу', [
+            ['type' => 'appointment', 'id' => $appointment->id, 'label' => 'Открыть запись'],
+        ], 'appointment_linked');
+        ActivityLogger::log($appointment, 'Запись привязана к заказ-наряду', [
+            ['type' => 'work_order', 'id' => $workOrder->id, 'label' => 'Открыть заказ-наряд'],
+        ], 'appointment_linked');
 
         return redirect()->back()->with('success', 'Запись привязана к заказ-наряду');
     }

@@ -14,6 +14,7 @@ use App\Models\WorkOrder;
 use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
+use App\Services\ActivityLogger;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -168,6 +169,11 @@ class ClientController extends Controller
 
         $workOrderStatuses = Lookup::where('type', 'work_order_status')->orderBy('sort_order')->get(['value', 'label', 'color']);
 
+        // "История"/"Комментарии" с roll-up: подтягиваются не только события
+        // самого клиента, но и события связанных Записей и Заказ-нарядов
+        // (по client_id в properties, см. App\Services\ActivityLogger).
+        ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($client, 'client_id'));
+
         return Inertia::render('CRM/Clients/Show', [
             'client' => $client,
             'customFieldsData' => $customFieldsData,
@@ -179,6 +185,8 @@ class ClientController extends Controller
             'customFieldDefs' => $customFieldDefs,
             'workOrders' => $workOrders,
             'workOrderStatuses' => $workOrderStatuses,
+            'activities' => $activities,
+            'comments' => $comments,
         ]);
     }
 
@@ -225,6 +233,8 @@ class ClientController extends Controller
             if (!empty($validated['custom_fields'])) {
                 $this->saveCustomFields($client, $validated['custom_fields']);
             }
+
+            ActivityLogger::log($client, 'Клиент создан', [], 'created');
         });
 
         return redirect()->back()->with('success', 'Клиент успешно добавлен');
@@ -273,9 +283,22 @@ class ClientController extends Controller
             if (isset($validated['custom_fields'])) {
                 $this->saveCustomFields($client, $validated['custom_fields']);
             }
+
+            ActivityLogger::log($client, 'Данные клиента обновлены', [], 'updated');
         });
 
         return redirect()->back()->with('success', 'Данные клиента обновлены');
+    }
+
+    public function addComment(Request $request, Client $client)
+    {
+        $validated = $request->validate([
+            'comment' => ['required', 'string', 'max:2000'],
+        ]);
+
+        ActivityLogger::log($client, $validated['comment'], [], 'comment');
+
+        return redirect()->back()->with('success', 'Комментарий добавлен');
     }
 
     public function destroy(Client $client)
