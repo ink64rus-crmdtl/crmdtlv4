@@ -37,6 +37,9 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+                // Право администратора на удаление без ограничений (CLAUDE.md, п. 6) —
+                // фронту нужен явный флаг, а не расшифровка ролей на клиенте.
+                'isAdmin' => $request->user() ? $request->user()->isAdmin() : false,
             ],
             // Ленивая загрузка (Closure) гарантирует, что данные берутся ПОСЛЕ отработки SetBranchContext
             'modules' => fn () => ($request->user() && tenancy()->initialized)

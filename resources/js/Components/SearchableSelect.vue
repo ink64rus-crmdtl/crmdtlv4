@@ -51,15 +51,20 @@ const updatePosition = () => {
     };
 };
 
-const toggle = async () => {
+const toggle = () => {
     if (props.disabled) return;
-    isOpen.value = !isOpen.value;
     if (isOpen.value) {
-        search.value = '';
-        await nextTick();
-        updatePosition();
-        searchInputRef.value?.focus();
+        isOpen.value = false;
+        return;
     }
+    // Позиция считается СИНХРОННО, до открытия панели — buttonRef уже
+    // существует независимо от isOpen, ждать nextTick для этого не нужно.
+    // Иначе первый рендер панели проходил с ещё пустым panelStyle (position
+    // не 'fixed'), и клик по кнопке в этот момент визуально ничего не менял.
+    updatePosition();
+    search.value = '';
+    isOpen.value = true;
+    nextTick(() => searchInputRef.value?.focus());
 };
 
 const select = (option) => {

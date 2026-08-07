@@ -14,6 +14,7 @@ use App\Models\Product;
 use App\Models\Lookup;
 use App\Models\ListView;
 use App\Models\Setting;
+use App\Models\WorkOrder;
 use App\Services\QueryFilterService;
 use App\Services\TimezoneResolver;
 use App\Services\WorkingHoursResolver;
@@ -94,6 +95,21 @@ class AppointmentController extends Controller
         $cardListView = ListView::where('entity_type', 'appointment_calendar_card')->where('user_id', auth()->id())->first();
         $tooltipListView = ListView::where('entity_type', 'appointment_calendar_tooltip')->where('user_id', auth()->id())->first();
 
+        // Ссылка "Открыть запись" (например, из карточки заказ-наряда) ведёт сюда
+        // с ?appointment=ID — запись может не попасть в текущую страницу/фильтр
+        // списка, поэтому подгружаем её отдельно и открываем модалку на фронте.
+        $openAppointment = null;
+        if ($request->filled('appointment')) {
+            $openAppointment = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'post', 'items'])
+                ->find($request->query('appointment'));
+
+            if ($openAppointment) {
+                $tz = TimezoneResolver::forBranch($openAppointment->branch_id);
+                $openAppointment->setAttribute('start_at_local', $openAppointment->start_at->copy()->setTimezone($tz)->format('Y-m-d\TH:i'));
+                $openAppointment->setAttribute('end_at_local', $openAppointment->end_at->copy()->setTimezone($tz)->format('Y-m-d\TH:i'));
+            }
+        }
+
         return Inertia::render('Operations/Appointments/Index', [
             'appointments' => $appointments,
             'filters' => $request->all(),
@@ -111,6 +127,7 @@ class AppointmentController extends Controller
             'calendarFieldOptions' => $calendarFieldOptions,
             'calendarCardFields' => $cardListView->visible_columns ?? ['time', 'client', 'vehicle', 'phone'],
             'calendarTooltipFields' => $tooltipListView->visible_columns ?? ['time', 'client', 'vehicle', 'phone', 'branch', 'employee', 'post', 'comment'],
+            'openAppointment' => $openAppointment,
         ]);
     }
 
@@ -180,6 +197,7 @@ class AppointmentController extends Controller
                         'employee_id' => $appointment->employee_id,
                         'post_id' => $appointment->post_id,
                         'status' => $appointment->status,
+                        'work_order_id' => $appointment->work_order_id,
                         'comment' => $appointment->comment,
                         'start_at_local' => $startLocal->format('Y-m-d\TH:i'),
                         'end_at_local' => $endLocal->format('Y-m-d\TH:i'),
@@ -292,13 +310,116 @@ class AppointmentController extends Controller
 
     public function destroy(Appointment $appointment)
     {
-        if ($appointment->status === 'converted') {
+        // Админ может удалить запись в любом статусе (см. CLAUDE.md, п. 6 —
+        // "Право администратора на удаление без ограничений") — например, это
+        // единственный способ убрать зависшую запись со статусом "converted",
+        // чей заказ-наряд был удалён ещё до внедрения автоматической отвязки.
+        if ($appointment->status === 'converted' && !auth()->user()->isAdmin()) {
             return redirect()->back()->withErrors(['error' => 'Запись уже конвертирована в заказ-наряд и не может быть удалена.']);
         }
 
         $appointment->delete();
 
         return redirect()->back()->with('success', 'Запись удалена');
+    }
+
+    /**
+     * Фаза 9.4: бесшовная конвертация записи в заказ-наряд по факту приезда
+     * клиента. AppointmentItem копируются в WorkOrderItem как стартовые
+     * позиции (совместимый формат: itemable_type уже хранится полным именем
+     * класса, price — в копейках — как и у WorkOrderItem). Склад и финансы
+     * запись не затрагивала и не затрагивает при конвертации — WorkOrder
+     * создаётся в статусе "new", списание материалов произойдёт только при
+     * его последующем завершении (WorkOrderController::completeOrder()).
+     */
+    public function convertToWorkOrder(Appointment $appointment)
+    {
+        if ($appointment->status === 'converted' || $appointment->work_order_id) {
+            return redirect()->back()->withErrors(['error' => 'Запись уже оформлена в заказ-наряд.']);
+        }
+
+        if (in_array($appointment->status, ['cancelled', 'no_show'], true)) {
+            return redirect()->back()->withErrors(['error' => 'Отменённую запись или запись со статусом "Не пришёл" нельзя оформить в заказ-наряд.']);
+        }
+
+        $workOrder = DB::transaction(function () use ($appointment) {
+            $workOrder = WorkOrder::create([
+                'branch_id' => $appointment->branch_id,
+                'client_id' => $appointment->client_id,
+                'vehicle_id' => $appointment->vehicle_id,
+                'status' => 'new',
+                'payment_status' => 'unpaid',
+                'total_amount' => 0,
+                'discount_amount' => 0,
+                'final_amount' => 0,
+            ]);
+
+            $sortOrder = 0;
+            foreach ($appointment->items as $item) {
+                $workOrderItem = $workOrder->items()->create([
+                    'itemable_type' => $item->itemable_type,
+                    'itemable_id' => $item->itemable_id,
+                    'name' => $item->name,
+                    'quantity' => $item->quantity,
+                    'price' => $item->price,
+                    'discount_amount' => 0,
+                    'total' => (int) round($item->quantity * $item->price),
+                    'sort_order' => $sortOrder++,
+                ]);
+
+                if ($appointment->employee_id) {
+                    $workOrderItem->employees()->sync([$appointment->employee_id]);
+                }
+            }
+
+            $total = $workOrder->items()->sum('total');
+            $workOrder->update(['total_amount' => $total, 'final_amount' => $total]);
+            $workOrder->syncPaymentStatus();
+
+            $appointment->update([
+                'work_order_id' => $workOrder->id,
+                'status' => 'converted',
+            ]);
+
+            return $workOrder;
+        });
+
+        return redirect()->route('operations.work-orders.show', $workOrder)->with('success', 'Запись оформлена в заказ-наряд');
+    }
+
+    /**
+     * Фаза 9.4: привязка записи к уже существующему заказ-наряду — когда заказ
+     * создан напрямую (не через конвертацию), а не наоборот. В отличие от
+     * convertToWorkOrder(), позиции сметы записи НЕ копируются в заказ — у него
+     * уже могут быть свои позиции, отражающие фактически выполненные работы,
+     * дублировать их автоматически было бы неверно. Только простановка связи.
+     */
+    public function linkWorkOrder(Request $request, Appointment $appointment)
+    {
+        $validated = $request->validate([
+            'work_order_id' => ['required', 'exists:work_orders,id'],
+        ]);
+
+        if ($appointment->status === 'converted' || $appointment->work_order_id) {
+            return redirect()->back()->withErrors(['error' => 'Запись уже привязана к заказ-наряду.']);
+        }
+
+        if (in_array($appointment->status, ['cancelled', 'no_show'], true)) {
+            return redirect()->back()->withErrors(['error' => 'Отменённую запись или запись со статусом "Не пришёл" нельзя привязать к заказ-наряду.']);
+        }
+
+        $workOrder = WorkOrder::find($validated['work_order_id']);
+
+        if (!$workOrder || $workOrder->client_id !== $appointment->client_id) {
+            return redirect()->back()->withErrors(['error' => 'Заказ-наряд принадлежит другому клиенту.']);
+        }
+
+        $appointment->update([
+            'work_order_id' => $workOrder->id,
+            'status' => 'converted',
+        ]);
+
+        return redirect()->back()->with('success', 'Запись привязана к заказ-наряду');
     }
 
     public function updateStatus(Request $request, Appointment $appointment)
@@ -327,7 +448,11 @@ class AppointmentController extends Controller
             'ids.*' => ['exists:appointments,id'],
         ]);
 
-        Appointment::whereIn('id', $validated['ids'])->where('status', '!=', 'converted')->delete();
+        $query = Appointment::whereIn('id', $validated['ids']);
+        if (!auth()->user()->isAdmin()) {
+            $query->where('status', '!=', 'converted');
+        }
+        $query->delete();
 
         return redirect()->back()->with('success', 'Выбранные записи удалены');
     }

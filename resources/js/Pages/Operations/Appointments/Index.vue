@@ -17,8 +17,8 @@ import PostsWeekTable from '@/Components/Calendar/PostsWeekTable.vue';
 import PostsDayTimeline from '@/Components/Calendar/PostsDayTimeline.vue';
 import PostsDayColumns from '@/Components/Calendar/PostsDayColumns.vue';
 import { appointmentCardLines, APPOINTMENT_FIELDS, DEFAULT_CARD_FIELDS, DEFAULT_TOOLTIP_FIELDS } from '@/Utils/appointmentCard.js';
-import { Head, useForm, router } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { Head, useForm, router, usePage } from '@inertiajs/vue3';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 
@@ -39,6 +39,7 @@ const props = defineProps({
     calendarFieldOptions: { type: Array, default: () => [] },
     calendarCardFields: { type: Array, default: () => DEFAULT_CARD_FIELDS },
     calendarTooltipFields: { type: Array, default: () => DEFAULT_TOOLTIP_FIELDS },
+    openAppointment: { type: Object, default: () => null },
 });
 
 const isModalOpen = ref(false);
@@ -248,6 +249,10 @@ const itemsTotal = computed(() => {
 // ----------------------------------------
 
 const openModal = (appointment = null, prefill = null) => {
+    // На всякий случай гасим всплывающую подсказку записи — теперь она
+    // кликабельна (кнопка "Оформить заказ-наряд"), и если она осталась
+    // открытой поверх модалки, могла бы перехватывать клики под собой.
+    calendarTooltip.value = null;
     editingAppointment.value = appointment;
     if (appointment) {
         form.branch_id = appointment.branch_id;
@@ -290,6 +295,15 @@ const closeModal = () => {
     newItem.value = { itemable_type: 'service', itemable_id: '', name: '', quantity: 1, price: 0 };
 };
 
+// Переход по ссылке "Открыть запись" (например, из карточки заказ-наряда) —
+// приходит как ?appointment=ID, бэкенд подгружает эту запись отдельно от
+// текущей страницы/фильтра списка и сразу открывает её на редактирование.
+onMounted(() => {
+    if (props.openAppointment) {
+        openModal(props.openAppointment);
+    }
+});
+
 const submit = () => {
     if (editingAppointment.value) {
         form.put(route('operations.appointments.update', editingAppointment.value.id), {
@@ -302,10 +316,31 @@ const submit = () => {
     }
 };
 
+const page = usePage();
+const isAdmin = computed(() => page.props.auth?.isAdmin || false);
+
 const deleteAppointment = (appointment) => {
-    if (confirm(`Удалить запись клиента "${appointment.client?.name}"?`)) {
+    const clientLabel = appointment.client?.name || appointment.client_name || 'клиента';
+    // Админ может удалить запись в любом статусе (CLAUDE.md, п. 6) — но раз это
+    // обход обычной защиты, предупреждаем отдельно и явно, если запись уже
+    // оформлена в заказ-наряд.
+    const message = appointment.status === 'converted'
+        ? `Запись ${clientLabel} уже оформлена в заказ-наряд. Удалить всё равно? Связь с заказом (если он ещё существует) не удаляется — отвяжите его отдельно при необходимости.`
+        : `Удалить запись ${clientLabel}?`;
+    if (confirm(message)) {
         router.delete(route('operations.appointments.destroy', appointment.id));
     }
+};
+
+// Фаза 9.4: конвертация записи в заказ-наряд по факту приезда клиента —
+// AppointmentItem копируются как стартовые позиции WorkOrder. Доступна только
+// для "живых" записей (не отменённых, не "не пришёл", ещё не оформленных).
+const isConvertible = (appointment) => !['converted', 'cancelled', 'no_show'].includes(appointment.status);
+
+const convertAppointment = (appointment) => {
+    const clientLabel = appointment.client?.name || appointment.client_name || 'клиента';
+    if (!confirm(`Оформить заказ-наряд по записи ${clientLabel}? Позиции сметы будут перенесены в заказ.`)) return;
+    router.post(route('operations.appointments.convert', appointment.id));
 };
 
 const changeStatus = (appointment, status) => {
@@ -458,7 +493,30 @@ const enrichAppointment = (appt) => {
 // info.el) и для собственных Vue-компонентов (Неделя/День-посты-слева, через
 // @hover-событие с DOM-элементом записи) — оба пути используют один и тот же
 // calendarTooltip и один и тот же Teleport-блок в шаблоне.
+// Тултип прячется не мгновенно, а с небольшой задержкой — иначе невозможно
+// довести курсор от записи до самого тултипа (там теперь кликабельная кнопка
+// конвертации), он схлопывался бы раньше, чем мышь до него доедет. Наведение
+// на сам тултип (см. @mouseenter/@mouseleave в шаблоне) отменяет/перезапускает
+// эту задержку так же, как наведение на исходную запись.
+let tooltipHideTimer = null;
+
+const cancelTooltipHide = () => {
+    if (tooltipHideTimer) {
+        clearTimeout(tooltipHideTimer);
+        tooltipHideTimer = null;
+    }
+};
+
+const scheduleTooltipHide = () => {
+    cancelTooltipHide();
+    tooltipHideTimer = setTimeout(() => {
+        calendarTooltip.value = null;
+        tooltipHideTimer = null;
+    }, 250);
+};
+
 const showAppointmentTooltip = (appointment, el, color) => {
+    cancelTooltipHide();
     const rect = el.getBoundingClientRect();
     const left = Math.min(Math.max(8, rect.left), window.innerWidth - 300);
     calendarTooltip.value = {
@@ -479,7 +537,7 @@ const onCalendarEventMouseEnter = (info) => {
 };
 
 const onCalendarEventMouseLeave = () => {
-    calendarTooltip.value = null;
+    scheduleTooltipHide();
 };
 
 const onChildAppointmentHover = (appt, el) => {
@@ -488,8 +546,17 @@ const onChildAppointmentHover = (appt, el) => {
 };
 
 const onChildAppointmentUnhover = () => {
-    calendarTooltip.value = null;
+    scheduleTooltipHide();
 };
+
+const convertFromTooltip = () => {
+    if (!calendarTooltip.value) return;
+    const appointment = calendarTooltip.value.appointment;
+    calendarTooltip.value = null;
+    convertAppointment(appointment);
+};
+
+onUnmounted(() => cancelTooltipHide());
 
 const calendarOptions = {
     plugins: [dayGridPlugin, interactionPlugin],
@@ -862,7 +929,9 @@ const toggleDefaultView = () => {
                         <div
                             v-if="calendarTooltip"
                             :style="[calendarTooltip.style, calendarTooltip.color ? { borderLeftColor: calendarTooltip.color, borderLeftWidth: '4px' } : {}]"
-                            class="z-[300] w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg p-3 pointer-events-none"
+                            class="z-[300] w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg p-3"
+                            @mouseenter="cancelTooltipHide"
+                            @mouseleave="scheduleTooltipHide"
                         >
                             <dl class="space-y-1.5 text-xs text-gray-600 dark:text-gray-400">
                                 <div
@@ -876,6 +945,24 @@ const toggleDefaultView = () => {
                                 </div>
                                 <p v-if="tooltipLines.length === 0" class="text-gray-400 italic">Нет полей для отображения — настройте в «Тултип: поля»</p>
                             </dl>
+                            <div v-if="isConvertible(calendarTooltip.appointment)" class="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700">
+                                <button
+                                    type="button"
+                                    @click="convertFromTooltip"
+                                    class="w-full inline-flex items-center justify-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-colors bg-success/10 text-success hover:bg-success hover:text-white"
+                                >
+                                    <i class="ri-file-transfer-line"></i> Оформить заказ-наряд
+                                </button>
+                            </div>
+                            <div v-else-if="calendarTooltip.appointment.work_order_id" class="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700">
+                                <button
+                                    type="button"
+                                    @click="router.visit(route('operations.work-orders.show', calendarTooltip.appointment.work_order_id))"
+                                    class="w-full inline-flex items-center justify-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition-colors bg-success/10 text-success hover:bg-success hover:text-white"
+                                >
+                                    <i class="ri-external-link-line"></i> Перейти к заказ-наряду
+                                </button>
+                            </div>
                         </div>
                     </Teleport>
                 </div>
@@ -938,6 +1025,22 @@ const toggleDefaultView = () => {
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
                                     <button
+                                        v-if="isConvertible(appointment)"
+                                        @click="convertAppointment(appointment)"
+                                        title="Клиент приехал — оформить заказ-наряд"
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
+                                    >
+                                        <i class="ri-file-transfer-line"></i>
+                                    </button>
+                                    <button
+                                        v-else-if="appointment.work_order_id"
+                                        @click="router.visit(route('operations.work-orders.show', appointment.work_order_id))"
+                                        title="Перейти к заказ-наряду"
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
+                                    >
+                                        <i class="ri-external-link-line"></i>
+                                    </button>
+                                    <button
                                         @click="openModal(appointment)"
                                         :disabled="appointment.status === 'converted'"
                                         :title="appointment.status === 'converted' ? 'Запись оформлена в заказ-наряд — недоступна для правки' : 'Редактировать'"
@@ -947,8 +1050,8 @@ const toggleDefaultView = () => {
                                     </button>
                                     <button
                                         @click="deleteAppointment(appointment)"
-                                        :disabled="appointment.status === 'converted'"
-                                        :title="appointment.status === 'converted' ? 'Запись оформлена в заказ-наряд — недоступна для удаления' : 'Удалить'"
+                                        :disabled="appointment.status === 'converted' && !isAdmin"
+                                        :title="appointment.status === 'converted' ? (isAdmin ? 'Запись оформлена в заказ-наряд — удаление доступно администратору' : 'Запись оформлена в заказ-наряд — недоступна для удаления') : 'Удалить'"
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-40 disabled:hover:bg-danger/10 disabled:hover:text-danger disabled:cursor-not-allowed"
                                     >
                                         <i class="ri-delete-bin-line"></i>
@@ -1139,9 +1242,21 @@ const toggleDefaultView = () => {
                         </div>
                     </div>
 
-                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    <div class="flex justify-between items-center gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button
+                            v-if="editingAppointment && isConvertible(editingAppointment)"
+                            type="button"
+                            @click="convertAppointment(editingAppointment)"
+                            title="Клиент приехал — оформить заказ-наряд, позиции сметы перенесутся автоматически"
+                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white gap-1.5"
+                        >
+                            <i class="ri-file-transfer-line"></i> Оформить заказ-наряд
+                        </button>
+                        <span v-else></span>
+                        <div class="flex gap-3">
+                            <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                            <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                        </div>
                     </div>
                 </form>
             </div>

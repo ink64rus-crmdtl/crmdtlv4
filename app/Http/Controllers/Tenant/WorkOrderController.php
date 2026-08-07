@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
+use App\Models\Appointment;
+use App\Models\Scopes\BranchScope;
 use App\Models\Client;
 use App\Models\Vehicle;
 use App\Models\Branch;
@@ -25,6 +27,7 @@ use App\Services\QueryFilterService;
 use App\Services\WarehouseResolver;
 use App\Services\StockService;
 use App\Services\FinanceService;
+use App\Services\TimezoneResolver;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -159,6 +162,30 @@ class WorkOrderController extends Controller
         $productCategories = ProductCategory::where('is_active', true)->get(['id', 'name']);
         $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
 
+        // Фаза 9.4: связь с записью, из которой создан заказ (если создан через
+        // конвертацию), либо — если заказ создан напрямую — подсказка привязать
+        // подходящую незакрытую запись того же клиента, найденную в календаре.
+        $linkedAppointment = Appointment::where('work_order_id', $workOrder->id)->first(['id', 'branch_id', 'start_at']);
+        if ($linkedAppointment) {
+            $tz = TimezoneResolver::forBranch($linkedAppointment->branch_id);
+            $linkedAppointment->setAttribute('start_at_local', $linkedAppointment->start_at->copy()->setTimezone($tz)->format('d.m.Y H:i'));
+        }
+
+        $candidateAppointment = null;
+        if (!$linkedAppointment) {
+            $now = now();
+            $candidateAppointment = Appointment::where('client_id', $workOrder->client_id)
+                ->whereIn('status', ['scheduled', 'confirmed'])
+                ->get(['id', 'branch_id', 'start_at'])
+                ->sortBy(fn (Appointment $a) => abs($a->start_at->diffInSeconds($now)))
+                ->first();
+
+            if ($candidateAppointment) {
+                $tz = TimezoneResolver::forBranch($candidateAppointment->branch_id);
+                $candidateAppointment->setAttribute('start_at_local', $candidateAppointment->start_at->copy()->setTimezone($tz)->format('d.m.Y H:i'));
+            }
+        }
+
         return Inertia::render('Operations/WorkOrders/Show', [
             'workOrder' => $workOrder,
             'customFieldsData' => $customFieldsData,
@@ -177,6 +204,8 @@ class WorkOrderController extends Controller
             'productCategories' => $productCategories,
             'employees' => $employees,
             'workOrderStatuses' => $this->workOrderStatuses(),
+            'linkedAppointment' => $linkedAppointment,
+            'candidateAppointment' => $candidateAppointment,
         ]);
     }
 
@@ -242,6 +271,7 @@ class WorkOrderController extends Controller
 
     public function destroy(WorkOrder $workOrder)
     {
+        $this->unlinkAppointments([$workOrder->id]);
         $workOrder->delete();
         return redirect()->back()->with('success', 'Заказ-наряд удален');
     }
@@ -264,9 +294,26 @@ class WorkOrderController extends Controller
             'ids.*' => ['exists:work_orders,id'],
         ]);
 
+        $this->unlinkAppointments($validated['ids']);
         WorkOrder::whereIn('id', $validated['ids'])->delete();
 
         return redirect()->back()->with('success', 'Выбранные заказы удалены');
+    }
+
+    /**
+     * Заказ-наряд удаляется мягко (SoftDeletes), поэтому ON DELETE SET NULL на
+     * appointments.work_order_id не срабатывает (это чисто UPDATE deleted_at,
+     * а не настоящий DELETE) — иначе в карточке записи оставалась бы ссылка на
+     * уже удалённый заказ. Снимаем связь и статус явно, без учёта BranchScope
+     * текущего пользователя — это чистка внутренней целостности данных, а не
+     * выборка для отображения, она не должна зависеть от того, какой филиал
+     * сейчас выбран у того, кто удаляет заказ.
+     */
+    private function unlinkAppointments(array $workOrderIds): void
+    {
+        Appointment::withoutGlobalScope(BranchScope::class)
+            ->whereIn('work_order_id', $workOrderIds)
+            ->update(['work_order_id' => null, 'status' => 'scheduled']);
     }
 
     public function bulkExport(Request $request)

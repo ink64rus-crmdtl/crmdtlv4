@@ -27,11 +27,28 @@ const props = defineProps({
     employees: Array,
     workOrderStatuses: { type: Array, default: () => [] },
     bonusRubPerPoint: { type: Number, default: 1 },
+    linkedAppointment: { type: Object, default: () => null },
+    candidateAppointment: { type: Object, default: () => null },
 });
 
 const page = usePage();
 
 const isModalOpen = ref(false);
+
+// Подсказку "привязать запись" можно скрыть до конца текущего просмотра
+// страницы, не трогая ничего на сервере — она не критична, просто ускоряет ввод.
+const candidateBannerDismissed = ref(false);
+
+const linkCandidateAppointment = () => {
+    if (!props.candidateAppointment) return;
+    router.post(route('operations.appointments.link-work-order', props.candidateAppointment.id), {
+        work_order_id: props.workOrder.id,
+    });
+};
+
+const openAppointment = (appointmentId) => {
+    router.visit(route('operations.appointments.index', { appointment: appointmentId }));
+};
 const activeMainTab = ref('items'); // 'items', 'history'
 
 const statusColorClasses = {
@@ -613,6 +630,18 @@ const formatMoney = (amount) => {
             </div>
         </div>
 
+        <!-- Подсказка: у клиента есть подходящая запись в календаре, которую можно привязать к этому заказу -->
+        <div v-if="candidateAppointment && !candidateBannerDismissed" class="w-[99%] mx-auto mb-4 p-4 bg-info/10 border border-info/20 rounded-md text-sm text-gray-700 dark:text-gray-300 flex items-start gap-3">
+            <i class="ri-calendar-event-line text-xl text-info shrink-0"></i>
+            <div class="flex-1">
+                <p>У этого клиента есть запись в календаре на <strong>{{ candidateAppointment.start_at_local }}</strong>, не привязанная ни к одному заказу. Привязать её к этому заказу-наряду?</p>
+            </div>
+            <div class="flex gap-2 shrink-0">
+                <button @click="linkCandidateAppointment" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-info text-white hover:bg-info/80 transition-colors">Привязать</button>
+                <button @click="candidateBannerDismissed = true" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Не сейчас</button>
+            </div>
+        </div>
+
         <!-- TRI-STATE 2: Полная карточка (w-[99%] mx-auto для Fluid-дизайна) -->
         <div class="w-[99%] mx-auto flex flex-col lg:flex-row gap-6 font-sans text-slate-600">
             
@@ -635,6 +664,14 @@ const formatMoney = (amount) => {
                             {{ statuses[workOrder.status]?.label || workOrder.status }}
                         </span>
                     </div>
+                    <button
+                        v-if="linkedAppointment"
+                        @click="openAppointment(linkedAppointment.id)"
+                        class="mt-3 inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-primary transition-colors"
+                        title="Открыть запись, из которой создан этот заказ"
+                    >
+                        <i class="ri-calendar-check-line"></i> Создан из записи от {{ linkedAppointment.start_at_local }}
+                    </button>
                 </div>
 
                 <!-- Клиент -->

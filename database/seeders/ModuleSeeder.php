@@ -13,7 +13,7 @@ class ModuleSeeder extends Seeder
         $modules = [
             ['key' => 'dashboard', 'label' => ['en' => 'Dashboard', 'ru' => 'Дашборд'], 'icon' => 'ri-home-4-line', 'is_core' => true, 'sort_order' => 10, 'required_permission' => 'view_dashboard'],
             ['key' => 'crm', 'label' => ['en' => 'CRM', 'ru' => 'Клиенты и Авто'], 'icon' => 'ri-group-line', 'is_core' => true, 'sort_order' => 20, 'required_permission' => 'view_crm'],
-            ['key' => 'operations', 'label' => ['en' => 'Operations', 'ru' => 'Заказы'], 'icon' => 'ri-briefcase-line', 'is_core' => true, 'sort_order' => 30, 'required_permission' => 'view_operations'],
+            ['key' => 'operations', 'label' => ['en' => 'Orders & Appointments', 'ru' => 'Заказы и Записи'], 'icon' => 'ri-briefcase-line', 'is_core' => true, 'sort_order' => 30, 'required_permission' => 'view_operations'],
             ['key' => 'warehouse', 'label' => ['en' => 'Warehouse', 'ru' => 'Склад'], 'icon' => 'ri-archive-line', 'is_core' => true, 'sort_order' => 40, 'required_permission' => 'view_warehouse'],
             ['key' => 'finance', 'label' => ['en' => 'Finance', 'ru' => 'Финансы'], 'icon' => 'ri-money-dollar-circle-line', 'is_core' => true, 'sort_order' => 50, 'required_permission' => 'view_finance'],
             ['key' => 'hr', 'label' => ['en' => 'HR', 'ru' => 'Сотрудники'], 'icon' => 'ri-team-line', 'is_core' => true, 'sort_order' => 60, 'required_permission' => 'view_hr'],

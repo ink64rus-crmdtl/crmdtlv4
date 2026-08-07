@@ -243,6 +243,8 @@ Route::middleware([
         Route::delete('/operations/appointments/{appointment}', [AppointmentController::class, 'destroy'])->name('operations.appointments.destroy');
         Route::post('/operations/appointments/bulk-delete', [AppointmentController::class, 'bulkDestroy'])->name('operations.appointments.bulk-destroy');
         Route::patch('/operations/appointments/{appointment}/status', [AppointmentController::class, 'updateStatus'])->name('operations.appointments.status.update');
+        Route::post('/operations/appointments/{appointment}/convert', [AppointmentController::class, 'convertToWorkOrder'])->name('operations.appointments.convert');
+        Route::post('/operations/appointments/{appointment}/link-work-order', [AppointmentController::class, 'linkWorkOrder'])->name('operations.appointments.link-work-order');
 
         // Warehouse: Товары и Материалы
         Route::get('/warehouse/products', [ProductController::class, 'index'])->name('warehouse.products.index');
