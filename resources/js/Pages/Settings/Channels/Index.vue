@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 
@@ -46,9 +46,8 @@ const form = useForm({
     name: '',
     provider: 'wappi_pro',
     messenger_type: 'whatsapp',
-    external_profile_id: '',
     phone_number: '',
-    credentials: { token: '' },
+    credentials: {},
     is_active: true,
 });
 
@@ -59,17 +58,16 @@ const openModal = (channel = null) => {
         form.name = channel.name;
         form.provider = channel.provider;
         form.messenger_type = channel.messenger_type ?? (channel.provider === 'sms_aero' ? 'sms' : 'whatsapp');
-        form.external_profile_id = channel.external_profile_id ?? '';
         form.phone_number = channel.phone_number ?? '';
         form.credentials = channel.provider === 'sms_aero'
             ? { email: '', api_key: '', sign: '' }
-            : { token: '' };
+            : {};
         form.is_active = Boolean(channel.is_active);
     } else {
         form.reset();
         form.provider = 'wappi_pro';
         form.messenger_type = 'whatsapp';
-        form.credentials = { token: '' };
+        form.credentials = {};
         form.is_active = true;
     }
     isModalOpen.value = true;
@@ -88,7 +86,7 @@ const onProviderChange = () => {
         form.credentials = { email: '', api_key: '', sign: '' };
     } else {
         form.messenger_type = 'whatsapp';
-        form.credentials = { token: '' };
+        form.credentials = {};
     }
 };
 
@@ -104,6 +102,16 @@ const deleteChannel = (channel) => {
     if (confirm(`Удалить канал "${channel.name}"? Переписки останутся в истории, но отправка через этот канал станет недоступна.`)) {
         form.delete(route('settings.channels.destroy', channel.id));
     }
+};
+
+// --- Повторная попытка создать профиль у провайдера (если создание канала
+// прошло, а провижининг — нет, см. ChannelController::attemptProvisioning) ---
+const retryingId = ref(null);
+const retryProvision = (channel) => {
+    retryingId.value = channel.id;
+    router.post(route('settings.channels.retry-provision', channel.id), {}, {
+        onFinish: () => { retryingId.value = null; },
+    });
 };
 
 // --- QR-подключение ---
@@ -170,7 +178,7 @@ onBeforeUnmount(() => {
 
             <PageHelper title="Как это устроено">
                 <p>Каждый канал — одно подключение (один номер WhatsApp/Telegram/MAX или один SMS-аккаунт). Можно подключить несколько номеров одновременно — например, по одному на филиал.</p>
-                <p>Подключение WhatsApp/Telegram/MAX идёт через QR-код (как в самом мессенджере на телефоне) — после сканирования канал становится «Подключён» и может принимать/отправлять сообщения.</p>
+                <p>Подключение WhatsApp/Telegram/MAX идёт через QR-код (как в самом мессенджере на телефоне) — после сканирования канал становится «Подключён» и может принимать/отправлять сообщения. Профиль у провайдера система создаёт сама, вводить Profile ID или токен не нужно.</p>
                 <p class="text-xs text-gray-400 mt-2">Реализация не завязана намертво на Wappi.Pro — при необходимости переезда на другого провайдера меняется только код внутри системы, каналы и переписки не теряются.</p>
             </PageHelper>
 
@@ -207,10 +215,14 @@ onBeforeUnmount(() => {
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ providerLabels[channel.provider] || channel.provider }}</td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ channel.branch ? channel.branch.name : 'Все филиалы' }}</td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[statusClasses[channel.status] || 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ statusLabels[channel.status] || channel.status }}</span>
+                                    <span v-if="isMessenger(channel.provider) && !channel.external_profile_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger" title="Не удалось создать профиль у провайдера">Ошибка настройки</span>
+                                    <span v-else :class="[statusClasses[channel.status] || 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ statusLabels[channel.status] || channel.status }}</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button v-if="isMessenger(channel.provider) && channel.status !== 'connected'" @click="openQrModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white" title="Подключить">
+                                    <button v-if="isMessenger(channel.provider) && !channel.external_profile_id" @click="retryProvision(channel)" :disabled="retryingId === channel.id" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-50" title="Повторить попытку">
+                                        <i :class="['ri-refresh-line', { 'animate-spin': retryingId === channel.id }]"></i>
+                                    </button>
+                                    <button v-else-if="isMessenger(channel.provider) && channel.status !== 'connected'" @click="openQrModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white" title="Подключить">
                                         <i class="ri-qr-code-line"></i>
                                     </button>
                                     <button @click="openModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
@@ -270,18 +282,11 @@ onBeforeUnmount(() => {
                             </select>
                         </div>
 
-                        <template v-if="form.provider === 'wappi_pro'">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Profile ID <span v-if="!editingChannel" class="text-danger">*</span></label>
-                                <input v-model="form.external_profile_id" type="text" :required="!editingChannel" placeholder="Из личного кабинета Wappi.Pro" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Токен авторизации <span v-if="!editingChannel" class="text-danger">*</span></label>
-                                <input v-model="form.credentials.token" type="text" :required="!editingChannel" :placeholder="editingChannel ? 'Оставьте пустым, чтобы не менять' : 'Authorization token из Wappi.Pro'" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                            </div>
-                        </template>
+                        <p v-if="form.provider === 'wappi_pro'" class="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/40 rounded-md p-3">
+                            <i class="ri-information-line mr-1"></i> Profile ID и токен вводить не нужно — профиль в Wappi создаётся автоматически при сохранении, затем останется отсканировать QR.
+                        </p>
 
-                        <template v-else-if="form.provider === 'sms_aero'">
+                        <template v-if="form.provider === 'sms_aero'">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email аккаунта <span v-if="!editingChannel" class="text-danger">*</span></label>
                                 <input v-model="form.credentials.email" type="email" :required="!editingChannel" :placeholder="editingChannel ? 'Оставьте пустым, чтобы не менять' : ''" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
@@ -295,7 +300,7 @@ onBeforeUnmount(() => {
                                 <input v-model="form.credentials.sign" type="text" :placeholder="editingChannel ? 'Оставьте пустым, чтобы не менять' : 'Зарегистрированное имя отправителя'" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
                         </template>
-                        <p v-if="editingChannel" class="text-xs text-gray-400 -mt-2">Поля учётных данных выше показаны пустыми специально — заполните только то, что хотите изменить, остальное останется как есть.</p>
+                        <p v-if="editingChannel && form.provider === 'sms_aero'" class="text-xs text-gray-400 -mt-2">Поля учётных данных выше показаны пустыми специально — заполните только то, что хотите изменить, остальное останется как есть.</p>
 
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Номер телефона (для отображения)</label>
@@ -328,7 +333,7 @@ onBeforeUnmount(() => {
                     <p class="text-sm text-gray-500 dark:text-gray-400">Откройте {{ messengerTypeLabels[qrTarget?.messenger_type] || 'мессенджер' }} на телефоне → Связанные устройства → Сканировать код.</p>
                     <div v-if="qrLoading" class="w-48 h-48 flex items-center justify-center text-gray-400"><i class="ri-loader-4-line animate-spin text-3xl"></i></div>
                     <img v-else-if="qrImage" :src="qrImage.startsWith('data:') ? qrImage : `data:image/png;base64,${qrImage}`" class="w-48 h-48 border border-gray-200 dark:border-gray-700 rounded-md" alt="QR-код" />
-                    <p v-else class="text-sm text-danger">Не удалось получить QR-код. Проверьте токен и Profile ID канала.</p>
+                    <p v-else class="text-sm text-danger">Не удалось получить QR-код. Попробуйте закрыть окно и открыть заново, либо обратитесь к администратору платформы — возможно, не настроен общий токен Wappi.Pro.</p>
                     <span :class="[statusClasses[qrStatus] || 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ statusLabels[qrStatus] || qrStatus }}</span>
                 </div>
             </div>

@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SendMessageJob;
 use App\Models\Channel;
 use App\Models\Chat;
 use App\Models\Client;
+use App\Services\Messaging\ChatDispatchService;
 use Illuminate\Http\Request;
 
 /**
@@ -36,28 +36,8 @@ class ChatController extends Controller
 
         $channel = Channel::findOrFail($validated['channel_id']);
 
-        // withTrashed() — та же причина, что и в MessengerWebhookController: без
-        // него мягко удалённый чат не находится дефолтным scope и firstOrCreate()
-        // падает на уникальном индексе при повторном создании.
-        $chat = Chat::withTrashed()->firstOrCreate(
-            ['type' => 'external', 'channel_id' => $channel->id, 'client_id' => $client->id],
-            ['branch_id' => $channel->branch_id]
-        );
+        $message = ChatDispatchService::sendToClient($client, $channel, $validated['content'], auth()->id());
 
-        if ($chat->trashed()) {
-            $chat->restore();
-        }
-
-        $message = $chat->messages()->create([
-            'sender_type' => 'user',
-            'sender_user_id' => auth()->id(),
-            'direction' => 'out',
-            'content' => $validated['content'],
-            'status' => 'pending',
-        ]);
-
-        SendMessageJob::dispatch($message->id);
-
-        return response()->json(['message' => $message, 'chat_id' => $chat->id]);
+        return response()->json(['message' => $message, 'chat_id' => $message->chat_id]);
     }
 }

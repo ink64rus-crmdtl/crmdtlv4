@@ -40,6 +40,8 @@ use App\Http\Controllers\Tenant\PayrollController;
 use App\Http\Controllers\Tenant\MessengerWebhookController;
 use App\Http\Controllers\Tenant\ChannelController;
 use App\Http\Controllers\Tenant\ChatController;
+use App\Http\Controllers\Tenant\MessageTemplateController;
+use App\Http\Controllers\Tenant\CommunicationsController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -199,6 +201,17 @@ Route::middleware([
         Route::delete('/settings/channels/{channel}', [ChannelController::class, 'destroy'])->name('settings.channels.destroy');
         Route::get('/settings/channels/{channel}/qr', [ChannelController::class, 'qrCode'])->name('settings.channels.qr');
         Route::get('/settings/channels/{channel}/status', [ChannelController::class, 'status'])->name('settings.channels.status');
+        Route::post('/settings/channels/{channel}/retry-provision', [ChannelController::class, 'retryProvision'])->name('settings.channels.retry-provision');
+
+        // Настройки: Шаблоны сообщений (Фаза 11.1)
+        Route::get('/settings/message-templates', [MessageTemplateController::class, 'index'])->name('settings.message-templates.index');
+        Route::post('/settings/message-templates', [MessageTemplateController::class, 'store'])->name('settings.message-templates.store');
+        Route::put('/settings/message-templates/{messageTemplate}', [MessageTemplateController::class, 'update'])->name('settings.message-templates.update');
+        Route::delete('/settings/message-templates/{messageTemplate}', [MessageTemplateController::class, 'destroy'])->name('settings.message-templates.destroy');
+
+        // Общение: единый инбокс внешних чатов (Фаза 11.3)
+        Route::get('/communications', [CommunicationsController::class, 'index'])->name('communications.index');
+        Route::get('/communications/chats', [CommunicationsController::class, 'chats'])->name('communications.chats');
 
         // HR: Должности
         Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');

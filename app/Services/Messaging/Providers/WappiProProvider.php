@@ -2,6 +2,7 @@
 
 namespace App\Services\Messaging\Providers;
 
+use App\Models\Central\PlatformSetting;
 use App\Models\Channel;
 use App\Services\Messaging\Data\IncomingMessageData;
 use App\Services\Messaging\Data\OutgoingMessageResult;
@@ -10,6 +11,8 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
+use Throwable;
 
 /**
  * https://wappi.pro/api-documentation (WhatsApp), /telegram-api-documentation,
@@ -19,6 +22,12 @@ use Illuminate\Support\Facades\Http;
  * только эндпоинты WhatsApp-раздела (общие для всех трёх мессенджеров Wappi) —
  * это будет верно ровно до тех пор, пока не понадобятся специфичные для
  * Telegram/MAX методы, тогда веткование пойдёт по $channel->messenger_type.
+ *
+ * Токен — ОДИН на весь корпоративный аккаунт Wappi (не на тенанта и не на
+ * канал): тенант физически не имеет доступа к личному кабинету Wappi, поэтому
+ * профиль там заводит сама система (см. provisionProfile()), а токен хранится
+ * в central БД (App\Models\Central\PlatformSetting) и вносится администратором
+ * платформы в /admin/settings. См. CLAUDE.md, Фаза 16.
  */
 class WappiProProvider implements MessengerProviderInterface
 {
@@ -26,7 +35,7 @@ class WappiProProvider implements MessengerProviderInterface
 
     public function sendText(Channel $channel, string $recipient, string $body): OutgoingMessageResult
     {
-        $response = $this->client($channel)->post($this->url('/sync/message/send', $channel), [
+        $response = $this->client()->post($this->url('/sync/message/send', $channel), [
             'recipient' => $recipient,
             'body' => $body,
         ]);
@@ -44,7 +53,7 @@ class WappiProProvider implements MessengerProviderInterface
             default => '/sync/message/file/url/send',
         };
 
-        $response = $this->client($channel)->post($this->url($endpoint, $channel), array_filter([
+        $response = $this->client()->post($this->url($endpoint, $channel), array_filter([
             'recipient' => $recipient,
             'url' => $url,
             'caption' => $caption,
@@ -63,7 +72,7 @@ class WappiProProvider implements MessengerProviderInterface
 
     public function getQrCode(Channel $channel): ?string
     {
-        $response = $this->client($channel)->get($this->url('/sync/qr/get', $channel));
+        $response = $this->client()->get($this->url('/sync/qr/get', $channel));
 
         if (!$response->successful()) {
             return null;
@@ -72,15 +81,35 @@ class WappiProProvider implements MessengerProviderInterface
         return $response->json('qr_code') ?? $response->json('base64') ?? null;
     }
 
-    public function registerWebhook(Channel $channel, string $webhookUrl): void
+    public function provisionProfile(Channel $channel, string $desiredName, string $webhookUrl): string
     {
+        $existing = $this->findProfileIdByName($desiredName);
+        if ($existing) {
+            return $existing;
+        }
+
         // Laravel Http-клиент НЕ бросает исключение сам по себе на 4xx/5xx —
-        // без явного throw() ChannelController::store() решил бы, что вебхук
-        // зарегистрирован успешно, даже если Wappi вернул ошибку (например,
-        // из-за неверного токена/profile_id).
-        $this->client($channel)
-            ->post($this->url('/profile/add', $channel, ['webhook_url' => $webhookUrl]))
+        // без явного throw() ChannelController решил бы, что профиль создан,
+        // даже если Wappi вернул ошибку (например, из-за неверного токена).
+        $response = $this->client()
+            ->post($this->url('/profile/add', null, ['name' => $desiredName, 'webhook_url' => $webhookUrl]))
             ->throw();
+
+        $profileId = $response->json('profile_id');
+        if (!$profileId) {
+            throw new RuntimeException('Wappi.Pro не вернул profile_id при создании профиля.');
+        }
+
+        return (string) $profileId;
+    }
+
+    public function releaseProfile(Channel $channel): void
+    {
+        if (!$channel->external_profile_id) {
+            return;
+        }
+
+        $this->client()->post($this->url('/profile/delete', $channel));
     }
 
     public function parseIncomingWebhook(Channel $channel, Request $request): ?IncomingMessageData
@@ -138,21 +167,59 @@ class WappiProProvider implements MessengerProviderInterface
         };
     }
 
+    /**
+     * Дедупликация перед созданием профиля (защита от повторного клика
+     * "Подключить"/ретрая после сетевого сбоя — см. ChannelController).
+     * GET /profile/all/get формально требует profile_id в query (см.
+     * разведку в плане), но семантика параметра для "списка ВСЕХ профилей"
+     * в документации не разъяснена — пробуем без него; если Wappi всё же
+     * ответит ошибкой, просто пропускаем дедуп (не блокируем создание) —
+     * потеря защиты от дублей в этом редком edge-кейсе не критична, коллизия
+     * имён между тенантами структурно невозможна (см. схему именования).
+     */
+    private function findProfileIdByName(string $name): ?string
+    {
+        try {
+            $response = $this->client()->get('/profile/all/get');
+            if (!$response->successful()) {
+                return null;
+            }
+
+            $profiles = $response->json('profiles') ?? $response->json() ?? [];
+            if (!is_array($profiles)) {
+                return null;
+            }
+
+            foreach ($profiles as $profile) {
+                if (is_array($profile) && ($profile['name'] ?? null) === $name) {
+                    $id = $profile['profile_id'] ?? $profile['id'] ?? null;
+                    return $id ? (string) $id : null;
+                }
+            }
+        } catch (Throwable $e) {
+            // сетевая ошибка на этапе дедупа — не блокируем провижининг.
+        }
+
+        return null;
+    }
+
     private function stripJidSuffix(string $jid): string
     {
         return preg_replace('/@.+$/', '', $jid) ?? $jid;
     }
 
-    private function client(Channel $channel): PendingRequest
+    private function client(): PendingRequest
     {
+        $token = tenancy()->central(fn () => PlatformSetting::get('wappi_master_token'));
+
         return Http::withHeaders([
-            'Authorization' => $channel->credentials['token'] ?? '',
+            'Authorization' => $token ?? '',
         ])->baseUrl(self::BASE_URL);
     }
 
-    private function url(string $path, Channel $channel, array $extraQuery = []): string
+    private function url(string $path, ?Channel $channel, array $extraQuery = []): string
     {
-        $query = array_merge(['profile_id' => $channel->external_profile_id], $extraQuery);
+        $query = $channel ? array_merge(['profile_id' => $channel->external_profile_id], $extraQuery) : $extraQuery;
 
         return $path . '?' . http_build_query($query);
     }

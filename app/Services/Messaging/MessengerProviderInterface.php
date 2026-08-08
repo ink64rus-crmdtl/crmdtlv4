@@ -39,9 +39,21 @@ interface MessengerProviderInterface
     public function getQrCode(Channel $channel): ?string;
 
     /**
-     * Зарегистрировать/обновить URL вебхука у провайдера для этого канала.
+     * Создать (или переиспользовать уже существующее по имени — защита от
+     * дублей при ретрае после сбоя) подключение у провайдера и сразу
+     * зарегистрировать вебхук. Вызывается ОДИН раз, при первом подключении
+     * канала — возвращает внешний идентификатор для сохранения в
+     * Channel.external_profile_id. $desiredName — по конвенции
+     * "{tenant_id}-{channel_id}", формирует вызывающий код (ChannelController),
+     * не сам провайдер — провайдеру всё равно, откуда взялось имя.
      */
-    public function registerWebhook(Channel $channel, string $webhookUrl): void;
+    public function provisionProfile(Channel $channel, string $desiredName, string $webhookUrl): string;
+
+    /**
+     * Освободить подключение у провайдера (при удалении канала) — best-effort,
+     * чтобы отключённые номера не копились в общем аккаунте навсегда.
+     */
+    public function releaseProfile(Channel $channel): void;
 
     /**
      * Разобрать входящий вебхук как СООБЩЕНИЕ. Null — это не сообщение (например

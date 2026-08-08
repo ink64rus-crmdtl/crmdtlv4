@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Models\Central\PlatformAdmin;
 
 return [
 
@@ -42,6 +43,14 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Central (landlord) БД, отдельно от тенантского 'web' — см.
+        // app/Models/Central/PlatformAdmin.php. Сессии этих двух гвардов
+        // не пересекаются даже при совпадении cookie-домена.
+        'platform_admin' => [
+            'driver' => 'session',
+            'provider' => 'platform_admins',
+        ],
     ],
 
     /*
@@ -65,6 +74,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'platform_admins' => [
+            'driver' => 'eloquent',
+            'model' => PlatformAdmin::class,
         ],
 
         // 'users' => [

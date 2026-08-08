@@ -22,6 +22,7 @@ class Appointment extends Model
         'work_order_id',
         'type',
         'status',
+        'reminder_sent_at',
         'start_at',
         'end_at',
         'comment',
@@ -32,6 +33,7 @@ class Appointment extends Model
         return [
             'start_at' => 'datetime',
             'end_at' => 'datetime',
+            'reminder_sent_at' => 'datetime',
         ];
     }
 

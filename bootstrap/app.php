@@ -46,6 +46,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('tenants:run payroll:accrue-salaries')
             ->hourly()
             ->withoutOverlapping();
+
+        // Напоминания о записи (Фаза 11.1) — чаще, чем прочие джобы: окно
+        // "за N часов до визита" узкое, часовая точность тут заметна клиенту.
+        // Часовой пояс не нужен — сравнение "сейчас < start_at <= сейчас+N" в UTC.
+        $schedule->command('tenants:run appointments:send-reminders')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

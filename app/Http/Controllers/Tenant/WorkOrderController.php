@@ -32,6 +32,9 @@ use App\Services\ActivityLogger;
 use App\Services\PayrollCalculationService;
 use App\Models\Payroll;
 use App\Models\StockMovement;
+use App\Models\MessageTemplate;
+use App\Services\Messaging\ChatDispatchService;
+use App\Services\Messaging\MessageTemplateService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -325,12 +328,41 @@ class WorkOrderController extends Controller
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
         ]);
 
+        $previousStatus = $workOrder->status;
         $workOrder->update(['status' => $validated['status']]);
 
         $statusLabel = Lookup::where('type', 'work_order_status')->where('value', $validated['status'])->value('label') ?? $validated['status'];
         ActivityLogger::log($workOrder, "Статус заказа №{$workOrder->id} изменён на «{$statusLabel}»", $this->workOrderLink($workOrder), 'status_changed');
 
+        // Фаза 11.1: автоуведомление клиента при переходе В "ready" (не на
+        // каждое сохранение уже стоящего статуса — иначе повторный клик по
+        // тому же пункту в списке рассылал бы дубли).
+        if ($validated['status'] === 'ready' && $previousStatus !== 'ready') {
+            $this->notifyClientByTrigger($workOrder, 'work_order.ready', fn ($template) => MessageTemplateService::renderForWorkOrder($template, $workOrder));
+        }
+
         return redirect()->back()->with('success', 'Статус обновлён');
+    }
+
+    /**
+     * Общая точка автотриггеров по шаблонам (Фаза 11.1) — молча пропускает,
+     * если шаблон для триггера не настроен/выключен или у клиента нет
+     * телефона/доступного канала: это не ошибка бизнес-операции (заказ всё
+     * равно должен смениться статус), просто уведомление некому отправить.
+     */
+    private function notifyClientByTrigger(WorkOrder $workOrder, string $trigger, \Closure $renderBody): void
+    {
+        $template = MessageTemplate::where('event_trigger', $trigger)->where('is_active', true)->first();
+        if (!$template || !$workOrder->client) {
+            return;
+        }
+
+        $channel = ChatDispatchService::defaultChannelFor($workOrder->branch_id);
+        if (!$channel) {
+            return;
+        }
+
+        ChatDispatchService::sendToClient($workOrder->client, $channel, $renderBody($template));
     }
 
     public function addComment(Request $request, WorkOrder $workOrder)

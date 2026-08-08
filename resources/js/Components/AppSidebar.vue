@@ -42,6 +42,7 @@ const routeMap = {
     'hr': 'hr.employees.index',
     'crm': 'crm.clients.index',
     'operations': 'operations.work-orders.index',
+    'communications': 'communications.index',
     'warehouse': 'warehouse.products.index',
     'finance': 'finance.transactions.index', // ИСПРАВЛЕНО: Добавлен маппинг для Финансов
     'dictionaries': 'settings.dictionaries.index',
@@ -90,8 +91,8 @@ const getLocalizedLabel = (label) => {
                     :key="module.id"
                     :href="getRoute(module.key)"
                     :class="[
-                        isRouteActive(module.key) 
-                            ? 'bg-primary/10 text-primary' 
+                        isRouteActive(module.key)
+                            ? 'bg-primary/10 text-primary'
                             : 'text-[#aab8c5] hover:bg-gray-800 hover:text-white',
                         'flex items-center px-4 py-2.5 transition-all duration-300 rounded-md text-sm font-medium'
                     ]"
@@ -100,6 +101,21 @@ const getLocalizedLabel = (label) => {
                     <span>{{ getLocalizedLabel(module.label) }}</span>
                 </Link>
             </nav>
+
+            <!-- Ярлык на кабинет администратора платформы (Фаза 16) — совсем
+                 другой контур доступа (central БД, отдельный логин), поэтому
+                 обычная ссылка с открытием в новой вкладке, а не Inertia Link.
+                 Видна только tenant-админам — см. пояснение в HandleInertiaRequests. -->
+            <a
+                v-if="page.props.auth?.isAdmin"
+                :href="page.props.platformAdminUrl"
+                target="_blank"
+                rel="noopener"
+                class="flex items-center px-4 py-2.5 mt-1.5 border-t border-gray-700/80 pt-4 text-[#aab8c5] hover:bg-gray-800 hover:text-white transition-all duration-300 rounded-md text-sm font-medium"
+            >
+                <i class="ri-shield-user-line text-lg mr-3"></i>
+                <span>Админка платформы</span>
+            </a>
         </div>
     </aside>
 </template>
