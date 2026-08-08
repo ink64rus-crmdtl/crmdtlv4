@@ -195,6 +195,7 @@ Route::middleware([
         Route::post('/hr/employees/bulk-export', [EmployeeController::class, 'bulkExport'])->name('hr.employees.bulk-export');
 
         // HR: Начисления/выплаты ЗП (Фаза 10.3)
+        Route::get('/hr/payroll', [PayrollController::class, 'index'])->name('hr.payroll.index');
         Route::post('/hr/payroll', [PayrollController::class, 'store'])->name('hr.payroll.store');
         Route::post('/hr/payroll/{payroll}/payout', [PayrollController::class, 'payout'])->name('hr.payroll.payout');
         Route::delete('/hr/payroll/{payroll}', [PayrollController::class, 'cancel'])->name('hr.payroll.cancel');

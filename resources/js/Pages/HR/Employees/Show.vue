@@ -23,6 +23,7 @@ const props = defineProps({
     services: { type: Array, default: () => [] },
     payrollEntries: { type: Array, default: () => [] },
     payoutAccounts: { type: Array, default: () => [] },
+    payrollBalance: { type: Object, default: () => ({ accrued_total: 0, paid_total: 0, deductions_total: 0, balance: 0 }) },
 });
 
 const activeTimelineTab = ref('history'); // 'history', 'comments'
@@ -485,6 +486,20 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                         <div class="flex gap-1.5">
                             <button @click="openAccrualModal('accrual')" title="Начислить премию" class="text-success hover:text-success-600 transition-colors"><i class="ri-add-circle-line text-lg"></i></button>
                             <button @click="openAccrualModal('deduction')" title="Оформить штраф" class="text-danger hover:text-danger-600 transition-colors"><i class="ri-subtract-line text-lg"></i></button>
+                        </div>
+                    </div>
+                    <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700/50 grid grid-cols-3 gap-2 text-center bg-gray-50/30 dark:bg-gray-800/20">
+                        <div>
+                            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Начислено</p>
+                            <p class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(payrollBalance.accrued_total) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Выплачено</p>
+                            <p class="text-sm font-bold text-success">{{ formatMoney(payrollBalance.paid_total) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">К выплате</p>
+                            <p class="text-sm font-bold" :class="payrollBalance.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(payrollBalance.balance) }}</p>
                         </div>
                     </div>
                     <div class="divide-y divide-gray-100 dark:divide-gray-700/50 max-h-96 overflow-y-auto custom-scrollbar">

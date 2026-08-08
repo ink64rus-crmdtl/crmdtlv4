@@ -223,6 +223,28 @@ class EmployeeController extends Controller
 
         $payoutAccounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type']);
 
+        // Фаза 10.4: баланс взаиморасчётов — считаем по ВСЕЙ истории начислений
+        // (не по обрезанным до 50 строк $payrollEntries), та же формула, что и в
+        // общем отчёте PayrollController::index().
+        $balanceRow = Payroll::where('employee_id', $employee->id)
+            ->selectRaw("
+                SUM(CASE WHEN type = 'accrual' AND status != 'canceled' THEN amount ELSE 0 END) as accrued_total,
+                SUM(CASE WHEN type = 'accrual' AND status = 'paid' THEN amount ELSE 0 END) as paid_total,
+                SUM(CASE WHEN type = 'deduction' AND status = 'pending' THEN amount ELSE 0 END) as deductions_total
+            ")
+            ->first();
+
+        $accruedTotal = (int) ($balanceRow->accrued_total ?? 0);
+        $paidTotal = (int) ($balanceRow->paid_total ?? 0);
+        $deductionsTotal = (int) ($balanceRow->deductions_total ?? 0);
+
+        $payrollBalance = [
+            'accrued_total' => $accruedTotal,
+            'paid_total' => $paidTotal,
+            'deductions_total' => $deductionsTotal,
+            'balance' => $accruedTotal - $paidTotal - $deductionsTotal,
+        ];
+
         return Inertia::render('HR/Employees/Show', [
             'employee' => $employee,
             'resolvedScopes' => $resolvedScopes,
@@ -239,6 +261,7 @@ class EmployeeController extends Controller
             'services' => Service::where('is_active', true)->get(['id', 'name', 'service_category_id']),
             'payrollEntries' => $payrollEntries,
             'payoutAccounts' => $payoutAccounts,
+            'payrollBalance' => $payrollBalance,
         ]);
     }
 

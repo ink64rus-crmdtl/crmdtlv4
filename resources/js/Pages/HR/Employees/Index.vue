@@ -5,6 +5,7 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import CalendarColorPicker from '@/Components/CalendarColorPicker.vue';
+import HRNav from '@/Components/HRNav.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -325,7 +326,9 @@ const employeeTypes = {
         </template>
 
         <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
-            
+
+            <HRNav />
+
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
@@ -355,9 +358,6 @@ const employeeTypes = {
                     placeholder="Поиск по имени, телефону, email..."
                 >
                     <template #actions>
-                        <Link :href="route('hr.positions.index')" class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
-                            Справочник должностей
-                        </Link>
                         <button
                             @click="openModal()"
                             class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"

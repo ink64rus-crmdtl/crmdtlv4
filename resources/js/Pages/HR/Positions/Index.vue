@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import HRNav from '@/Components/HRNav.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -135,7 +136,9 @@ const deletePosition = (position) => {
         </template>
 
         <div class="w-[99%] mx-auto space-y-6 font-sans text-slate-600">
-            
+
+            <HRNav />
+
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
@@ -163,9 +166,6 @@ const deletePosition = (position) => {
                     placeholder="Поиск по названию..."
                 >
                     <template #actions>
-                        <a :href="route('hr.employees.index')" class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">
-                            К списку сотрудников
-                        </a>
                         <button
                             @click="openModal()"
                             class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
