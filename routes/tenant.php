@@ -37,6 +37,9 @@ use App\Http\Controllers\Tenant\AccountSnapshotController;
 use App\Http\Controllers\Tenant\PeriodClosureController;
 use App\Http\Controllers\Tenant\PayrollSettingsController;
 use App\Http\Controllers\Tenant\PayrollController;
+use App\Http\Controllers\Tenant\MessengerWebhookController;
+use App\Http\Controllers\Tenant\ChannelController;
+use App\Http\Controllers\Tenant\ChatController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 
@@ -48,6 +51,12 @@ Route::middleware([
     SetBranchContext::class,
 ])->group(function () {
 
+    // Вебхуки мессенджер-провайдеров — без auth (внешний сервис не залогинен),
+    // но внутри tenancy-группы (домен тенанта резолвится по хосту как обычно),
+    // защита — непубличный webhook_token в URL, не сессия/CSRF (см. bootstrap/app.php).
+    Route::post('/webhooks/{provider}/{webhookToken}', [MessengerWebhookController::class, 'handle'])
+        ->name('webhooks.messenger');
+
     Route::get('/', function () {
         return Inertia::render('Welcome', [
             'canLogin' => Route::has('login'),
@@ -58,6 +67,13 @@ Route::middleware([
     });
 
     Route::middleware('auth')->group(function () {
+        // Регистрируем здесь (а не через withRouting(channels:...) в bootstrap/app.php) —
+        // POST /broadcasting/auth обязан идти через InitializeTenancyByDomain, иначе
+        // Broadcast::channel()-коллбэки в routes/channels.php бьют не в ту БД. См. комментарий
+        // в bootstrap/app.php.
+        \Illuminate\Support\Facades\Broadcast::routes();
+        require base_path('routes/channels.php');
+
         Route::get('/dashboard', function () {
             return Inertia::render('Dashboard');
         })->name('dashboard');
@@ -176,6 +192,14 @@ Route::middleware([
         Route::put('/settings/payroll/rules/{rule}', [PayrollSettingsController::class, 'updateRule'])->name('settings.payroll.rules.update');
         Route::delete('/settings/payroll/rules/{rule}', [PayrollSettingsController::class, 'destroyRule'])->name('settings.payroll.rules.destroy');
 
+        // Настройки: Каналы связи (Фаза 11.2)
+        Route::get('/settings/channels', [ChannelController::class, 'index'])->name('settings.channels.index');
+        Route::post('/settings/channels', [ChannelController::class, 'store'])->name('settings.channels.store');
+        Route::put('/settings/channels/{channel}', [ChannelController::class, 'update'])->name('settings.channels.update');
+        Route::delete('/settings/channels/{channel}', [ChannelController::class, 'destroy'])->name('settings.channels.destroy');
+        Route::get('/settings/channels/{channel}/qr', [ChannelController::class, 'qrCode'])->name('settings.channels.qr');
+        Route::get('/settings/channels/{channel}/status', [ChannelController::class, 'status'])->name('settings.channels.status');
+
         // HR: Должности
         Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');
         Route::post('/hr/positions', [PositionController::class, 'store'])->name('hr.positions.store');
@@ -208,6 +232,8 @@ Route::middleware([
         Route::put('/crm/clients/{client}', [ClientController::class, 'update'])->name('crm.clients.update');
         Route::delete('/crm/clients/{client}', [ClientController::class, 'destroy'])->name('crm.clients.destroy');
         Route::post('/crm/clients/{client}/comment', [ClientController::class, 'addComment'])->name('crm.clients.comment');
+        Route::get('/crm/clients/{client}/chats', [ChatController::class, 'forClient'])->name('crm.clients.chats');
+        Route::post('/crm/clients/{client}/chats/send', [ChatController::class, 'send'])->name('crm.clients.chats.send');
         Route::post('/crm/clients/bulk-delete', [ClientController::class, 'bulkDestroy'])->name('crm.clients.bulk-destroy');
         Route::post('/crm/clients/bulk-export', [ClientController::class, 'bulkExport'])->name('crm.clients.bulk-export');
 

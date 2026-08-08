@@ -11,6 +11,7 @@ use App\Models\CustomFieldValue;
 use App\Models\ListView;
 use App\Models\Lookup;
 use App\Models\WorkOrder;
+use App\Models\Channel;
 use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
@@ -187,6 +188,9 @@ class ClientController extends Controller
             'workOrderStatuses' => $workOrderStatuses,
             'activities' => $activities,
             'comments' => $comments,
+            'messengerChannels' => Channel::where('is_active', true)
+                ->whereIn('provider', ['wappi_pro', 'green_api'])
+                ->get(['id', 'name', 'messenger_type']),
         ]);
     }
 

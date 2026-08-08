@@ -12,13 +12,24 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    // Намеренно БЕЗ channels: __DIR__.'/../routes/channels.php' здесь: withRouting(channels: ...)
+    // регистрирует POST /broadcasting/auth глобально под 'web' — БЕЗ InitializeTenancyByDomain,
+    // значит Broadcast::channel() коллбэки при авторизации канала стучались бы не в ту БД
+    // (центральную/landlord, где нет chats/messages). Вместо этого Broadcast::routes() +
+    // routes/channels.php подключены внутри routes/tenant.php, в той же tenancy+auth группе,
+    // что и остальные бизнес-маршруты — см. там.
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-        //
+        // Вебхуки от Wappi/SMS Aero и т.п. — внешние сервисы, у них нет и не может
+        // быть нашего CSRF-токена. Защита от подделки — сам webhook_token в URL
+        // (см. Channel.webhook_token), не CSRF.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/*',
+        ]);
     })
     ->withSchedule(function (Schedule $schedule): void {
         // tenants:run сам оборачивает выполнение в tenancy()->initialize() для каждого тенанта.

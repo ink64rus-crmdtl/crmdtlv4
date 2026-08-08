@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
+import ChatPanel from '@/Components/ChatPanel.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -19,9 +20,10 @@ const props = defineProps({
     workOrderStatuses: { type: Array, default: () => [] },
     activities: { type: Array, default: () => [] },
     comments: { type: Array, default: () => [] },
+    messengerChannels: { type: Array, default: () => [] },
 });
 
-const activeTimelineTab = ref('history'); // 'history', 'comments'
+const activeTimelineTab = ref('history'); // 'history', 'comments', 'chat'
 
 const statusColorClasses = {
     info: 'bg-info/10 text-info',
@@ -377,6 +379,9 @@ const currentCountrySchema = computed(() => {
                             <i class="ri-chat-3-line"></i> Комментарии
                             <span v-if="comments.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{{ comments.length }}</span>
                         </button>
+                        <button @click="activeTimelineTab = 'chat'" :class="[activeTimelineTab === 'chat' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-whatsapp-line"></i> Чат
+                        </button>
                     </div>
 
                     <div v-if="activeTimelineTab === 'history'" class="flex-1 flex flex-col min-h-0">
@@ -385,6 +390,7 @@ const currentCountrySchema = computed(() => {
                     <div v-if="activeTimelineTab === 'comments'" class="flex-1 flex flex-col min-h-0">
                         <ActivityTimeline :activities="comments" :comment-url="route('crm.clients.comment', client.id)" />
                     </div>
+                    <ChatPanel v-if="activeTimelineTab === 'chat'" :client-id="client.id" :channels="messengerChannels" />
                 </div>
             </div>
 
