@@ -31,6 +31,7 @@ use App\Services\TimezoneResolver;
 use App\Services\ActivityLogger;
 use App\Services\PayrollCalculationService;
 use App\Models\Payroll;
+use App\Models\StockMovement;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -298,6 +299,21 @@ class WorkOrderController extends Controller
 
     public function destroy(WorkOrder $workOrder)
     {
+        // WorkOrder — SoftDeletes, поэтому ->delete() НЕ триггерит ни
+        // cascadeOnDelete (work_order_items), ни nullOnDelete (stock_movements,
+        // payrolls) на уровне БД — строка физически остаётся, просто прячется
+        // из выборок с default scope. Раньше это позволяло "удалить" уже
+        // завершённый заказ с проведённой оплатой, списанным со склада
+        // материалом и начисленной за него зарплатой: деньги/остатки/начисление
+        // оставались в силе, но заказ, который их объясняет, пропадал из
+        // интерфейса — см. правило CLAUDE.md §6 об операциях, необратимо
+        // повлиявших на склад/финансы: для них нужен явный откат через
+        // StockService/FinanceService, а не просто снятие блокировки (поэтому
+        // здесь нет обхода даже для admin).
+        if ($workOrder->transactions()->exists() || StockMovement::where('work_order_id', $workOrder->id)->exists() || Payroll::where('work_order_id', $workOrder->id)->exists()) {
+            return redirect()->back()->withErrors(['error' => "Заказ №{$workOrder->id} нельзя удалить: по нему уже проведена оплата, списание со склада или начисление зарплаты. Сначала отмените эти операции (возврат оплаты в Финансах, начисление ЗП — в разделе Зарплата), либо переведите заказ в статус «Отменён» вместо удаления."]);
+        }
+
         $this->unlinkAppointments([$workOrder->id]);
         $workOrder->delete();
         return redirect()->back()->with('success', 'Заказ-наряд удален');
@@ -682,7 +698,20 @@ class WorkOrderController extends Controller
         $account = Account::findOrFail($validated['account_id']);
         $amountCents = (int) round($validated['amount'] * 100);
 
-        // Оплата бонусами не может превышать бонусный баланс клиента
+        // Фронтенд уже ограничивает поле суммы остатком долга (max на инпуте) —
+        // это лишь UI-подсказка, реальную защиту от переплаты (случайная
+        // опечатка в сумме, прямой вызов API в обход формы) даёт только
+        // серверная проверка. Без неё оплата принималась на любую сумму:
+        // payment_status просто становится 'paid' без следа о том, что часть
+        // денег — переплата, без способа её потом отследить или вернуть.
+        $paidSoFar = $workOrder->transactions()->where('type', 'income')->sum('amount');
+        $remainingCents = max(0, $workOrder->final_amount - $paidSoFar);
+
+        if ($amountCents > $remainingCents) {
+            return redirect()->back()->withErrors(['amount' => 'Сумма оплаты (' . $this->formatMoney($amountCents) . ') превышает остаток долга по заказу (' . $this->formatMoney($remainingCents) . ').']);
+        }
+
+        // Оплата бонусами дополнительно не может превышать бонусный баланс клиента
         if ($account->type === 'bonus') {
             $rate = (float) (Setting::where('key', 'bonus_rub_per_point')->value('value') ?? 1);
             $client = $workOrder->client;

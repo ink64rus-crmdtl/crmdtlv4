@@ -4,7 +4,14 @@ import { computed } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 
 const page = usePage();
-const modules = computed(() => page.props.modules || []);
+// Модули сидируются в БД заранее (в т.ч. под ещё не реализованные фазы
+// роадмапа — "Общение", "Документы"), поэтому пункт меню без соответствующего
+// маршрута скрываем целиком, а не ведём на "#" (клик по нему ничего не делал —
+// был неотличим для пользователя от сломанной ссылки).
+const modules = computed(() => (page.props.modules || []).filter((module) => {
+    const routeName = routeMap[module.key] || module.key;
+    return route().has(routeName);
+}));
 
 // Маппинг старых иконок из сидера на новые Remix Icons (Attex Theme)
 const iconMap = {

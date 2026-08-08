@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Branch extends Model
 {
@@ -31,6 +32,17 @@ class Branch extends Model
     public function legalEntity(): BelongsTo
     {
         return $this->belongsTo(LegalEntity::class);
+    }
+
+    /**
+     * Обратная сторона Warehouse::branches() — без неё WarehouseResolver::resolveFor()
+     * падал на $branch->warehouses() (BadMethodCallException) для любого филиала в
+     * режиме склада per_branch/mixed, из-за чего завершение ЛЮБОГО заказа с товарной
+     * позицией было невозможно (StockService::deduct() никогда не вызывался).
+     */
+    public function warehouses(): BelongsToMany
+    {
+        return $this->belongsToMany(Warehouse::class, 'branch_warehouse')->withPivot('priority')->withTimestamps();
     }
 
     /**

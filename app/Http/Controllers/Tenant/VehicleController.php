@@ -223,7 +223,7 @@ class VehicleController extends Controller
                 'vehicle_make_id' => $validated['vehicle_make_id'],
                 'vehicle_model_id' => $validated['vehicle_model_id'],
                 'plate_number' => $validated['plate_number'] ? mb_strtoupper(str_replace(' ', '', $validated['plate_number'])) : null,
-                'vin' => $validated['vin'] ? mb_strtoupper($validated['vin']) : null,
+                'vin' => !empty($validated['vin']) ? mb_strtoupper($validated['vin']) : null,
                 'year' => $validated['year'] ?? null,
             ]);
 
@@ -271,7 +271,7 @@ class VehicleController extends Controller
                 'vehicle_make_id' => $validated['vehicle_make_id'],
                 'vehicle_model_id' => $validated['vehicle_model_id'],
                 'plate_number' => $validated['plate_number'] ? mb_strtoupper(str_replace(' ', '', $validated['plate_number'])) : null,
-                'vin' => $validated['vin'] ? mb_strtoupper($validated['vin']) : null,
+                'vin' => !empty($validated['vin']) ? mb_strtoupper($validated['vin']) : null,
                 'year' => $validated['year'] ?? null,
             ]);
 
