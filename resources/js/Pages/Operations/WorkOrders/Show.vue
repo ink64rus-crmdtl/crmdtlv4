@@ -7,6 +7,7 @@ import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import WorkOrderItemPayoutModal from '@/Components/WorkOrderItemPayoutModal.vue';
+import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
@@ -55,21 +56,39 @@ const activeMainTab = ref('items'); // 'items', 'comments', 'history'
 // --- ЗАРПЛАТА (Фаза 10.1): администратор заказа + распределение выплат по позиции ---
 const adminEligibleEmployees = computed(() => props.employees.filter(e => e.position?.payroll_role === 'admin'));
 
-const updateOrderAdmin = (employeeId) => {
-    router.patch(route('operations.work-orders.admin.update', props.workOrder.id), {
-        employee_id: employeeId || null,
-    }, { preserveScroll: true });
-};
-
 const payrollPreview = ref(null);
 const payrollPreviewLoading = ref(false);
 
-const openPayrollTab = () => {
-    activeMainTab.value = 'payroll';
+const fetchPayrollPreview = () => {
     payrollPreviewLoading.value = true;
     axios.get(route('operations.work-orders.payroll-preview', props.workOrder.id))
         .then(res => { payrollPreview.value = res.data; })
         .finally(() => { payrollPreviewLoading.value = false; });
+};
+
+const openPayrollTab = () => {
+    activeMainTab.value = 'payroll';
+    fetchPayrollPreview();
+};
+
+// Расчёт на вкладке "Зарплата" — предварительный (см. её баннер), и меняется
+// от того, кто назначен администратором заказа/позиции и как распределена
+// бригада. Пересчитываем сразу после любого такого изменения, а не только при
+// следующем открытии вкладки — иначе после смены администратора цифры на уже
+// открытой вкладке показывали бы устаревший расчёт до перезагрузки страницы.
+const refreshPayrollPreviewIfLoaded = () => {
+    if (payrollPreview.value !== null) {
+        fetchPayrollPreview();
+    }
+};
+
+const updateOrderAdmin = (employeeId) => {
+    router.patch(route('operations.work-orders.admin.update', props.workOrder.id), {
+        employee_id: employeeId || null,
+    }, {
+        preserveScroll: true,
+        onSuccess: refreshPayrollPreviewIfLoaded,
+    });
 };
 
 const isPayoutModalOpen = ref(false);
@@ -83,6 +102,7 @@ const openPayoutModal = (item) => {
 const closePayoutModal = () => {
     isPayoutModalOpen.value = false;
     payoutItem.value = null;
+    refreshPayrollPreviewIfLoaded();
 };
 
 const statusColorClasses = {
@@ -613,6 +633,20 @@ const completeOrder = () => {
     }
 };
 
+// Смена статуса прямо из карточки. "Завершён" — особый случай: у него есть
+// побочные эффекты (списание склада, расчёт ЗП), которые делает только
+// completeOrder() — обычный PATCH их не выполняет, поэтому выбор этого пункта
+// в списке перенаправляется на тот же поток, что и кнопка "Завершить заказ".
+const changeStatus = (status) => {
+    if (status === 'completed') {
+        completeOrder();
+        return;
+    }
+    router.patch(route('operations.work-orders.status.update', props.workOrder.id), { status }, {
+        preserveScroll: true,
+    });
+};
+
 // Вспомогательные функции
 const getLocalizedLabel = (label) => {
     if (!label) return '';
@@ -682,9 +716,13 @@ const formatMoney = (amount) => {
                         от {{ new Date(workOrder.created_at).toLocaleDateString('ru-RU') }}
                     </p>
                     <div class="flex flex-wrap justify-center gap-2">
-                        <span :class="[statuses[workOrder.status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-3 py-1 rounded-md text-xs font-bold tracking-wide uppercase']">
-                            {{ statuses[workOrder.status]?.label || workOrder.status }}
-                        </span>
+                        <StatusBadgeSelect
+                            :model-value="workOrder.status"
+                            :options="workOrderStatuses"
+                            :disabled="workOrder.status === 'completed'"
+                            :title="workOrder.status === 'completed' ? 'Заказ завершён — статус зафиксирован, изменение недоступно' : ''"
+                            @update:model-value="changeStatus"
+                        />
                     </div>
                 </div>
 
@@ -765,7 +803,10 @@ const formatMoney = (amount) => {
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col h-full min-h-[600px]">
                     <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/50">
                         <button @click="activeMainTab = 'items'" :class="[activeMainTab === 'items' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
-                            <i class="ri-tools-line"></i> Работы и Запчасти
+                            <i class="ri-tools-line"></i> Работы и Материалы
+                        </button>
+                        <button @click="openPayrollTab" :class="[activeMainTab === 'payroll' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-team-line"></i> Зарплата
                         </button>
                         <button @click="activeMainTab = 'comments'" :class="[activeMainTab === 'comments' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-chat-3-line"></i> Комментарии
@@ -773,9 +814,6 @@ const formatMoney = (amount) => {
                         </button>
                         <button @click="activeMainTab = 'history'" :class="[activeMainTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-history-line"></i> История
-                        </button>
-                        <button @click="openPayrollTab" :class="[activeMainTab === 'payroll' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
-                            <i class="ri-money-dollar-circle-line"></i> Зарплата
                         </button>
                     </div>
 
@@ -832,7 +870,7 @@ const formatMoney = (amount) => {
                                     @end="onItemsReordered"
                                 >
                                     <template #item="{ element: item }">
-                                        <tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <tr class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td class="py-3 px-2 text-center">
                                                 <i v-if="workOrder.status !== 'completed'" class="ri-draggable item-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
                                             </td>
@@ -863,7 +901,7 @@ const formatMoney = (amount) => {
                                             </td>
                                             <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.total) }}</td>
                                             <td class="py-3 px-6 text-sm text-right whitespace-nowrap">
-                                                <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-money-dollar-circle-line text-lg"></i></button>
+                                                <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-team-line text-lg"></i></button>
                                                 <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                             </td>
                                         </tr>
@@ -1238,7 +1276,7 @@ const formatMoney = (amount) => {
                                         />
                                         <span class="text-gray-400">=</span>
                                         <span class="text-sm font-bold text-primary w-20 text-right">{{ formatMoney(item.total) }}</span>
-                                        <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-money-dollar-circle-line text-lg"></i></button>
+                                        <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-team-line text-lg"></i></button>
                                         <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-lg"></i></button>
                                     </div>
                                 </div>

@@ -258,7 +258,7 @@ const handleEditChange = (entityType, fieldKey, roleId) => {
                             </thead>
                             <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
                                 <template v-for="module in modules" :key="module.id">
-                                    <tr v-if="module.required_permission" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                    <tr v-if="module.required_permission" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                         <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
                                             <div class="flex items-center gap-2">
                                                 <i :class="[module.icon, 'text-primary text-lg']"></i>
@@ -322,7 +322,7 @@ const handleEditChange = (entityType, fieldKey, roleId) => {
                                 </tr>
                             </thead>
                             <tbody v-if="fieldMatrix[activeEntityTab]" class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                <tr v-for="field in entities.find(e => e.key === activeEntityTab).fields" :key="field.key" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                <tr v-for="field in entities.find(e => e.key === activeEntityTab).fields" :key="field.key" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                     <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
                                         <div class="flex items-center gap-2">
                                             <span>{{ field.label }}</span>
@@ -422,7 +422,7 @@ const handleEditChange = (entityType, fieldKey, roleId) => {
                                 </tr>
                             </thead>
                             <tbody v-if="scopeMatrix[activeScopeTab]" class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                <tr v-for="item in scopes[activeScopeTab]" :key="item.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                <tr v-for="item in scopes[activeScopeTab]" :key="item.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                     <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
                                         {{ item.name }}
                                     </td>

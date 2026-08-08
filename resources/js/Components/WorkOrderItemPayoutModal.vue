@@ -150,7 +150,7 @@ const submit = () => {
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                    <tr v-for="assignment in form.assignments" :key="assignment.employee_id" :class="assignment.type === 'outsource' ? 'bg-purple-50/40 dark:bg-purple-900/10' : ''">
+                                    <tr v-for="assignment in form.assignments" :key="assignment.employee_id" :class="assignment.type === 'outsource' ? 'bg-purple-50/40 dark:bg-purple-900/10' : 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40'">
                                         <td class="py-2 px-3 text-sm text-gray-800 dark:text-gray-200">
                                             {{ assignment.name }}
                                             <span v-if="assignment.type === 'outsource'" class="block text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">Аутсорс</span>

@@ -72,7 +72,7 @@ const formatMoney = (amount) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="s in snapshots.data" :key="s.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="s in snapshots.data" :key="s.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     {{ new Date(s.snapshot_date).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric'}) }}
                                 </td>

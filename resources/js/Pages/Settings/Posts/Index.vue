@@ -203,7 +203,7 @@ const deletePost = (post) => {
                             @end="onPostsReordered"
                         >
                             <template #item="{ element: post }">
-                                <tr class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                <tr class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                     <td class="py-4 px-2 text-center">
                                         <i class="ri-draggable post-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
                                     </td>

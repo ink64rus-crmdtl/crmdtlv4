@@ -420,7 +420,7 @@ const getLocalizedLabel = (label) => {
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="make in makes" :key="make.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <tr v-for="make in makes" :key="make.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ make.name }}</td>
                                             <td class="py-4 px-6 text-sm">{{ make.models?.length || 0 }} шт.</td>
                                             <td class="py-4 px-6 text-sm">
@@ -460,7 +460,7 @@ const getLocalizedLabel = (label) => {
                                     </thead>
                                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
                                         <template v-for="make in makes" :key="'m_'+make.id">
-                                            <tr v-for="model in make.models" :key="model.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                            <tr v-for="model in make.models" :key="model.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                                 <td class="py-3 px-6 text-sm font-semibold text-gray-700 dark:text-gray-300">{{ make.name }}</td>
                                                 <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ model.name }}</td>
                                                 <td class="py-3 px-6 text-sm">{{ model.body_type || '—' }}</td>
@@ -499,7 +499,7 @@ const getLocalizedLabel = (label) => {
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="cat in serviceCategories" :key="cat.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <tr v-for="cat in serviceCategories" :key="cat.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
                                             <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300">
                                                 <span v-if="cat.business_direction" class="inline-flex items-center gap-1.5 bg-info/10 text-info px-2.5 py-1 rounded text-xs font-medium">
@@ -534,7 +534,7 @@ const getLocalizedLabel = (label) => {
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="cat in productCategories" :key="cat.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <tr v-for="cat in productCategories" :key="cat.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
                                             <td class="py-4 px-6 text-sm text-right space-x-2">
                                                 <button @click="openCategoryModal('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
@@ -592,7 +592,7 @@ const getLocalizedLabel = (label) => {
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="lookup in (lookups[activeTab] || [])" :key="lookup.id" class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <tr v-for="lookup in (lookups[activeTab] || [])" :key="lookup.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ lookup.value }}</td>
                                             <td v-if="activeTab === 'client_role'" class="py-4 px-6 text-sm">
                                                 <span :class="[`bg-${lookup.color || 'gray'}-100 text-${lookup.color || 'gray'}-700`, 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
@@ -641,7 +641,7 @@ const getLocalizedLabel = (label) => {
                                         @end="onStatusesReordered"
                                     >
                                         <template #item="{ element: lookup }">
-                                            <tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                            <tr class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                                 <td class="py-4 px-4">
                                                     <i class="ri-draggable status-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
                                                 </td>

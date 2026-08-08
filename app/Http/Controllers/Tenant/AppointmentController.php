@@ -382,11 +382,13 @@ class AppointmentController extends Controller
                 'status' => 'converted',
             ]);
 
-            ActivityLogger::log($workOrder, 'Заказ-наряд создан из записи в календаре', [
-                ['type' => 'appointment', 'id' => $appointment->id, 'label' => 'Открыть запись'],
+            $appointmentDate = $this->appointmentDateLabel($appointment);
+
+            ActivityLogger::log($workOrder, "Заказ-наряд №{$workOrder->id} создан из записи в календаре на {$appointmentDate}", [
+                ['type' => 'appointment', 'id' => $appointment->id, 'label' => "Запись на {$appointmentDate}"],
             ], 'created');
-            ActivityLogger::log($appointment, 'Запись оформлена в заказ-наряд', [
-                ['type' => 'work_order', 'id' => $workOrder->id, 'label' => 'Открыть заказ-наряд'],
+            ActivityLogger::log($appointment, "Запись на {$appointmentDate} оформлена в заказ-наряд №{$workOrder->id}", [
+                ['type' => 'work_order', 'id' => $workOrder->id, 'label' => "Заказ №{$workOrder->id}"],
             ], 'appointment_linked');
 
             return $workOrder;
@@ -427,11 +429,13 @@ class AppointmentController extends Controller
             'status' => 'converted',
         ]);
 
-        ActivityLogger::log($workOrder, 'Запись из календаря привязана к заказу', [
-            ['type' => 'appointment', 'id' => $appointment->id, 'label' => 'Открыть запись'],
+        $appointmentDate = $this->appointmentDateLabel($appointment);
+
+        ActivityLogger::log($workOrder, "Запись на {$appointmentDate} из календаря привязана к заказу №{$workOrder->id}", [
+            ['type' => 'appointment', 'id' => $appointment->id, 'label' => "Запись на {$appointmentDate}"],
         ], 'appointment_linked');
-        ActivityLogger::log($appointment, 'Запись привязана к заказ-наряду', [
-            ['type' => 'work_order', 'id' => $workOrder->id, 'label' => 'Открыть заказ-наряд'],
+        ActivityLogger::log($appointment, "Запись на {$appointmentDate} привязана к заказ-наряду №{$workOrder->id}", [
+            ['type' => 'work_order', 'id' => $workOrder->id, 'label' => "Заказ №{$workOrder->id}"],
         ], 'appointment_linked');
 
         return redirect()->back()->with('success', 'Запись привязана к заказ-наряду');
@@ -521,5 +525,17 @@ class AppointmentController extends Controller
             ->where('is_active', true)
             ->pluck('value')
             ->all();
+    }
+
+    /**
+     * Дата записи в локальном времени филиала — для точного текста события в
+     * Истории (см. CLAUDE.md §7): по roll-up событие видно и на карточке
+     * Клиента/Автомобиля, где без даты непонятно, о какой именно записи речь.
+     */
+    private function appointmentDateLabel(Appointment $appointment): string
+    {
+        $tz = TimezoneResolver::forBranch($appointment->branch_id);
+
+        return $appointment->start_at->copy()->setTimezone($tz)->format('d.m.Y H:i');
     }
 }

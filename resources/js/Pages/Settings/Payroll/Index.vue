@@ -230,7 +230,7 @@ const ruleValueLabel = (rule) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="rule in positionRules" :key="rule.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="rule in positionRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.position ? getLocalizedLabel(rule.position.name) : '—' }}</div>
                                     <span v-if="rule.position" :class="[rule.position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', 'inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium']">

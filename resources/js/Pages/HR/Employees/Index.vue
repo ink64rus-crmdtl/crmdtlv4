@@ -382,7 +382,7 @@ const employeeTypes = {
                         </thead>
                         <tbody>
                             <!-- Клик по строке открывает Offcanvas Быстрого просмотра -->
-                            <tr v-for="employee in employees.data" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
+                            <tr v-for="employee in employees.data" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
                                 
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
                                     <input type="checkbox" :value="employee.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
@@ -775,7 +775,7 @@ const employeeTypes = {
                         @click="activeTab = 'payroll'"
                         :class="[activeTab === 'payroll' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
                     >
-                        <i class="ri-money-dollar-circle-line"></i> Зарплата
+                        <i class="ri-team-line"></i> Зарплата
                     </button>
                 </div>
 
@@ -1116,7 +1116,7 @@ const employeeTypes = {
                     <!-- Вкладка 6: Зарплата -->
                     <div v-show="activeTab === 'payroll'" class="p-6 flex flex-col items-center justify-center text-center py-16">
                         <div class="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                            <i class="ri-money-dollar-circle-line text-3xl text-gray-400 dark:text-gray-500"></i>
+                            <i class="ri-team-line text-3xl text-gray-400 dark:text-gray-500"></i>
                         </div>
                         <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">Настройки мотивации</h3>
                         <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md">

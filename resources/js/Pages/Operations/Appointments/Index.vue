@@ -1002,7 +1002,7 @@ const toggleDefaultView = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="appointment in appointments.data" :key="appointment.id" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="appointment in appointments.data" :key="appointment.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="appointment.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>

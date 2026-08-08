@@ -262,7 +262,7 @@ class WorkOrderController extends Controller
                 $this->saveCustomFields($workOrder, $validated['custom_fields']);
             }
 
-            ActivityLogger::log($workOrder, 'Заказ-наряд создан', [], 'created');
+            ActivityLogger::log($workOrder, "Заказ-наряд №{$workOrder->id} создан", $this->workOrderLink($workOrder), 'created');
         });
 
         return redirect()->back()->with('success', 'Заказ-наряд успешно создан');
@@ -312,7 +312,7 @@ class WorkOrderController extends Controller
         $workOrder->update(['status' => $validated['status']]);
 
         $statusLabel = Lookup::where('type', 'work_order_status')->where('value', $validated['status'])->value('label') ?? $validated['status'];
-        ActivityLogger::log($workOrder, "Статус изменён на «{$statusLabel}»", [], 'status_changed');
+        ActivityLogger::log($workOrder, "Статус заказа №{$workOrder->id} изменён на «{$statusLabel}»", $this->workOrderLink($workOrder), 'status_changed');
 
         return redirect()->back()->with('success', 'Статус обновлён');
     }
@@ -323,7 +323,7 @@ class WorkOrderController extends Controller
             'comment' => ['required', 'string', 'max:2000'],
         ]);
 
-        ActivityLogger::log($workOrder, $validated['comment'], [], 'comment');
+        ActivityLogger::log($workOrder, $validated['comment'], $this->workOrderLink($workOrder), 'comment');
 
         return redirect()->back()->with('success', 'Комментарий добавлен');
     }
@@ -347,7 +347,10 @@ class WorkOrderController extends Controller
         $adminEmployee = $validated['employee_id'] ? Employee::find($validated['employee_id']) : null;
         $label = $adminEmployee ? trim($adminEmployee->first_name . ' ' . $adminEmployee->last_name) : null;
 
-        ActivityLogger::log($workOrder, $label ? "Администратор заказа изменён на «{$label}»" : 'Администратор заказа снят', [], 'admin_changed');
+        $adminChangeText = $label
+            ? "Администратор заказа №{$workOrder->id} изменён на «{$label}»"
+            : "Администратор заказа №{$workOrder->id} снят";
+        ActivityLogger::log($workOrder, $adminChangeText, $this->workOrderLink($workOrder), 'admin_changed');
 
         return redirect()->back()->with('success', 'Администратор заказа обновлён');
     }
@@ -552,7 +555,7 @@ class WorkOrderController extends Controller
                 $item->employees()->sync($validated['employee_ids']);
             }
 
-            ActivityLogger::log($workOrder, "Добавлена позиция «{$item->name}»", [], 'item_added');
+            ActivityLogger::log($workOrder, "Добавлена позиция «{$item->name}» в заказ №{$workOrder->id}", $this->workOrderLink($workOrder), 'item_added');
         });
 
         $this->recalculateTotals($workOrder);
@@ -608,7 +611,7 @@ class WorkOrderController extends Controller
         $itemName = $item->name;
         $item->delete();
         $this->recalculateTotals($workOrder);
-        ActivityLogger::log($workOrder, "Удалена позиция «{$itemName}»", [], 'item_removed');
+        ActivityLogger::log($workOrder, "Удалена позиция «{$itemName}» из заказа №{$workOrder->id}", $this->workOrderLink($workOrder), 'item_removed');
 
         return redirect()->back()->with('success', 'Позиция удалена');
     }
@@ -662,7 +665,7 @@ class WorkOrderController extends Controller
         $workOrder->save();
 
         $this->recalculateTotals($workOrder);
-        ActivityLogger::log($workOrder, 'Скидка изменена на ' . $this->formatMoney($workOrder->discount_amount), [], 'discount_updated');
+        ActivityLogger::log($workOrder, "Скидка по заказу №{$workOrder->id} изменена на " . $this->formatMoney($workOrder->discount_amount), $this->workOrderLink($workOrder), 'discount_updated');
 
         return redirect()->back()->with('success', 'Скидка обновлена');
     }
@@ -733,7 +736,7 @@ class WorkOrderController extends Controller
                 }
 
                 $workOrder->syncPaymentStatus();
-                ActivityLogger::log($workOrder, 'Принята оплата ' . $this->formatMoney($amountCents) . " ({$account->name})", [], 'payment_received');
+                ActivityLogger::log($workOrder, 'Принята оплата ' . $this->formatMoney($amountCents) . " по заказу №{$workOrder->id} ({$account->name})", $this->workOrderLink($workOrder), 'payment_received');
             });
 
             return redirect()->back()->with('success', 'Оплата успешно принята');
@@ -776,7 +779,7 @@ class WorkOrderController extends Controller
                 }
 
                 $workOrder->update(['status' => 'completed']);
-                ActivityLogger::log($workOrder, 'Заказ завершён, материалы списаны со склада', [], 'completed');
+                ActivityLogger::log($workOrder, "Заказ №{$workOrder->id} завершён, материалы списаны со склада", $this->workOrderLink($workOrder), 'completed');
 
                 // Фаза 10.2: автоматическое начисление ЗП по факту завершения
                 // заказа. Не блокирует завершение, если для кого-то из
@@ -800,11 +803,11 @@ class WorkOrderController extends Controller
                 }
 
                 if (!empty($payroll['rows'])) {
-                    ActivityLogger::log($workOrder, 'Начислена зарплата по ' . count($payroll['rows']) . ' позициям', [], 'payroll_accrued');
+                    ActivityLogger::log($workOrder, "По заказу №{$workOrder->id} начислена зарплата по " . count($payroll['rows']) . ' позициям', $this->workOrderLink($workOrder), 'payroll_accrued');
                 }
 
                 if (!empty($payroll['skipped'])) {
-                    ActivityLogger::log($workOrder, "Не начислена ЗП для части исполнителей — не настроена ставка:\n" . implode("\n", $payroll['skipped']), [], 'payroll_skipped');
+                    ActivityLogger::log($workOrder, "По заказу №{$workOrder->id} не начислена ЗП для части исполнителей — не настроена ставка:\n" . implode("\n", $payroll['skipped']), $this->workOrderLink($workOrder), 'payroll_skipped');
                 }
             });
 
@@ -859,6 +862,20 @@ class WorkOrderController extends Controller
     private function formatMoney(int $cents): string
     {
         return number_format($cents / 100, 2, ',', ' ') . ' ₽';
+    }
+
+    /**
+     * Ссылка на заказ для properties.links — событие, залогированное на WorkOrder,
+     * может показываться через roll-up в чужой ленте (Клиент/Автомобиль), где
+     * непонятно, о каком именно заказе речь без явной ссылки на первоисточник.
+     *
+     * @return array<int, array{type: string, id: int, label: string}>
+     */
+    private function workOrderLink(WorkOrder $workOrder): array
+    {
+        return [
+            ['type' => 'work_order', 'id' => $workOrder->id, 'label' => "Заказ №{$workOrder->id}"],
+        ];
     }
 
     private function recalculateTotals(WorkOrder $workOrder)

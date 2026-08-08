@@ -473,7 +473,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                             <span class="font-bold text-primary">{{ personalPayrollRules.length }}</span>
                         </div>
                         <button @click="openModal('payroll')" class="w-full mt-2 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white">
-                            <i class="ri-money-dollar-circle-line mr-1.5"></i> Настроить зарплату
+                            <i class="ri-team-line mr-1.5"></i> Настроить зарплату
                         </button>
                     </div>
                 </div>
@@ -625,7 +625,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                         @click="activeTab = 'payroll'"
                         :class="[activeTab === 'payroll' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
                     >
-                        <i class="ri-money-dollar-circle-line"></i> Зарплата
+                        <i class="ri-team-line"></i> Зарплата
                     </button>
                 </div>
 
@@ -1020,7 +1020,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                        <tr v-for="rule in personalPayrollRules" :key="rule.id">
+                                        <tr v-for="rule in personalPayrollRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40">
                                             <td class="py-2.5 px-4 text-sm text-gray-700 dark:text-gray-300">{{ ruleTargetLabel(rule) }}</td>
                                             <td class="py-2.5 px-4 text-sm text-gray-500 dark:text-gray-400">{{ rule.branch ? rule.branch.name : 'Все филиалы' }}</td>
                                             <td class="py-2.5 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ ruleValueLabel(rule) }}</td>

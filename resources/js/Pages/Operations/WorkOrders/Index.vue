@@ -340,7 +340,7 @@ const deleteOrder = (order) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="order in workOrders.data" :key="order.id" @click="openPreview(order)" class="odd:bg-gray-50/30 dark:odd:bg-gray-800/10 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
+                            <tr v-for="order in workOrders.data" :key="order.id" @click="openPreview(order)" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
                                 
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
                                     <input type="checkbox" :value="order.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
