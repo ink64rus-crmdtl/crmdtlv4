@@ -7,6 +7,15 @@ import ChatPanel from '@/Components/ChatPanel.vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
+// Цвета бейджа RFM-сегмента (Фаза 14.3) — тот же набор, что в CRM/Clients/Index.vue
+const segmentClasses = {
+    new: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    loyal: 'bg-success/10 text-success',
+    dormant: 'bg-warning/10 text-warning',
+    regular: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+};
+const segmentClass = (segment) => segmentClasses[segment] || segmentClasses.regular;
+
 const props = defineProps({
     client: Object,
     customFieldsData: Array,
@@ -209,6 +218,9 @@ const currentCountrySchema = computed(() => {
                         </span>
                         <span v-if="client.group" :class="[`bg-${client.group.color}-100 text-${client.group.color}-700 dark:bg-${client.group.color}-900/30 dark:text-${client.group.color}-400`, 'inline-flex items-center gap-1.5 py-1 px-3 rounded-full text-[10px] font-bold tracking-wide uppercase']">
                             {{ client.group.name }}
+                        </span>
+                        <span v-if="client.segment" :class="[segmentClass(client.segment), 'inline-flex items-center gap-1.5 py-1 px-3 rounded-full text-[10px] font-bold tracking-wide uppercase']">
+                            {{ client.segment_label }}
                         </span>
                     </div>
 

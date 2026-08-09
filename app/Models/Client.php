@@ -65,6 +65,11 @@ class Client extends Model
         return $this->hasMany(Vehicle::class);
     }
 
+    public function workOrders(): HasMany
+    {
+        return $this->hasMany(WorkOrder::class);
+    }
+
     public function documents(): MorphMany
     {
         return $this->morphMany(Document::class, 'documentable');

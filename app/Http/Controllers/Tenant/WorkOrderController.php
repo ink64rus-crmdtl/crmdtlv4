@@ -783,7 +783,9 @@ class WorkOrderController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($workOrder, $amountCents, $account) {
+            $pointsEarned = 0;
+
+            DB::transaction(function () use ($workOrder, $amountCents, $account, &$pointsEarned) {
                 FinanceService::processTransaction([
                     'account_id' => $account->id,
                     'branch_id' => $workOrder->branch_id,
@@ -803,6 +805,23 @@ class WorkOrderController extends Controller
 
                     if ($pointsUsed > 0) {
                         $client->decrement('bonus_points', $pointsUsed);
+                    }
+                } else {
+                    // Начисление кэшбека (Фаза 14.1) — только с реально уплаченных денег,
+                    // не с оплаты бонусами (иначе баллы начислялись бы сами на себя).
+                    // Процент — из грейда клиента (ClientGroup.cashback_percent), курс
+                    // конвертации рублей в баллы — тот же bonus_rub_per_point, что и при списании.
+                    $client = $workOrder->client;
+                    $cashbackPercent = (float) ($client->group->cashback_percent ?? 0);
+
+                    if ($cashbackPercent > 0) {
+                        $rate = (float) (Setting::where('key', 'bonus_rub_per_point')->value('value') ?? 1);
+                        $cashbackRub = ($amountCents / 100) * $cashbackPercent / 100;
+                        $pointsEarned = $rate > 0 ? (int) floor($cashbackRub / $rate) : 0;
+
+                        if ($pointsEarned > 0) {
+                            $client->increment('bonus_points', $pointsEarned);
+                        }
                     }
                 }
 
@@ -825,7 +844,11 @@ class WorkOrderController extends Controller
                 }
 
                 $workOrder->syncPaymentStatus();
-                ActivityLogger::log($workOrder, 'Принята оплата ' . $this->formatMoney($amountCents) . " по заказу №{$workOrder->id} ({$account->name})", $this->workOrderLink($workOrder), 'payment_received');
+                $paymentMessage = 'Принята оплата ' . $this->formatMoney($amountCents) . " по заказу №{$workOrder->id} ({$account->name})";
+                if ($pointsEarned > 0) {
+                    $paymentMessage .= ", начислено {$pointsEarned} бонусных баллов";
+                }
+                ActivityLogger::log($workOrder, $paymentMessage, $this->workOrderLink($workOrder), 'payment_received');
             });
 
             return redirect()->back()->with('success', 'Оплата успешно принята');

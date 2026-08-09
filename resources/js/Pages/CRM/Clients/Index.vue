@@ -43,6 +43,7 @@ const initialFilters = {
     type: props.filters?.filters?.type || '',
     is_lead: props.filters?.filters?.is_lead || '',
     client_group_id: props.filters?.filters?.client_group_id || '',
+    segment: props.filters?.filters?.segment || '',
 };
 props.customFieldDefs.filter(f => f.is_filterable).forEach(def => {
     initialFilters['cf_' + def.key] = props.filters?.filters?.['cf_' + def.key] || '';
@@ -149,10 +150,18 @@ const toggleColumn = (key) => {
 
 // ---------------------------
 
-// --- ДОБАВЛЕНИЕ ГРУППЫ НА ЛЕТУ ---
+// --- ГРУППЫ (ГРЕЙДЫ) КЛИЕНТОВ: добавление, кэшбек, удаление ---
 const groupForm = useForm({
     name: '',
     color: 'gray',
+    cashback_percent: 0,
+});
+
+const editingGroupId = ref(null);
+const editGroupForm = useForm({
+    name: '',
+    color: 'gray',
+    cashback_percent: 0,
 });
 
 const groupColors = [
@@ -164,23 +173,64 @@ const groupColors = [
     { value: 'purple', label: 'Фиолетовый', class: 'bg-purple-100 text-purple-700' },
 ];
 
+const groupColorClass = (color) => groupColors.find(c => c.value === color)?.class || groupColors[0].class;
+
 const openGroupModal = () => {
     groupForm.reset();
+    editingGroupId.value = null;
     isGroupModalOpen.value = true;
 };
 
 const closeGroupModal = () => {
     isGroupModalOpen.value = false;
     groupForm.reset();
+    editingGroupId.value = null;
 };
 
 const submitGroup = () => {
     groupForm.post(route('crm.client-groups.store'), {
+        preserveScroll: true,
         onSuccess: () => {
-            closeGroupModal();
+            groupForm.reset();
         },
     });
 };
+
+const startEditGroup = (group) => {
+    editingGroupId.value = group.id;
+    editGroupForm.clearErrors();
+    editGroupForm.name = group.name;
+    editGroupForm.color = group.color;
+    editGroupForm.cashback_percent = group.cashback_percent;
+};
+
+const cancelEditGroup = () => {
+    editingGroupId.value = null;
+};
+
+const submitEditGroup = (group) => {
+    editGroupForm.put(route('crm.client-groups.update', group.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            editingGroupId.value = null;
+        },
+    });
+};
+
+const deleteGroup = (group) => {
+    if (!confirm(`Удалить группу «${group.name}»? У клиентов этой группы группа будет сброшена на «Без группы».`)) return;
+    router.delete(route('crm.client-groups.destroy', group.id), { preserveScroll: true });
+};
+// ---------------------------------
+
+// --- RFM-СЕГМЕНТ КЛИЕНТА (Фаза 14.3) ---
+const segmentClasses = {
+    new: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    loyal: 'bg-success/10 text-success',
+    dormant: 'bg-warning/10 text-warning',
+    regular: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+};
+const segmentClass = (segment) => segmentClasses[segment] || segmentClasses.regular;
 // ---------------------------------
 
 const form = useForm({
@@ -430,6 +480,12 @@ const formatMoney = (amount) => {
                                         <span v-else class="text-xs text-gray-400">—</span>
                                     </template>
 
+                                    <template v-else-if="col.key === 'segment'">
+                                        <span :class="[segmentClass(client.segment), 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
+                                            {{ client.segment_label }}
+                                        </span>
+                                    </template>
+
                                     <template v-else-if="col.key === 'phone'">
                                         {{ client.phone || '—' }}
                                     </template>
@@ -594,6 +650,9 @@ const formatMoney = (amount) => {
                                 {{ previewClient.type === 'b2b' ? 'Юридическое лицо' : 'Физическое лицо' }}
                                 <span v-if="previewClient.group" :class="[`bg-${previewClient.group.color}-100 text-${previewClient.group.color}-700 dark:bg-${previewClient.group.color}-900/30 dark:text-${previewClient.group.color}-400`, 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold ml-1']">
                                     {{ previewClient.group.name }}
+                                </span>
+                                <span v-if="previewClient.segment" :class="[segmentClass(previewClient.segment), 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold']">
+                                    {{ previewClient.segment_label }}
                                 </span>
                             </p>
                         </div>
@@ -1090,7 +1149,17 @@ const formatMoney = (amount) => {
                             <option v-for="group in clientGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
                         </select>
                     </div>
-                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сегмент</label>
+                        <select v-model="filtersForm.segment" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все сегменты</option>
+                            <option value="new">Новичок</option>
+                            <option value="loyal">Лояльный</option>
+                            <option value="dormant">Спящий</option>
+                            <option value="regular">Обычный</option>
+                        </select>
+                    </div>
+
                     <!-- Кастомные фильтры -->
                     <template v-for="def in customFieldDefs.filter(f => f.is_filterable)" :key="def.id">
                         <div>
@@ -1124,6 +1193,94 @@ const formatMoney = (amount) => {
                 </div>
             </div>
         </Offcanvas>
+
+        <!-- Модальное окно управления группами (грейдами) клиентов и кэшбеком -->
+        <div v-if="isGroupModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-lg my-8 mx-auto flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Группы (грейды) клиентов
+                    </h3>
+                    <button @click="closeGroupModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Грейд определяет процент кэшбека в бонусные баллы клиента при оплате заказа деньгами (не бонусами). Курс баллов задаётся в Настройках CRM.
+                    </p>
+
+                    <!-- Список существующих групп -->
+                    <div class="space-y-2">
+                        <div v-for="group in clientGroups" :key="group.id" class="border border-gray-200 dark:border-gray-700 rounded-md p-3">
+                            <div v-if="editingGroupId !== group.id" class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span :class="[groupColorClass(group.color), 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium shrink-0']">{{ group.name }}</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">Кэшбек: {{ group.cashback_percent }}%</span>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button type="button" @click="startEditGroup(group)" class="text-gray-400 hover:text-primary p-1" title="Редактировать"><i class="ri-pencil-line"></i></button>
+                                    <button type="button" @click="deleteGroup(group)" class="text-gray-400 hover:text-danger p-1" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                                </div>
+                            </div>
+                            <div v-else class="space-y-3">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Название</label>
+                                        <input v-model="editGroupForm.name" type="text" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Кэшбек, %</label>
+                                        <input v-model="editGroupForm.cashback_percent" type="number" step="0.01" min="0" max="100" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <button v-for="c in groupColors" :key="c.value" type="button" @click="editGroupForm.color = c.value" :class="[c.class, editGroupForm.color === c.value ? 'ring-2 ring-offset-1 ring-primary' : 'opacity-60 hover:opacity-100', 'px-2 py-0.5 rounded text-xs font-medium transition-all']">{{ c.label }}</button>
+                                </div>
+                                <div class="flex justify-end gap-2">
+                                    <button type="button" @click="cancelEditGroup()" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        Отмена
+                                    </button>
+                                    <button type="button" @click="submitEditGroup(group)" :disabled="editGroupForm.processing" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                                        Сохранить
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <p v-if="clientGroups.length === 0" class="text-sm text-gray-400 text-center py-2">Групп ещё нет</p>
+                    </div>
+
+                    <!-- Добавление новой группы -->
+                    <form @submit.prevent="submitGroup" class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+                        <h4 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider">Новая группа</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Название <span class="text-danger">*</span></label>
+                                <input v-model="groupForm.name" type="text" required placeholder="Например, VIP" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span v-if="groupForm.errors.name" class="text-xs text-danger mt-1">{{ groupForm.errors.name }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Кэшбек, %</label>
+                                <input v-model="groupForm.cashback_percent" type="number" step="0.01" min="0" max="100" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button v-for="c in groupColors" :key="c.value" type="button" @click="groupForm.color = c.value" :class="[c.class, groupForm.color === c.value ? 'ring-2 ring-offset-1 ring-primary' : 'opacity-60 hover:opacity-100', 'px-2 py-0.5 rounded text-xs font-medium transition-all']">{{ c.label }}</button>
+                        </div>
+                        <div class="flex justify-end">
+                            <button type="submit" :disabled="groupForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
+                                <i class="ri-add-line mr-1"></i> Добавить группу
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex justify-end">
+                    <button @click="closeGroupModal()" class="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        Закрыть
+                    </button>
+                </div>
+            </div>
+        </div>
 
     </AuthenticatedLayout>
 </template>

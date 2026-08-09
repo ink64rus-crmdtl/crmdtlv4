@@ -17,6 +17,7 @@ use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
 use App\Services\ActivityLogger;
+use App\Services\ClientSegmentService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,14 +32,28 @@ class ClientController extends Controller
         
         // Базовый запрос с подгрузкой связей
         $query = Client::with(['branch' => fn ($q) => $q->withTrashed(), 'group']);
-        
+        ClientSegmentService::withAggregates($query);
+
+        // Фильтр по RFM-сегменту (Фаза 14.3) — не обычная колонка таблицы,
+        // обрабатывается отдельно через HAVING на агрегатах, а не в общем
+        // QueryFilterService (тот сделал бы наивный WHERE segment = ...).
+        $requestParams = $request->all();
+        $segmentFilter = $requestParams['filters']['segment'] ?? null;
+        if ($segmentFilter) {
+            unset($requestParams['filters']['segment']);
+        }
+
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
             $query,
-            $request->all(),
+            $requestParams,
             ['name', 'phone', 'email', 'alias', 'vehicles.plate_number'],
             'client'
         );
+
+        if ($segmentFilter) {
+            ClientSegmentService::applyFilter($query, $segmentFilter);
+        }
 
         if (!$request->has('sort_by')) {
             $query->orderBy('id', 'desc');
@@ -65,6 +80,7 @@ class ClientController extends Controller
         $baseColumns = [
             ['key' => 'client_name', 'label' => 'Клиент', 'type' => 'system', 'is_default' => true],
             ['key' => 'client_group', 'label' => 'Роль / Группа', 'type' => 'system', 'is_default' => true],
+            ['key' => 'segment', 'label' => 'Сегмент', 'type' => 'system', 'is_default' => true],
             ['key' => 'phone', 'label' => 'Телефон', 'type' => 'system', 'is_default' => true],
             ['key' => 'phone_2', 'label' => 'Доп. Телефон', 'type' => 'system', 'is_default' => false],
             ['key' => 'email', 'label' => 'Email', 'type' => 'system', 'is_default' => false],
@@ -96,12 +112,16 @@ class ClientController extends Controller
         $clients->getCollection()->transform(function ($client) use ($cfValues, $customFieldDefs) {
             $clientData = $client->toArray();
             $clientData['custom_fields'] = [];
-            
+
             foreach ($customFieldDefs as $def) {
                 $val = $cfValues->where('entity_id', $client->id)->where('custom_field_definition_id', $def->id)->first();
                 $clientData['custom_fields'][$def->key] = $val ? ($val->value_text ?? $val->value_number ?? $val->value_date ?? $val->value) : null;
             }
-            
+
+            $segment = ClientSegmentService::classify($client);
+            $clientData['segment'] = $segment;
+            $clientData['segment_label'] = ClientSegmentService::label($segment);
+
             return $clientData;
         });
 
@@ -172,10 +192,18 @@ class ClientController extends Controller
 
         $workOrderStatuses = Lookup::where('type', 'work_order_status')->orderBy('sort_order')->get(['value', 'label', 'color']);
 
+        // RFM-сегмент (Фаза 14.3) — по уже выгруженным заказам клиента, без
+        // повторного агрегатного запроса.
+        $completedOrders = $workOrders->where('status', 'completed');
+        $clientSegment = ClientSegmentService::classifyFromCounts($completedOrders->count(), $completedOrders->max('created_at'));
+
         // "История"/"Комментарии" с roll-up: подтягиваются не только события
         // самого клиента, но и события связанных Записей и Заказ-нарядов
         // (по client_id в properties, см. App\Services\ActivityLogger).
         ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($client, 'client_id'));
+
+        $client->setAttribute('segment', $clientSegment);
+        $client->setAttribute('segment_label', ClientSegmentService::label($clientSegment));
 
         return Inertia::render('CRM/Clients/Show', [
             'client' => $client,
@@ -319,14 +347,42 @@ class ClientController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'color' => ['nullable', 'string', 'max:50'],
+            'cashback_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         ClientGroup::create([
             'name' => $validated['name'],
             'color' => $validated['color'] ?? 'gray',
+            'cashback_percent' => $validated['cashback_percent'] ?? 0,
         ]);
 
         return redirect()->back()->with('success', 'Группа добавлена');
+    }
+
+    public function updateGroup(Request $request, ClientGroup $clientGroup)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'color' => ['nullable', 'string', 'max:50'],
+            'cashback_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $clientGroup->update([
+            'name' => $validated['name'],
+            'color' => $validated['color'] ?? 'gray',
+            'cashback_percent' => $validated['cashback_percent'] ?? 0,
+        ]);
+
+        return redirect()->back()->with('success', 'Группа обновлена');
+    }
+
+    public function destroyGroup(ClientGroup $clientGroup)
+    {
+        // client_group_id у Client — nullOnDelete: у клиентов группа просто
+        // сбрасывается на "Без группы", без ошибки внешнего ключа.
+        $clientGroup->delete();
+
+        return redirect()->back()->with('success', 'Группа удалена');
     }
 
     public function bulkDestroy(Request $request)

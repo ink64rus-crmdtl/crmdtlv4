@@ -260,6 +260,8 @@ Route::middleware([
         Route::get('/crm/clients', [ClientController::class, 'index'])->name('crm.clients.index');
         Route::post('/crm/clients', [ClientController::class, 'store'])->name('crm.clients.store');
         Route::post('/crm/client-groups', [ClientController::class, 'storeGroup'])->name('crm.client-groups.store');
+        Route::put('/crm/client-groups/{clientGroup}', [ClientController::class, 'updateGroup'])->name('crm.client-groups.update');
+        Route::delete('/crm/client-groups/{clientGroup}', [ClientController::class, 'destroyGroup'])->name('crm.client-groups.destroy');
         Route::get('/crm/clients/{client}', [ClientController::class, 'show'])->name('crm.clients.show');
         Route::put('/crm/clients/{client}', [ClientController::class, 'update'])->name('crm.clients.update');
         Route::delete('/crm/clients/{client}', [ClientController::class, 'destroy'])->name('crm.clients.destroy');

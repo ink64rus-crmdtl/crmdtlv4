@@ -10,6 +10,11 @@ class ClientGroup extends Model
     protected $fillable = [
         'name',
         'color',
+        'cashback_percent',
+    ];
+
+    protected $casts = [
+        'cashback_percent' => 'float',
     ];
 
     public function clients(): HasMany
