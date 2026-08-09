@@ -36,7 +36,7 @@ class DocumentTemplateController extends Controller
 
     /**
      * key => человекочитаемое пояснение. Общие для всех типов (реквизиты
-     * юрлица/филиала) + специфичные для конкретной сущности — держим рядом
+     * юрлица/точки) + специфичные для конкретной сущности — держим рядом
      * с реестром типов, чтобы подсказка плейсхолдеров на фронте не
      * расходилась с тем, что реально строит DocumentPlaceholderService.
      */
@@ -48,13 +48,17 @@ class DocumentTemplateController extends Controller
         'legal_entity.inn' => 'ИНН (РФ)',
         'legal_entity.kpp' => 'КПП (РФ, для ООО)',
         'legal_entity.legal_address' => 'Юридический адрес',
+        'legal_entity.director_position' => 'Должность руководителя (для подписи "Поставщик")',
+        'legal_entity.director_name' => 'ФИО руководителя (для подписи "Поставщик")',
+        'legal_entity.accountant_position' => 'Должность бухгалтера',
+        'legal_entity.accountant_name' => 'ФИО бухгалтера',
         'account.bank_name' => 'Название банка (счёт по умолчанию для документов)',
         'account.bik' => 'БИК банка',
         'account.account_number' => 'Расчётный счёт',
         'account.corr_account' => 'Корреспондентский счёт',
-        'branch.name' => 'Название филиала',
-        'branch.address' => 'Адрес филиала',
-        'branch.phone' => 'Телефон филиала',
+        'branch.name' => 'Название точки',
+        'branch.address' => 'Адрес точки',
+        'branch.phone' => 'Телефон точки',
     ];
 
     public const ENTITY_PLACEHOLDERS = [
@@ -67,6 +71,7 @@ class DocumentTemplateController extends Controller
             'client.name' => 'Имя клиента',
             'client.phone' => 'Телефон клиента',
             'vehicle.plate_number' => 'Госномер автомобиля',
+            ...self::CLIENT_ORGANIZATION_PLACEHOLDERS,
         ],
         'transaction' => [
             'transaction.id' => 'Номер транзакции',
@@ -79,7 +84,23 @@ class DocumentTemplateController extends Controller
             'client.name' => 'Имя клиента',
             'client.phone' => 'Телефон клиента',
             'client.email' => 'Email клиента',
+            ...self::CLIENT_ORGANIZATION_PLACEHOLDERS,
         ],
+    ];
+
+    /**
+     * Актуальны только для B2B-клиентов (Client.type=b2b) — реквизиты и
+     * подписанты хранятся в том же свободном requisites JSON, что и у
+     * LegalEntity (см. CountryConfigService::signatorySchema). Для B2C
+     * клиента эти плейсхолдеры просто останутся пустыми в готовом документе
+     * (DocumentRenderer вырезает неподставленные {{ключ}}, см. п.12.5).
+     */
+    private const CLIENT_ORGANIZATION_PLACEHOLDERS = [
+        'client.inn' => 'ИНН клиента-организации (только для B2B)',
+        'client.kpp' => 'КПП клиента-организации (только для B2B)',
+        'client.legal_address' => 'Юридический адрес клиента-организации (только для B2B)',
+        'client.director_position' => 'Должность руководителя клиента-организации (для подписи "Покупатель")',
+        'client.director_name' => 'ФИО руководителя клиента-организации (для подписи "Покупатель")',
     ];
 
     public const ENTITY_TABLE_PLACEHOLDERS = [

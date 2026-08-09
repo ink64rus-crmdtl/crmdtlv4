@@ -29,6 +29,7 @@ class Document extends Model implements HasMedia
         'number',
         'title',
         'created_by',
+        'superseded_by_document_id',
     ];
 
     protected static function booted(): void
@@ -52,14 +53,29 @@ class Document extends Model implements HasMedia
     }
 
     /**
+     * Заполняется DocumentController::regenerateAsNew() — "сформировать
+     * новый документ" (сохранив старый) вместо "заменить этот документ".
+     * nullOnDelete на колонке: если новый документ впоследствии удалят,
+     * связь тихо обнулится сама (FK), старый вернётся в обычное "устарел".
+     */
+    public function supersededBy(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'superseded_by_document_id');
+    }
+
+    /**
      * "Данные изменились с момента формирования" — НЕ перерендеривает PDF
      * заново (уже сформированный документ — зафиксированный во времени
      * артефакт, что реально отправили клиенту, меняться задним числом не
      * должно), только сравнивает даты: изменилась ли связанная запись
      * (суммы, позиции — see WorkOrderController::recalculateTotals(), там
-     * update() сам двигает updated_at) или реквизиты юрлица филиала-
-     * источника ПОСЛЕ того, как этот документ был сформирован. Требует
-     * заранее eager-loaded documentable/branch.legalEntity — иначе тихий
+     * update() сам двигает updated_at) или реквизиты ОДНОГО ИЗ юрлиц точки-
+     * источника ПОСЛЕ того, как этот документ был сформирован (точка теперь
+     * может иметь несколько юрлиц — branch_legal_entity — берём максимум
+     * updated_at по всем сразу; чуть более осторожно, чем сверяться только
+     * с тем юрлицом, что реально использовалось в этом документе, но не
+     * ошибочно — переоценить "устарел" безопаснее, чем пропустить). Требует
+     * заранее eager-loaded documentable/branch.legalEntities — иначе тихий
      * N+1 на каждый документ в списке, поэтому не через $appends глобально,
      * а через ->append('is_stale') в местах, где эти связи уже подгружены
      * (DocumentController::index()/WorkOrderController::show()/ClientController::show()).
@@ -70,7 +86,7 @@ class Document extends Model implements HasMedia
             get: function () {
                 $changedAt = collect([
                     $this->documentable?->updated_at,
-                    $this->branch?->legalEntity?->updated_at,
+                    $this->branch?->legalEntities?->max('updated_at'),
                 ])->filter()->max();
 
                 return $changedAt !== null && $changedAt->gt($this->created_at);

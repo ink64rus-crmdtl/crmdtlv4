@@ -345,7 +345,7 @@ const submitCategory = () => {
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Привязка к складу (Для Смешанного режима)</label>
                             <select v-model="form.preferred_warehouse_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                <option value="" class="bg-white dark:bg-gray-800">Определять автоматически по филиалу</option>
+                                <option value="" class="bg-white dark:bg-gray-800">Определять автоматически по точке</option>
                                 <option v-for="wh in warehouses" :key="wh.id" :value="wh.id" class="bg-white dark:bg-gray-800">Всегда списывать с: {{ wh.name }}</option>
                             </select>
                             <p class="text-xs text-gray-500 mt-1">Используется только если в настройках включен "Смешанный" режим склада.</p>

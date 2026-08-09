@@ -132,8 +132,8 @@ const deleteDirection = (direction) => {
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Для чего нужны Направления бизнеса?">
-                <p><strong>Направления</strong> позволяют разделить ваши услуги по логическим блокам (например: «Детейлинг», «Мойка», «Оклейка», «Шиномонтаж»).</p>
-                <p>Вы можете указать, в каких именно филиалах доступно каждое направление. Это поможет отсечь лишние услуги при создании заказ-нарядов в конкретном филиале и сделает интерфейс удобнее для администраторов.</p>
+                <p><strong>Направления</strong> — это не про «где» (точка) и не про «от чьего имени» (юрлицо), а про «какая это работа»: логические блоки услуг (например: «Детейлинг», «Мойка», «Оклейка», «Шиномонтаж»). Направление — тег на самой услуге, независимый от точки и юрлица.</p>
+                <p>Вы можете указать, в каких именно точках доступно каждое направление — это поможет отсечь лишние услуги при создании заказ-нарядов в конкретной точке и сделает интерфейс удобнее для администраторов.</p>
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
@@ -180,7 +180,7 @@ const deleteDirection = (direction) => {
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Филиалы</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точки</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
@@ -202,7 +202,7 @@ const deleteDirection = (direction) => {
                                             <i class="ri-store-2-line"></i> {{ b.name }}
                                         </span>
                                     </div>
-                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех филиалах</span>
+                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех точках</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span
@@ -269,10 +269,10 @@ const deleteDirection = (direction) => {
                             />
                         </div>
 
-                        <!-- Привязка к филиалам -->
+                        <!-- Привязка к точкам -->
                         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">В каких филиалах доступно это направление?</h4>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Если не выбрать ни одного, направление будет доступно во всех филиалах по умолчанию.</p>
+                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">В каких точках доступно это направление?</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Если не выбрать ни одной, направление будет доступно во всех точках по умолчанию.</p>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <label v-for="branch in branches" :key="branch.id" class="flex items-center cursor-pointer group">
                                     <input type="checkbox" :value="branch.id" v-model="form.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />

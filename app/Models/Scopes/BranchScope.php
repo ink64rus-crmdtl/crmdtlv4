@@ -17,20 +17,25 @@ class BranchScope implements Scope
         $legalEntityId = LegalEntityContext::current();
 
         if ($branchId) {
-            // Если жестко выбран филиал, фильтруем только по нему
+            // Если жестко выбрана точка, фильтруем только по ней
             $builder->where($model->getTable() . '.branch_id', $branchId);
         } elseif ($legalEntityId) {
-            // Если выбран "Все филиалы", но выбрано конкретное Юрлицо,
-            // отдаем записи по всем филиалам этого Юрлица, доступным пользователю
+            // Если выбраны "Все точки", но выбрано конкретное Юрлицо, отдаем
+            // записи по всем точкам этого Юрлица, доступным пользователю —
+            // точка теперь может иметь НЕСКОЛЬКО юрлиц (branch_legal_entity,
+            // многие-ко-многим), поэтому через relation, не через колонку
+            // (её на branches больше нет, см. миграцию 2027_01_28).
             if (auth()->check()) {
                 $user = auth()->user();
-                $availableBranches = $user->availableBranches()->where('legal_entity_id', $legalEntityId)->pluck('id')->toArray();
-                
+                $availableBranches = $user->availableBranches()
+                    ->whereHas('legalEntities', fn (Builder $q) => $q->where('legal_entities.id', $legalEntityId))
+                    ->pluck('id')->toArray();
+
                 $builder->whereIn($model->getTable() . '.branch_id', $availableBranches);
             }
         } else {
-            // Если выбрано "Все Юрлица" и "Все Филиалы"
-            // Отдаем записи по всем филиалам, доступным пользователю (ABAC)
+            // Если выбраны "Все Юрлица" и "Все Точки"
+            // Отдаем записи по всем точкам, доступным пользователю (ABAC)
             if (auth()->check() && !auth()->user()->isAdmin()) {
                 $ids = UserScopeCachingService::getScopes(auth()->user(), 'branches');
                 if (!in_array('*', $ids)) {

@@ -22,15 +22,17 @@ const currentLEName = computed(() => {
 });
 
 const currentBranchName = computed(() => {
-    if (!currentBranchId.value) return 'Все филиалы';
+    if (!currentBranchId.value) return 'Все точки';
     const branch = branches.value.find(b => b.id === currentBranchId.value);
-    return branch ? branch.name : 'Все филиалы';
+    return branch ? branch.name : 'Все точки';
 });
 
-// Фильтруем список филиалов в дропдауне по выбранному юрлицу
+// Фильтруем список точек в дропдауне по выбранному юрлицу (точка теперь может
+// иметь НЕСКОЛЬКО юрлиц — b.legal_entities, массив {id} — см. branch_legal_entity).
+// Точки вовсе без юрлица показываются всегда (могут работать без реквизитов).
 const filteredBranches = computed(() => {
     if (!currentLEId.value) return branches.value;
-    return branches.value.filter(b => b.legal_entity_id === currentLEId.value || b.legal_entity_id === null);
+    return branches.value.filter(b => !b.legal_entities?.length || b.legal_entities.some(le => le.id === currentLEId.value));
 });
 
 // --- Система уведомлений ---
@@ -132,7 +134,7 @@ onUnmounted(() => {
                     </template>
                 </Dropdown>
 
-                <!-- Переключатель Филиалов (Показываем только если их больше 1) -->
+                <!-- Переключатель Точек (Показываем только если их больше 1) -->
                 <Dropdown align="right" width="48" v-if="filteredBranches.length > 1">
                     <template #trigger>
                         <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
@@ -144,17 +146,17 @@ onUnmounted(() => {
 
                     <template #content>
                         <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700/50">
-                            Доступные филиалы
+                            Доступные точки
                         </div>
 
-                        <!-- Пункт "Все филиалы" -->
-                        <DropdownLink 
-                            :href="route('branches.switch')" 
-                            method="post" 
+                        <!-- Пункт "Все точки" -->
+                        <DropdownLink
+                            :href="route('branches.switch')"
+                            method="post"
                             as="button"
                         >
                             <div class="flex items-center gap-2" :class="{'text-primary font-semibold': currentBranchId === null}">
-                                <i class="ri-layout-grid-line"></i> Все филиалы
+                                <i class="ri-layout-grid-line"></i> Все точки
                                 <i v-if="currentBranchId === null" class="ri-check-line ml-auto"></i>
                             </div>
                         </DropdownLink>

@@ -102,7 +102,7 @@ const submit = () => {
 
                     <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
                         <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Часы работы по умолчанию</label>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Действует для всего детейлинг-центра. Если у конкретного филиала заданы свои часы работы (Настройки → Филиалы), они имеют приоритет над этим расписанием.</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Действует для всего детейлинг-центра. Если у конкретной точки заданы свои часы работы (Настройки → Точки), они имеют приоритет над этим расписанием.</p>
                         <WorkingHoursEditor v-model="form.default_working_hours" />
                     </div>
 

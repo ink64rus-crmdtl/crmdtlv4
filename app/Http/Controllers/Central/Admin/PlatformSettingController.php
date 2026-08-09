@@ -10,16 +10,18 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Общеплатформенные настройки (central БД). Пока единственный ключ —
- * wappi_master_token (общий на весь аккаунт Wappi.Pro, читается тенантским
- * кодом через tenancy()->central(...), см. WappiProProvider). Список ключей
- * зашит явно (а не произвольная форма) — чтобы не завести в этой таблице
- * что попало без единого места, которое реально это значение читает.
+ * Общеплатформенные настройки (central БД) — общие на всю платформу токены
+ * сторонних сервисов, читаются тенантским кодом ТОЛЬКО через
+ * tenancy()->central(...) (wappi_master_token — см. WappiProProvider;
+ * dadata_api_key — см. App\Services\DadataService). Список ключей зашит
+ * явно (а не произвольная форма) — чтобы не завести в этой таблице что
+ * попало без единого места, которое реально это значение читает.
  */
 class PlatformSettingController extends Controller
 {
     public const KEYS = [
         'wappi_master_token' => 'Токен Wappi.Pro (общий на аккаунт)',
+        'dadata_api_key' => 'Токен DaData (автоподстановка банка по БИК)',
     ];
 
     public function index(): Response

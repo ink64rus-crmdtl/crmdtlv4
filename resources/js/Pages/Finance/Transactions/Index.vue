@@ -85,7 +85,7 @@ const closeModal = () => {
 const submit = () => {
     if (editingTransaction.value) {
         // Бэкенд сам валидирует и берет только редактируемые поля (amount, transaction_date, comment,
-        // transaction_category_id) — счет/тип/филиал в форме нужны только для отображения и игнорируются.
+        // transaction_category_id) — счет/тип/точка в форме нужны только для отображения и игнорируются.
         form.put(route('finance.transactions.update', editingTransaction.value.id), {
             onSuccess: () => closeModal(),
         });
@@ -244,7 +244,7 @@ const totalBalance = computed(() => {
             <FinanceNav />
 
             <PageHelper title="Как устроено редактирование операций">
-                <p>После проведения операции можно менять сумму, дату, статью и комментарий — баланс счета пересчитывается на разницу. Тип операции, счет и филиал менять нельзя (для этого отмените операцию и проведите новую).</p>
+                <p>После проведения операции можно менять сумму, дату, статью и комментарий — баланс счета пересчитывается на разницу. Тип операции, счет и точку менять нельзя (для этого отмените операцию и проведите новую).</p>
                 <p class="mt-2"><strong>Сверка с банком:</strong> отметьте операцию как сверенную после сопоставления с банковской выпиской — сумму и дату сверенной операции нельзя изменить, пока отметка не снята.</p>
                 <p class="mt-2"><strong>Закрытие периода:</strong>
                     <template v-if="closedThroughDate">период закрыт по {{ closedThroughDate }} — операции с такой или более ранней датой создавать/менять/отменять нельзя.</template>
@@ -403,7 +403,7 @@ const totalBalance = computed(() => {
 
                         <div v-if="editingTransaction" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
                             <i class="ri-information-line text-info mr-1"></i>
-                            Тип, счет и филиал операции менять нельзя — доступны сумма, дата, статья и комментарий. Если нужно перенести операцию на другой счет — отмените её и проведите заново.
+                            Тип, счет и точку операции менять нельзя — доступны сумма, дата, статья и комментарий. Если нужно перенести операцию на другой счет — отмените её и проведите заново.
                         </div>
 
                         <!-- Выбор типа операции -->
@@ -495,7 +495,7 @@ const totalBalance = computed(() => {
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал (Центр затрат) <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка (Центр затрат) <span class="text-danger">*</span></label>
                             <select v-model="form.branch_id" required :disabled="!!editingTransaction" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60">
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
@@ -549,9 +549,9 @@ const totalBalance = computed(() => {
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
                         <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                            <option value="">Все филиалы</option>
+                            <option value="">Все точки</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                         </select>
                     </div>

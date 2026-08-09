@@ -14,14 +14,12 @@ import axios from 'axios';
 const props = defineProps({
     branchesList: Object,
     filters: Object,
-    legalEntities: Array,
 });
 
 const isModalOpen = ref(false);
 const editingBranch = ref(null);
 
 const form = useForm({
-    legal_entity_id: '',
     name: '',
     address: '',
     city: '',
@@ -31,7 +29,7 @@ const form = useForm({
     working_hours: null,
 });
 
-// Свои часы работы для филиала (иначе действует расписание по умолчанию всего детейлинг-центра)
+// Свои часы работы для точки (иначе действует расписание по умолчанию всего детейлинг-центра)
 const useCustomHours = ref(false);
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
@@ -61,7 +59,7 @@ const selectAll = computed({
 });
 
 const bulkDelete = () => {
-    if (confirm(`Удалить выбранные филиалы (${selectedIds.value.length})?`)) {
+    if (confirm(`Удалить выбранные точки (${selectedIds.value.length})?`)) {
         router.post(route('settings.branches.bulk-destroy'), { ids: selectedIds.value }, {
             onSuccess: () => {
                 selectedIds.value = [];
@@ -90,7 +88,6 @@ const bulkExport = async () => {
 const openModal = (branch = null) => {
     editingBranch.value = branch;
     if (branch) {
-        form.legal_entity_id = branch.legal_entity_id || '';
         form.name = branch.name;
         form.address = branch.address || '';
         form.city = branch.city || '';
@@ -144,14 +141,14 @@ const submit = () => {
 };
 
 const deleteBranch = (branch) => {
-    if (confirm(`Удалить филиал "${branch.name}"?`)) {
+    if (confirm(`Удалить точку "${branch.name}"?`)) {
         form.delete(route('settings.branches.destroy', branch.id));
     }
 };
 </script>
 
 <template>
-    <Head title="Филиалы" />
+    <Head title="Точки" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -164,15 +161,15 @@ const deleteBranch = (branch) => {
             <SettingsNav />
 
             <!-- Page Helper (Система подсказок) -->
-            <PageHelper title="Что такое Филиал?">
-                <p><strong>Филиал</strong> — это физическая точка обслуживания (центр вашей операционной деятельности). Именно к филиалу привязываются сотрудники, локальные склады, расписание записей и автомобили в работе.</p>
-                <p>Каждый филиал можно привязать к конкретному Юридическому лицу, чтобы при создании заказ-нарядов и чеков автоматически подставлялись правильные реквизиты.</p>
+            <PageHelper title="Что такое Точка?">
+                <p><strong>Точка</strong> — это физический адрес или подразделение, оказывающее услуги: главная, основная единица системы. Именно к точке привязываются сотрудники, локальные склады, расписание записей, заказы и автомобили в работе.</p>
+                <p>Юридические лица (реквизиты для документов) привязываются к точке, а не наоборот: одна точка может выставлять документы от нескольких юрлиц сразу (например, часть заказов — от ИП, часть — от ООО). Привязка настраивается со стороны юрлица — см. Настройки → Юридические лица.</p>
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
-                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Филиалы и Локации</h1>
+                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Точки</h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Управление физическими точками обслуживания клиентов
                     </p>
@@ -180,12 +177,12 @@ const deleteBranch = (branch) => {
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
-            <BulkActions 
-                v-if="selectedIds.length > 0" 
-                :selectedCount="selectedIds.length" 
-                noun="филиалов" 
-                @export="bulkExport" 
-                @delete="bulkDelete" 
+            <BulkActions
+                v-if="selectedIds.length > 0"
+                :selectedCount="selectedIds.length"
+                noun="точек"
+                @export="bulkExport"
+                @delete="bulkDelete"
             />
 
             <!-- Table Card (Attex Theme) -->
@@ -201,7 +198,7 @@ const deleteBranch = (branch) => {
                             class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
                         >
                             <i class="ri-add-line text-base"></i>
-                            Добавить филиал
+                            Добавить точку
                         </button>
                     </template>
                 </DataTableToolbar>
@@ -232,10 +229,12 @@ const deleteBranch = (branch) => {
                                     </div>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span v-if="branch.legal_entity" class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                        <i class="ri-bank-line"></i> {{ branch.legal_entity.name }}
-                                    </span>
-                                    <span v-else class="text-gray-400 dark:text-gray-500 text-xs">Не привязан</span>
+                                    <div v-if="branch.legal_entities && branch.legal_entities.length > 0" class="flex flex-wrap gap-1">
+                                        <span v-for="le in branch.legal_entities" :key="le.id" class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                            <i class="ri-bank-line"></i> {{ le.name }}
+                                        </span>
+                                    </div>
+                                    <span v-else class="text-gray-400 dark:text-gray-500 text-xs" title="Настраивается со стороны юрлица — см. Настройки → Юридические лица">Без юрлица</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     {{ branch.city ? branch.city + ', ' : '' }}{{ branch.address || '—' }}
@@ -270,7 +269,7 @@ const deleteBranch = (branch) => {
                             </tr>
                             <tr v-if="branchesList.data.length === 0">
                                 <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Филиалы не найдены.
+                                    Точки не найдены.
                                 </td>
                             </tr>
                         </tbody>
@@ -286,7 +285,7 @@ const deleteBranch = (branch) => {
                 
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        {{ editingBranch ? 'Редактирование филиала' : 'Новый филиал' }}
+                        {{ editingBranch ? 'Редактирование точки' : 'Новая точка' }}
                     </h3>
                     <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
                         <i class="ri-close-line text-xl"></i>
@@ -295,73 +294,68 @@ const deleteBranch = (branch) => {
 
                 <form @submit.prevent="submit" class="flex flex-col">
                     <div class="p-6 space-y-4">
+                        <div v-if="editingBranch" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
+                            <i class="ri-information-line text-info mr-1"></i>
+                            Юрлица этой точки:
+                            <span v-if="editingBranch.legal_entities?.length">{{ editingBranch.legal_entities.map(le => le.name).join(', ') }}</span>
+                            <span v-else>ни одного</span>
+                            — настраивается со стороны юрлица, см. Настройки → Юридические лица.
+                        </div>
+
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название филиала <span class="text-danger">*</span></label>
-                                <input 
-                                    v-model="form.name" 
-                                    type="text" 
-                                    required 
-                                    placeholder="Центральный детейлинг" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название точки <span class="text-danger">*</span></label>
+                                <input
+                                    v-model="form.name"
+                                    type="text"
+                                    required
+                                    placeholder="Центральный детейлинг"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
                                 <span v-if="form.errors.name" class="text-xs text-danger mt-1">{{ form.errors.name }}</span>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Юридическое лицо</label>
-                                <select 
-                                    v-model="form.legal_entity_id" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
-                                >
-                                    <option value="" class="bg-white dark:bg-gray-800">Общий филиал (Без привязки)</option>
-                                    <option v-for="le in legalEntities" :key="le.id" :value="le.id" class="bg-white dark:bg-gray-800">{{ le.name }}</option>
-                                </select>
-                                <span v-if="form.errors.legal_entity_id" class="text-xs text-danger mt-1">{{ form.errors.legal_entity_id }}</span>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Город</label>
+                                <input
+                                    v-model="form.city"
+                                    type="text"
+                                    placeholder="Москва"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                />
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Город</label>
-                                <input 
-                                    v-model="form.city" 
-                                    type="text" 
-                                    placeholder="Москва" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                            </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Адрес</label>
-                                <input 
-                                    v-model="form.address" 
-                                    type="text" 
-                                    placeholder="ул. Ленина, 1" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                <input
+                                    v-model="form.address"
+                                    type="text"
+                                    placeholder="ул. Ленина, 1"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон точки</label>
+                                <input
+                                    v-model="form.phone"
+                                    type="text"
+                                    placeholder="+7 (999) 000-00-00"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон филиала</label>
-                                <input 
-                                    v-model="form.phone" 
-                                    type="text" 
-                                    placeholder="+7 (999) 000-00-00" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Часовой пояс</label>
-                                <select 
-                                    v-model="form.timezone" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
-                                >
-                                    <option value="Europe/Moscow" class="bg-white dark:bg-gray-800">Europe/Moscow</option>
-                                    <option value="Europe/Berlin" class="bg-white dark:bg-gray-800">Europe/Berlin</option>
-                                    <option value="Asia/Almaty" class="bg-white dark:bg-gray-800">Asia/Almaty</option>
-                                </select>
-                            </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Часовой пояс</label>
+                            <select
+                                v-model="form.timezone"
+                                class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                            >
+                                <option value="Europe/Moscow" class="bg-white dark:bg-gray-800">Europe/Moscow</option>
+                                <option value="Europe/Berlin" class="bg-white dark:bg-gray-800">Europe/Berlin</option>
+                                <option value="Asia/Almaty" class="bg-white dark:bg-gray-800">Asia/Almaty</option>
+                            </select>
                         </div>
 
                         <!-- Часы работы -->
@@ -371,7 +365,7 @@ const deleteBranch = (branch) => {
                                     <div :class="[useCustomHours ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                                 </div>
                                 <label class="ml-2.5 block text-sm font-semibold text-gray-800 dark:text-gray-200 cursor-pointer" @click="useCustomHours = !useCustomHours">
-                                    Свои часы работы для этого филиала
+                                    Свои часы работы для этой точки
                                 </label>
                             </div>
                             <p v-if="!useCustomHours" class="text-xs text-gray-500 dark:text-gray-400 mb-2">Действует расписание по умолчанию всего детейлинг-центра (Настройки → Клиенты и Авто).</p>
@@ -384,7 +378,7 @@ const deleteBranch = (branch) => {
                                 <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                             </div>
                             <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
-                                Филиал активен
+                                Точка активна
                             </label>
                         </div>
                     </div>

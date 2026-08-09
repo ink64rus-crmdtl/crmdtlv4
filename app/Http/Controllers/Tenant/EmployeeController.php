@@ -90,7 +90,7 @@ class EmployeeController extends Controller
         $baseColumns = [
             ['key' => 'employee_name', 'label' => 'Сотрудник', 'type' => 'system', 'is_default' => true],
             ['key' => 'position_type', 'label' => 'Должность / Тип', 'type' => 'system', 'is_default' => true],
-            ['key' => 'branch', 'label' => 'Филиал', 'type' => 'system', 'is_default' => true],
+            ['key' => 'branch', 'label' => 'Точка', 'type' => 'system', 'is_default' => true],
             ['key' => 'crm_access', 'label' => 'Доступ в CRM', 'type' => 'system', 'is_default' => true],
             ['key' => 'phone', 'label' => 'Телефон', 'type' => 'system', 'is_default' => false],
             ['key' => 'personal_email', 'label' => 'Личный Email', 'type' => 'system', 'is_default' => false],
@@ -310,7 +310,7 @@ class EmployeeController extends Controller
             'scopes.warehouses' => ['array'],
             'scopes.accounts' => ['array'],
         ], [
-            'phone.unique' => 'Сотрудник с таким номером телефона уже существует в выбранном филиале.',
+            'phone.unique' => 'Сотрудник с таким номером телефона уже существует в выбранной точке.',
         ]);
 
         DB::transaction(function () use ($validated) {
@@ -409,7 +409,7 @@ class EmployeeController extends Controller
             'scopes.warehouses' => ['array'],
             'scopes.accounts' => ['array'],
         ], [
-            'phone.unique' => 'Сотрудник с таким номером телефона уже существует в выбранном филиале.',
+            'phone.unique' => 'Сотрудник с таким номером телефона уже существует в выбранной точке.',
         ]);
 
         DB::transaction(function () use ($validated, $employee) {

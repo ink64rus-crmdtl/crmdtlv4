@@ -28,18 +28,18 @@ class DocumentController extends Controller
      * short-key (используется в URL/фильтрах, тот же, что
      * DocumentTemplateController::ENTITY_TYPES) → класс модели + связи,
      * которые нужно подгрузить перед построением плейсхолдеров
-     * (DocumentPlaceholderService читает branch/branch.legalEntity всегда,
-     * плюс специфичные для типа связи).
+     * (DocumentPlaceholderService читает branch/branch.legalEntities/
+     * legal_entity_id всегда, плюс специфичные для типа связи).
      */
     private const ENTITY_MODELS = [
-        'work_order' => ['class' => WorkOrder::class, 'with' => ['branch.legalEntity', 'client', 'vehicle', 'items']],
-        'transaction' => ['class' => Transaction::class, 'with' => ['branch.legalEntity']],
-        'client' => ['class' => Client::class, 'with' => ['branch.legalEntity']],
+        'work_order' => ['class' => WorkOrder::class, 'with' => ['branch.legalEntities', 'legalEntity', 'client', 'vehicle', 'items']],
+        'transaction' => ['class' => Transaction::class, 'with' => ['branch.legalEntities']],
+        'client' => ['class' => Client::class, 'with' => ['branch.legalEntities']],
     ];
 
     public function index(Request $request): Response
     {
-        $query = Document::with(['template', 'branch.legalEntity', 'documentable'])
+        $query = Document::with(['template', 'branch.legalEntities', 'documentable', 'supersededBy:id,number'])
             ->orderBy('created_at', 'desc');
 
         if ($request->filled('document_template_id')) {
@@ -125,27 +125,20 @@ class DocumentController extends Controller
 
     /**
      * Формирует НОВЫЙ документ (новый номер) по тому же шаблону и той же
-     * записи, но с ТЕКУЩИМИ данными — старый документ не трогает и не
-     * удаляет (см. Document::isStale() — "устарел" не значит "неверный",
-     * это зафиксированный во времени артефакт, что реально было отправлено
-     * клиенту раньше).
+     * записи, но с ТЕКУЩИМИ данными — старый документ не удаляет, только
+     * помечает superseded_by_document_id: в UI он перестаёт быть активным
+     * предупреждением "устарел, перегенерируйте" и становится нейтральной
+     * пометкой "заменён документом №X" (см. Document::isStale() — "устарел"
+     * не значит "неверный", это зафиксированный во времени артефакт, что
+     * реально было отправлено клиенту раньше — история не переписывается).
      */
-    public function regenerate(Document $document)
+    public function regenerateAsNew(Document $document)
     {
-        $template = $document->template;
+        [$template, $entityType, $entity, $error] = $this->resolveForRegeneration($document);
 
-        if (!$template) {
-            return redirect()->back()->withErrors(['error' => 'Шаблон, по которому сформирован документ, был удалён.']);
+        if ($error) {
+            return redirect()->back()->withErrors(['error' => $error]);
         }
-
-        $entityType = collect(self::ENTITY_MODELS)->search(fn ($config) => $config['class'] === $document->documentable_type);
-
-        if ($entityType === false) {
-            return redirect()->back()->withErrors(['error' => 'Неизвестный тип связанной записи.']);
-        }
-
-        $config = self::ENTITY_MODELS[$entityType];
-        $entity = $config['class']::with($config['with'])->findOrFail($document->documentable_id);
 
         try {
             $newDocument = DocumentGenerationService::generate($template, $entityType, $entity);
@@ -153,7 +146,60 @@ class DocumentController extends Controller
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }
 
-        return redirect()->back()->with('success', 'Сформирован актуальный документ №' . $newDocument->number);
+        $document->update(['superseded_by_document_id' => $newDocument->id]);
+
+        return redirect()->back()->with('success', 'Сформирован новый документ №' . $newDocument->number . ', прежний сохранён в истории');
+    }
+
+    /**
+     * "Заменить этот документ" — в отличие от regenerateAsNew(), номер и id
+     * остаются теми же (DocumentGenerationService::replace() не обращается
+     * к DocumentNumerator), меняется только содержимое PDF на актуальное —
+     * для случая, когда пользователю не нужна отдельная запись в истории,
+     * а нужно просто исправить/освежить уже выпущенный документ.
+     */
+    public function replace(Document $document)
+    {
+        [$template, $entityType, $entity, $error] = $this->resolveForRegeneration($document);
+
+        if ($error) {
+            return redirect()->back()->withErrors(['error' => $error]);
+        }
+
+        try {
+            DocumentGenerationService::replace($document, $template, $entityType, $entity);
+        } catch (RuntimeException $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Документ №' . $document->number . ' заменён актуальными данными');
+    }
+
+    /**
+     * @return array{0: ?DocumentTemplate, 1: ?string, 2: ?\Illuminate\Database\Eloquent\Model, 3: ?string} [шаблон, short-key типа сущности, сущность, текст ошибки]
+     */
+    private function resolveForRegeneration(Document $document): array
+    {
+        $template = $document->template;
+
+        if (!$template) {
+            return [null, null, null, 'Шаблон, по которому сформирован документ, был удалён.'];
+        }
+
+        $entityType = collect(self::ENTITY_MODELS)->search(fn ($config) => $config['class'] === $document->documentable_type);
+
+        if ($entityType === false) {
+            return [null, null, null, 'Неизвестный тип связанной записи.'];
+        }
+
+        $config = self::ENTITY_MODELS[$entityType];
+        $entity = $config['class']::with($config['with'])->find($document->documentable_id);
+
+        if (!$entity) {
+            return [null, null, null, 'Связанная запись была удалена.'];
+        }
+
+        return [$template, $entityType, $entity, null];
     }
 
     public function destroy(Document $document)

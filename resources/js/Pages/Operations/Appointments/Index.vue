@@ -89,7 +89,7 @@ const form = useForm({
     items: [],
 });
 
-// Посты общие для всего центра (branch_id === null) видны при любом выбранном филиале.
+// Посты общие для всего центра (branch_id === null) видны при любой выбранной точке.
 const filteredPosts = computed(() => {
     if (!form.branch_id) return props.posts;
     return props.posts.filter(p => !p.branch_id || p.branch_id === form.branch_id);
@@ -116,7 +116,7 @@ const JS_DOW_TO_KEY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const FALLBACK_HOURS = { open: '07:00', close: '22:00' };
 const TIME_SLOT_STEP_MINUTES = 30;
 
-// Часы работы филиала (если задано своё расписание), иначе — расписание центра по умолчанию.
+// Часы работы точки (если задано своё расписание), иначе — расписание центра по умолчанию.
 const effectiveWorkingHours = computed(() => {
     const branch = props.branches.find(b => b.id === form.branch_id);
     return (branch && branch.working_hours) || props.defaultWorkingHours || null;
@@ -182,7 +182,7 @@ const endTime = computed({
 });
 
 // Текущее значение всегда включаем в список слотов, даже если оно не попадает
-// в шаг сетки или выходит за пределы графика (правка старой записи, смена филиала) —
+// в шаг сетки или выходит за пределы графика (правка старой записи, смена точки) —
 // иначе выбранное время пропадёт из выпадающего списка незаметно для пользователя.
 const withCurrentValue = (slots, current) => (current && !slots.includes(current) ? [...slots, current].sort() : slots);
 
@@ -389,7 +389,7 @@ const toLocalDateTimeInput = (date) => {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-// Бэкенд отдаёт время уже в поясе филиала записи, поэтому виджет настроен на
+// Бэкенд отдаёт время уже в поясе точки записи, поэтому виджет настроен на
 // timeZone:'local' — просто показывает переданные строки как есть, без
 // повторной конвертации под часовой пояс браузера.
 const fetchCalendarEvents = (fetchInfo, successCallback, failureCallback) => {
@@ -1123,12 +1123,12 @@ const toggleDefaultView = () => {
 
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
                                 <SearchableSelect
                                     v-model="form.branch_id"
                                     :options="branchOptions"
-                                    placeholder="Выберите филиал..."
-                                    searchPlaceholder="Поиск филиала..."
+                                    placeholder="Выберите точку..."
+                                    searchPlaceholder="Поиск точки..."
                                     @update:model-value="form.post_id = ''"
                                 />
                                 <p v-if="form.errors.branch_id" class="mt-1 text-xs text-danger">{{ form.errors.branch_id }}</p>

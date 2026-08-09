@@ -49,8 +49,14 @@ const deleteDocument = (doc) => {
     }
 };
 
-const regenerateDocument = (doc) => {
-    router.post(route('documents.regenerate', doc.id), {}, { preserveScroll: true });
+const regenerateAsNew = (doc) => {
+    router.post(route('documents.regenerate-as-new', doc.id), {}, { preserveScroll: true });
+};
+
+const replaceDocument = (doc) => {
+    if (confirm(`Заменить документ №${doc.number} актуальными данными? Номер останется прежним, содержимое и дата формирования обновятся.`)) {
+        router.post(route('documents.replace', doc.id), {}, { preserveScroll: true });
+    }
 };
 
 const statusColorClasses = {
@@ -260,7 +266,7 @@ const currentCountrySchema = computed(() => {
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ client.source || '—' }}</p>
                             </div>
                             <div>
-                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Филиал</p>
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Точка</p>
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
                                     <i class="ri-store-2-line text-gray-400"></i> {{ client.branch ? client.branch.name : '—' }}
                                 </p>
@@ -436,15 +442,19 @@ const currentCountrySchema = computed(() => {
                         <div class="flex-1 overflow-y-auto custom-scrollbar">
                             <table v-if="client.documents && client.documents.length > 0" class="min-w-full text-left">
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                                    <tr v-for="doc in client.documents" :key="doc.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                    <tr v-for="doc in client.documents" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
                                         <td class="py-3 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
                                             {{ doc.number }}
-                                            <i v-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные клиента изменились с момента формирования — рекомендуем перегенерировать"></i>
+                                            <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
+                                            <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные клиента изменились с момента формирования — рекомендуем обновить документ"></i>
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
                                         <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
                                         <td class="py-3 px-6 text-sm text-right space-x-1">
-                                            <button v-if="doc.is_stale" @click="regenerateDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Перегенерировать с текущими данными"><i class="ri-refresh-line"></i></button>
+                                            <template v-if="doc.is_stale && !doc.superseded_by_document_id">
+                                                <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)"><i class="ri-file-add-line"></i></button>
+                                                <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)"><i class="ri-refresh-line"></i></button>
+                                            </template>
                                             <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать"><i class="ri-printer-line"></i></a>
                                             <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF"><i class="ri-download-2-line"></i></a>
                                             <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
@@ -692,13 +702,13 @@ const currentCountrySchema = computed(() => {
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал регистрации <span class="text-danger">*</span></label>
-                            <select 
-                                v-model="clientForm.branch_id" 
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка регистрации <span class="text-danger">*</span></label>
+                            <select
+                                v-model="clientForm.branch_id"
                                 required
                                 class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                             >
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                         </div>

@@ -170,6 +170,7 @@ const toggleColumn = (key) => {
 
 const form = useForm({
     branch_id: '',
+    legal_entity_id: '',
     client_id: '',
     vehicle_id: '',
     status: 'new',
@@ -181,6 +182,41 @@ const filteredVehicles = computed(() => {
     if (!form.client_id) return [];
     return props.vehicles.filter(v => v.client_id === form.client_id);
 });
+
+// --- Юрлицо заказа (точка теперь может иметь несколько) ---
+// Если в сайдбаре выбрано конкретное юрлицо — поле блокируется на нём:
+// сменить юрлицо для НОВЫХ заказов можно только переключив сайдбар, чтобы
+// не путаться, от какого юрлица реально выставляются документы.
+const currentSidebarLegalEntityId = computed(() => page.props.current_legal_entity_id ? Number(page.props.current_legal_entity_id) : null);
+
+const legalEntitiesForSelectedBranch = computed(() => {
+    const branch = props.branches.find(b => b.id === form.branch_id);
+    return branch?.legal_entities || [];
+});
+
+const isLegalEntityLocked = computed(() => {
+    return currentSidebarLegalEntityId.value !== null
+        && legalEntitiesForSelectedBranch.value.some(le => le.id === currentSidebarLegalEntityId.value);
+});
+
+// Пересчёт дефолта юрлица под выбранную точку — либо фиксируем на том, что
+// выбрано в сайдбаре (если оно доступно у этой точки), либо, если у точки
+// ровно одно юрлицо, подставляем его, иначе оставляем на выбор пользователя.
+// НЕ watch() — вызывается явно (при открытии формы и при ручной смене точки
+// самим пользователем внутри формы), иначе при редактировании существующего
+// заказа реактивный watch перезаписал бы уже сохранённое order.legal_entity_id
+// сразу же после того, как openModal() его туда положил.
+const defaultLegalEntityIdFor = (branchId) => {
+    const options = props.branches.find(b => b.id === branchId)?.legal_entities || [];
+    if (currentSidebarLegalEntityId.value !== null && options.some(le => le.id === currentSidebarLegalEntityId.value)) {
+        return currentSidebarLegalEntityId.value;
+    }
+    return options.length === 1 ? options[0].id : '';
+};
+
+const onBranchChangedInForm = () => {
+    form.legal_entity_id = defaultLegalEntityIdFor(form.branch_id);
+};
 
 const getLocalizedLabel = (label) => {
     if (!label) return '';
@@ -219,23 +255,25 @@ const openModal = (order = null) => {
     
     if (order) {
         form.branch_id = order.branch_id;
+        form.legal_entity_id = order.legal_entity_id || '';
         form.client_id = order.client_id;
         form.vehicle_id = order.vehicle_id || '';
         form.status = order.status;
         form.mileage = order.mileage || '';
-        
+
         const cf = {};
         props.customFieldDefs.forEach(def => {
-            cf[def.key] = order.custom_fields && order.custom_fields[def.key] !== undefined 
-                ? order.custom_fields[def.key] 
+            cf[def.key] = order.custom_fields && order.custom_fields[def.key] !== undefined
+                ? order.custom_fields[def.key]
                 : (def.type === 'checkbox' ? false : '');
         });
         form.custom_fields = cf;
     } else {
         form.reset();
         form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
+        form.legal_entity_id = defaultLegalEntityIdFor(form.branch_id);
         form.status = 'new';
-        
+
         const cf = {};
         props.customFieldDefs.forEach(def => {
             cf[def.key] = def.type === 'checkbox' ? false : '';
@@ -538,9 +576,9 @@ const deleteOrder = (order) => {
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
                         <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                            <option value="">Все филиалы</option>
+                            <option value="">Все точки</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                         </select>
                     </div>
@@ -651,9 +689,9 @@ const deleteOrder = (order) => {
                     <div class="p-6 space-y-4">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал <span class="text-danger">*</span></label>
-                                <select v-model="form.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                                <select v-model="form.branch_id" @change="onBranchChangedInForm" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
                                     <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                 </select>
                             </div>
@@ -663,6 +701,21 @@ const deleteOrder = (order) => {
                                     <option v-for="(status, key) in statuses" :key="key" :value="key" class="bg-white dark:bg-gray-800">{{ status.label }}</option>
                                 </select>
                             </div>
+                        </div>
+
+                        <div v-if="legalEntitiesForSelectedBranch.length > 0">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Юрлицо</label>
+                            <select
+                                v-model="form.legal_entity_id"
+                                :disabled="isLegalEntityLocked"
+                                :class="[isLegalEntityLocked ? 'bg-gray-50 dark:bg-gray-800/60 cursor-not-allowed text-gray-500 dark:text-gray-400' : 'bg-transparent text-gray-800 dark:text-gray-200', 'block w-full rounded-md border border-gray-200 dark:border-gray-700 py-2 px-3 text-sm focus:border-primary focus:ring-0']"
+                            >
+                                <option value="" class="bg-white dark:bg-gray-800">Не указано (без реквизитов в документах)</option>
+                                <option v-for="le in legalEntitiesForSelectedBranch" :key="le.id" :value="le.id" class="bg-white dark:bg-gray-800">{{ le.name }}</option>
+                            </select>
+                            <p v-if="isLegalEntityLocked" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                                Зафиксировано юрлицом, выбранным в шапке. Чтобы выставить документ от другого — переключите юрлицо в шапке сайта.
+                            </p>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -206,6 +206,10 @@ const currentCountrySchema = computed(() => {
     return props.countryConfig?.requisite_schema || [];
 });
 
+const signatorySchema = computed(() => {
+    return props.countryConfig?.signatory_schema || [];
+});
+
 const getLocalizedLabel = (label) => {
     if (!label) return '';
     if (typeof label === 'string') {
@@ -654,7 +658,7 @@ const formatMoney = (amount) => {
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ previewClient.source || '—' }}</p>
                             </div>
                             <div>
-                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Филиал</p>
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Точка</p>
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
                                     <i class="ri-store-2-line text-gray-400"></i> {{ previewClient.branch ? previewClient.branch.name : '—' }}
                                 </p>
@@ -723,6 +727,13 @@ const formatMoney = (amount) => {
                         :class="[activeTab === 'requisites' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
                     >
                         <i class="ri-file-list-3-line"></i> Реквизиты
+                    </button>
+                    <button
+                        type="button"
+                        @click="activeTab = 'signatures'"
+                        :class="[activeTab === 'signatures' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-3 text-sm transition-colors flex items-center gap-2 focus:outline-none whitespace-nowrap']"
+                    >
+                        <i class="ri-quill-pen-line"></i> Подписи
                     </button>
                     <button
                         type="button"
@@ -853,13 +864,13 @@ const formatMoney = (amount) => {
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал регистрации <span class="text-danger">*</span></label>
-                            <select 
-                                v-model="form.branch_id" 
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка регистрации <span class="text-danger">*</span></label>
+                            <select
+                                v-model="form.branch_id"
                                 required
                                 class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                             >
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                         </div>
@@ -928,9 +939,33 @@ const formatMoney = (amount) => {
                         </template>
                     </div>
 
+                    <!-- Вкладка: Подписи в документах (только для B2B — клиент сам сторона сделки в договоре) -->
+                    <div v-show="activeTab === 'signatures'" class="p-6 space-y-5">
+                        <template v-if="form.type === 'b2b'">
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 pb-2">Подписи в документах</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Должность и ФИО для блока подписи в договорах и печатных формах, где этот клиент — сторона сделки. Необязательно.</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div v-for="field in signatorySchema" :key="field.key">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                        {{ field.label }}
+                                    </label>
+                                    <input
+                                        v-model="form.requisites[field.key]"
+                                        type="text"
+                                        :placeholder="field.placeholder"
+                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                    />
+                                </div>
+                            </div>
+                        </template>
+                        <p v-else class="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
+                            Подписи доступны только для клиентов-организаций (B2B) — переключите тип клиента на вкладке «Основные данные».
+                        </p>
+                    </div>
+
                     <!-- Вкладка 4: Настройки и Поля -->
                     <div v-show="activeTab === 'settings'" class="p-6 space-y-5">
-                        
+
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Персональная скидка (%)</label>

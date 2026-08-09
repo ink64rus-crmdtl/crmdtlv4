@@ -93,7 +93,34 @@ class CountryConfigService
     {
         $countryCode = strtoupper($countryCode);
         $countries = static::getSupportedCountries();
+        $country = $countries[$countryCode] ?? $countries['RU'] ?? null;
 
-        return $countries[$countryCode] ?? $countries['RU'] ?? null;
+        if ($country !== null) {
+            $country['signatory_schema'] = static::signatorySchema();
+        }
+
+        return $country;
+    }
+
+    /**
+     * Подписанты для печатных документов (Акт/Счёт/Договор — колонтитул
+     * "Поставщик ___ подпись ___" — CLAUDE.md, документооборот) — те же поля
+     * нужны и юрлицу самого тенанта (Settings/LegalEntities), и B2B-клиенту
+     * (CRM/Clients, requisites — для договоров, где клиент сам сторона
+     * сделки). НЕ часть requisite_schema (та — налоговые/регистрационные
+     * номера, разные по странам) — эти поля одинаковы независимо от
+     * юрисдикции, поэтому один список, а не дублирование в каждой стране.
+     * Хранятся в том же свободном JSON requisites (LegalEntity/Client) —
+     * DocumentPlaceholderService уже разворачивает ВСЕ его ключи как
+     * {{legal_entity.*}}/{{client.*}}, дополнительный код для рендера не нужен.
+     */
+    public static function signatorySchema(): array
+    {
+        return [
+            ['key' => 'director_position', 'label' => 'Должность руководителя', 'required' => false, 'type' => 'text', 'placeholder' => 'Генеральный директор'],
+            ['key' => 'director_name', 'label' => 'ФИО руководителя', 'required' => false, 'type' => 'text', 'placeholder' => 'Иванов Иван Иванович'],
+            ['key' => 'accountant_position', 'label' => 'Должность бухгалтера', 'required' => false, 'type' => 'text', 'placeholder' => 'Главный бухгалтер'],
+            ['key' => 'accountant_name', 'label' => 'ФИО бухгалтера', 'required' => false, 'type' => 'text', 'placeholder' => 'Петрова Мария Сергеевна'],
+        ];
     }
 }

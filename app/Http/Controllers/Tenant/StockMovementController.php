@@ -53,7 +53,7 @@ class StockMovementController extends Controller
         $availableColumns = [
             ['key' => 'date', 'label' => 'Дата'],
             ['key' => 'type', 'label' => 'Тип'],
-            ['key' => 'warehouse_branch', 'label' => 'Склад / Филиал'],
+            ['key' => 'warehouse_branch', 'label' => 'Склад / Точка'],
             ['key' => 'product', 'label' => 'Товар'],
             ['key' => 'quantity', 'label' => 'Кол-во'],
             ['key' => 'cost_price', 'label' => 'Себестоимость'],

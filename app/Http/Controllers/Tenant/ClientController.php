@@ -73,7 +73,7 @@ class ClientController extends Controller
             ['key' => 'balance', 'label' => 'Баланс', 'type' => 'system', 'is_default' => true],
             ['key' => 'bonus_points', 'label' => 'Бонусы', 'type' => 'system', 'is_default' => false],
             ['key' => 'discount_percent', 'label' => 'Скидка (%)', 'type' => 'system', 'is_default' => false],
-            ['key' => 'branch', 'label' => 'Филиал', 'type' => 'system', 'is_default' => true],
+            ['key' => 'branch', 'label' => 'Точка', 'type' => 'system', 'is_default' => true],
         ];
 
         // 2. Подмешиваем кастомные поля для  Клиентов
@@ -142,7 +142,7 @@ class ClientController extends Controller
     public function show(Client $client): Response
     {
         // Загружаем автомобили вместе с марками и моделями
-        $client->load(['branch', 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntity'])->orderBy('id', 'desc')]);
+        $client->load(['branch', 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $client->documents->each->append('is_stale');
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();

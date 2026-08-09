@@ -27,7 +27,7 @@ class WarehouseResolver
                 ?? Warehouse::where('owner_type', 'company')->first();
         }
 
-        // Раздельный режим (или смешанный без preferred_warehouse_id): ищем склад филиала
+        // Раздельный режим (или смешанный без preferred_warehouse_id): ищем склад точки
         // Сначала проверяем связь через pivot (если настроены приоритеты)
         $branchWarehouse = $branch->warehouses()->orderBy('branch_warehouse.priority')->first();
         if ($branchWarehouse) {

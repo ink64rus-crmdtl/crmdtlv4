@@ -75,7 +75,7 @@ class HandleInertiaRequests extends Middleware
                 ? $request->user()->availableLegalEntities()->where('is_active', true)->get(['legal_entities.id', 'legal_entities.name'])
                 : [],
             'branches' => fn () => ($request->user() && tenancy()->initialized)
-                ? $request->user()->availableBranches()->where('is_active', true)->get(['branches.id', 'branches.name', 'branches.legal_entity_id'])
+                ? $request->user()->availableBranches()->where('is_active', true)->with('legalEntities:id')->get(['branches.id', 'branches.name'])
                 : [],
             'current_legal_entity_id' => fn () => ($request->user() && tenancy()->initialized)
                 ? LegalEntityContext::current() // null means 'all'

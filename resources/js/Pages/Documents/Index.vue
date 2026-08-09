@@ -49,8 +49,14 @@ const deleteDocument = (doc) => {
     }
 };
 
-const regenerateDocument = (doc) => {
-    router.post(route('documents.regenerate', doc.id), {}, { preserveScroll: true });
+const regenerateAsNew = (doc) => {
+    router.post(route('documents.regenerate-as-new', doc.id), {}, { preserveScroll: true });
+};
+
+const replaceDocument = (doc) => {
+    if (confirm(`Заменить документ №${doc.number} актуальными данными? Номер останется прежним, содержимое и дата формирования обновятся.`)) {
+        router.post(route('documents.replace', doc.id), {}, { preserveScroll: true });
+    }
 };
 
 const entityRecordLabel = (doc) => {
@@ -103,10 +109,11 @@ const entityRecordLabel = (doc) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="doc in documents.data" :key="doc.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="doc in documents.data" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
                                 <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
                                     {{ doc.number }}
-                                    <i v-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем перегенерировать"></i>
+                                    <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
+                                    <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем обновить документ"></i>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ doc.title }}</td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entityLabel(doc.documentable_type) }}</td>
@@ -117,9 +124,14 @@ const entityRecordLabel = (doc) => {
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ doc.branch?.legal_entity?.name || '—' }}</td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ formatDate(doc.created_at) }}</td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-1">
-                                    <button v-if="doc.is_stale" @click="regenerateDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Перегенерировать с текущими данными">
-                                        <i class="ri-refresh-line"></i>
-                                    </button>
+                                    <template v-if="doc.is_stale && !doc.superseded_by_document_id">
+                                        <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)">
+                                            <i class="ri-file-add-line"></i>
+                                        </button>
+                                        <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)">
+                                            <i class="ri-refresh-line"></i>
+                                        </button>
+                                    </template>
                                     <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать">
                                         <i class="ri-printer-line"></i>
                                     </a>

@@ -16,6 +16,7 @@ class WorkOrder extends Model
 
     protected $fillable = [
         'branch_id',
+        'legal_entity_id',
         'client_id',
         'vehicle_id',
         'status',
@@ -49,6 +50,17 @@ class WorkOrder extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * Явный выбор юрлица для этого заказа — точка может иметь несколько
+     * (branch_legal_entity), поэтому "чьё юрлицо" больше не выводится
+     * однозначно из branch->legalEntity (см. DocumentPlaceholderService::
+     * resolveLegalEntity()). Nullable — заказ может обойтись и без юрлица.
+     */
+    public function legalEntity(): BelongsTo
+    {
+        return $this->belongsTo(LegalEntity::class);
     }
 
     public function client(): BelongsTo

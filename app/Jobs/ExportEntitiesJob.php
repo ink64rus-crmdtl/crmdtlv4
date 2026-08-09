@@ -86,7 +86,7 @@ class ExportEntitiesJob implements ShouldQueue
 
     private function exportClients($file): void
     {
-        fputcsv($file, ['ID', 'Имя', 'Псевдоним', 'Телефон', 'Доп. Телефон', 'Email', 'Тип', 'Группа', 'Источник', 'Баланс', 'Бонусы', 'Скидка', 'Филиал'], ';', '"', '\\');
+        fputcsv($file, ['ID', 'Имя', 'Псевдоним', 'Телефон', 'Доп. Телефон', 'Email', 'Тип', 'Группа', 'Источник', 'Баланс', 'Бонусы', 'Скидка', 'Точка'], ';', '"', '\\');
         
         Client::with(['branch', 'group'])->whereIn('id', $this->ids)->chunk(500, function($clients) use ($file) {
             foreach ($clients as $client) {
@@ -131,7 +131,7 @@ class ExportEntitiesJob implements ShouldQueue
 
     private function exportEmployees($file): void
     {
-        fputcsv($file, ['ID', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Email', 'Филиал', 'Должность', 'Тип', 'Статус'], ';', '"', '\\');
+        fputcsv($file, ['ID', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Email', 'Точка', 'Должность', 'Тип', 'Статус'], ';', '"', '\\');
         
         Employee::with(['branch', 'position', 'user.roles'])->whereIn('id', $this->ids)->chunk(500, function($employees) use ($file) {
             $employeeTypes = [
@@ -199,7 +199,7 @@ class ExportEntitiesJob implements ShouldQueue
 
     private function exportBusinessDirections($file): void
     {
-        fputcsv($file, ['ID', 'Название', 'Филиалы', 'Статус'], ';', '"', '\\');
+        fputcsv($file, ['ID', 'Название', 'Точки', 'Статус'], ';', '"', '\\');
         
         BusinessDirection::with('branches')->whereIn('id', $this->ids)->chunk(500, function($items) use ($file) {
             foreach ($items as $item) {
@@ -207,7 +207,7 @@ class ExportEntitiesJob implements ShouldQueue
                 fputcsv($file, [
                     $item->id,
                     $item->name,
-                    $branches ?: 'Во всех филиалах',
+                    $branches ?: 'Во всех точках',
                     $item->is_active ? 'Активно' : 'Неактивно'
                 ], ';', '"', '\\');
             }
@@ -266,7 +266,7 @@ class ExportEntitiesJob implements ShouldQueue
 
     private function exportWorkOrders($file): void
     {
-        fputcsv($file, ['ID', 'Филиал', 'Клиент', 'Автомобиль', 'Статус', 'Оплата', 'Пробег', 'Сумма', 'Скидка', 'Итого', 'Дата создания'], ';', '"', '\\');
+        fputcsv($file, ['ID', 'Точка', 'Клиент', 'Автомобиль', 'Статус', 'Оплата', 'Пробег', 'Сумма', 'Скидка', 'Итого', 'Дата создания'], ';', '"', '\\');
         
         $statuses = Lookup::where('type', 'work_order_status')
             ->get()
@@ -369,7 +369,7 @@ class ExportEntitiesJob implements ShouldQueue
 
     private function exportStockMovements($file): void
     {
-        fputcsv($file, ['ID', 'Дата', 'Тип', 'Склад', 'Филиал', 'Товар', 'Кол-во', 'Себестоимость', 'Заказ-наряд', 'Комментарий'], ';', '"', '\\');
+        fputcsv($file, ['ID', 'Дата', 'Тип', 'Склад', 'Точка', 'Товар', 'Кол-во', 'Себестоимость', 'Заказ-наряд', 'Комментарий'], ';', '"', '\\');
         
         $types = [
             'in' => 'Приход',
@@ -420,7 +420,7 @@ class ExportEntitiesJob implements ShouldQueue
 
     private function exportTransactions($file): void
     {
-        fputcsv($file, ['ID', 'Дата', 'Тип', 'Счет (Касса)', 'Филиал', 'Статья', 'Сумма', 'Основание', 'Комментарий'], ';', '"', '\\');
+        fputcsv($file, ['ID', 'Дата', 'Тип', 'Счет (Касса)', 'Точка', 'Статья', 'Сумма', 'Основание', 'Комментарий'], ';', '"', '\\');
         
         $types = ['income' => 'Доход', 'expense' => 'Расход', 'transfer' => 'Перевод'];
 

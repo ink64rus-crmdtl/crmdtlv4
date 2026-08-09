@@ -65,7 +65,7 @@ class WorkOrderController extends Controller
 
         $workOrders = $query->paginate(15)->withQueryString();
         
-        $branches = Branch::forSelect()->get(['id', 'name']);
+        $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
 
@@ -77,7 +77,7 @@ class WorkOrderController extends Controller
             ['key' => 'status', 'label' => 'Статус', 'type' => 'system', 'is_default' => true],
             ['key' => 'payment_status', 'label' => 'Оплата', 'type' => 'system', 'is_default' => true],
             ['key' => 'final_amount', 'label' => 'Сумма', 'type' => 'system', 'is_default' => true],
-            ['key' => 'branch', 'label' => 'Филиал', 'type' => 'system', 'is_default' => false],
+            ['key' => 'branch', 'label' => 'Точка', 'type' => 'system', 'is_default' => false],
             ['key' => 'mileage', 'label' => 'Пробег', 'type' => 'system', 'is_default' => false],
         ];
 
@@ -139,7 +139,7 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntity'])->orderBy('id', 'desc')]);
+        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $workOrder->documents->each->append('is_stale');
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
@@ -154,7 +154,7 @@ class WorkOrderController extends Controller
             ];
         }
 
-        $branches = Branch::forSelect()->get(['id', 'name']);
+        $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         
@@ -227,10 +227,32 @@ class WorkOrderController extends Controller
         ]);
     }
 
+    /**
+     * Точка теперь может иметь несколько юрлиц (branch_legal_entity) —
+     * серверная проверка, что выбранное юрлицо реально из НИХ, а не любое
+     * в системе (фронт и так фильтрует список, это защита от подмены
+     * запроса напрямую, не полагаемся только на клиентский UI).
+     */
+    private function legalEntityBelongsToBranchRule(Request $request): \Closure
+    {
+        return function (string $attribute, $value, \Closure $fail) use ($request) {
+            if (!$value) {
+                return;
+            }
+
+            $branch = Branch::find($request->input('branch_id'));
+
+            if ($branch && !$branch->legalEntities()->where('legal_entities.id', $value)->exists()) {
+                $fail('Выбранное юрлицо не привязано к этой точке.');
+            }
+        };
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
+            'legal_entity_id' => ['nullable', 'exists:legal_entities,id', $this->legalEntityBelongsToBranchRule($request)],
             'client_id' => ['required', 'exists:clients,id'],
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
@@ -252,6 +274,7 @@ class WorkOrderController extends Controller
 
             $workOrder = WorkOrder::create([
                 'branch_id' => $validated['branch_id'],
+                'legal_entity_id' => $validated['legal_entity_id'] ?? null,
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'status' => $validated['status'],
@@ -279,6 +302,7 @@ class WorkOrderController extends Controller
     {
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
+            'legal_entity_id' => ['nullable', 'exists:legal_entities,id', $this->legalEntityBelongsToBranchRule($request)],
             'client_id' => ['required', 'exists:clients,id'],
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
@@ -289,6 +313,7 @@ class WorkOrderController extends Controller
         DB::transaction(function () use ($validated, $workOrder) {
             $workOrder->update([
                 'branch_id' => $validated['branch_id'],
+                'legal_entity_id' => $validated['legal_entity_id'] ?? null,
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'status' => $validated['status'],
@@ -516,7 +541,7 @@ class WorkOrderController extends Controller
      * а не настоящий DELETE) — иначе в карточке записи оставалась бы ссылка на
      * уже удалённый заказ. Снимаем связь и статус явно, без учёта BranchScope
      * текущего пользователя — это чистка внутренней целостности данных, а не
-     * выборка для отображения, она не должна зависеть от того, какой филиал
+     * выборка для отображения, она не должна зависеть от того, какая точка
      * сейчас выбран у того, кто удаляет заказ.
      */
     private function unlinkAppointments(array $workOrderIds): void

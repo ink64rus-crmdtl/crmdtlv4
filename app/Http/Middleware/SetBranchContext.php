@@ -29,22 +29,28 @@ class SetBranchContext
             }
             LegalEntityContext::set($leId === 'all' ? null : (int)$leId);
 
-            // 2. Обработка Филиала
+            // 2. Обработка Точки
             $branchId = session('current_branch_id');
             
-            // Получаем список доступных ID филиалов для текущего пользователя (с учетом приоритетов)
+            // Получаем список доступных ID точек для текущего пользователя (с учетом приоритетов)
             $availableBranchesQuery = $user->availableBranches()->where('is_active', true);
             
-            // Если выбрано конкретное ЮЛ, ограничиваем филиалы им
+            // Если выбрано конкретное ЮЛ, ограничиваем точки им (плюс точки без
+            // единого привязанного юрлица — те, что работают вообще без юрлица,
+            // см. Branch::scopeForSelect() — та же логика, тут своя копия, т.к.
+            // тут ещё и пересекается с ABAC-скоупом availableBranches()).
             if ($leId !== 'all') {
-                $availableBranchesQuery->where('legal_entity_id', (int)$leId);
+                $availableBranchesQuery->where(function ($q) use ($leId) {
+                    $q->whereHas('legalEntities', fn ($q2) => $q2->where('legal_entities.id', (int) $leId))
+                        ->orDoesntHave('legalEntities');
+                });
             }
             
             $availableBranches = $availableBranchesQuery->pluck('branches.id')->toArray();
 
             if ($branchId !== 'all') {
                 if (!$branchId || !in_array((int)$branchId, $availableBranches)) {
-                    // Если выбранного филиала нет в доступных (или сменилось ЮЛ), сбрасываем на "Все"
+                    // Если выбранной точки нет в доступных (или сменилось ЮЛ), сбрасываем на "Все"
                     $branchId = 'all';
                     session(['current_branch_id' => $branchId]);
                 }

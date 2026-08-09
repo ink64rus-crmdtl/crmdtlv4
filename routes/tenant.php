@@ -112,6 +112,7 @@ Route::middleware([
         Route::post('/settings/legal-entities/bulk-export', [LegalEntityController::class, 'bulkExport'])->name('settings.legal-entities.bulk-export');
 
         // Настройки: Счета
+        Route::get('/settings/accounts/bik-lookup', [AccountController::class, 'lookupBik'])->name('settings.accounts.bik-lookup');
         Route::post('/settings/accounts', [AccountController::class, 'store'])->name('settings.accounts.store');
         Route::put('/settings/accounts/{account}', [AccountController::class, 'update'])->name('settings.accounts.update');
         Route::delete('/settings/accounts/{account}', [AccountController::class, 'destroy'])->name('settings.accounts.destroy');
@@ -228,7 +229,8 @@ Route::middleware([
         Route::get('/documents/{document}/download', [DocumentController::class, 'download'])->name('documents.download');
         Route::get('/documents/{document}/print', [DocumentController::class, 'print'])->name('documents.print');
         Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
-        Route::post('/documents/{document}/regenerate', [DocumentController::class, 'regenerate'])->name('documents.regenerate');
+        Route::post('/documents/{document}/regenerate-as-new', [DocumentController::class, 'regenerateAsNew'])->name('documents.regenerate-as-new');
+        Route::post('/documents/{document}/replace', [DocumentController::class, 'replace'])->name('documents.replace');
 
         // HR: Должности
         Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');

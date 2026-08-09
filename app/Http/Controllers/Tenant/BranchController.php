@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
-use App\Models\LegalEntity;
 use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
@@ -15,8 +14,8 @@ class BranchController extends Controller
 {
     public function index(): Response
     {
-        $query = Branch::with('legalEntity');
-        
+        $query = Branch::with('legalEntities');
+
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
@@ -28,20 +27,23 @@ class BranchController extends Controller
         }
 
         $branchesList = $query->paginate(15)->withQueryString();
-        
-        $legalEntities = LegalEntity::where('is_active', true)->get(['id', 'name']);
 
         return Inertia::render('Settings/Branches/Index', [
             'branchesList' => $branchesList,
             'filters' => request()->all(),
-            'legalEntities' => $legalEntities,
         ]);
     }
 
+    /**
+     * legal_entity_id тут больше не принимается — привязка точка↔юрлицо
+     * настраивается со стороны формы юрлица (LegalEntityController), где
+     * можно выбрать НЕСКОЛЬКО точек сразу (многие-ко-многим, см. миграцию
+     * branch_legal_entity). Так привязка видна в одном месте, а не
+     * расползается по двум формам с риском разойтись.
+     */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'legal_entity_id' => ['nullable', 'exists:legal_entities,id'],
             'name' => ['required', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
@@ -57,13 +59,12 @@ class BranchController extends Controller
 
         Branch::create($validated);
 
-        return redirect()->back()->with('success', 'Филиал успешно создан');
+        return redirect()->back()->with('success', 'Точка успешно создана');
     }
 
     public function update(Request $request, Branch $branch)
     {
         $validated = $request->validate([
-            'legal_entity_id' => ['nullable', 'exists:legal_entities,id'],
             'name' => ['required', 'string', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
@@ -79,33 +80,38 @@ class BranchController extends Controller
 
         $branch->update($validated);
 
-        return redirect()->back()->with('success', 'Филиал обновлен');
+        return redirect()->back()->with('success', 'Точка обновлена');
     }
 
     public function destroy(Branch $branch)
     {
         $branch->delete();
 
-        // Если удалили текущий филиал, сбрасываем сессию на All
+        // Если удалили текущую точку, сбрасываем сессию на All
         if (session('current_branch_id') == $branch->id) {
             session(['current_branch_id' => 'all']);
         }
 
-        return redirect()->back()->with('success', 'Филиал удален');
+        return redirect()->back()->with('success', 'Точка удалена');
     }
 
     public function switch(Request $request, ?Branch $branch = null)
     {
         if ($branch && $branch->exists) {
             session(['current_branch_id' => $branch->id]);
-            // Автоматически переключаем юрлицо на то, к которому принадлежит филиал
-            if ($branch->legal_entity_id) {
-                session(['current_legal_entity_id' => $branch->legal_entity_id]);
+
+            // Автоматически переключаем юрлицо на то, к которому принадлежит точка —
+            // ТОЛЬКО если оно у неё ровно одно. Точка теперь может иметь несколько
+            // юрлиц (branch_legal_entity) — в этом случае никакого умолчания нет,
+            // сессия юрлица не трогается, выбор явно за пользователем.
+            $legalEntityIds = $branch->legalEntities()->pluck('legal_entities.id');
+            if ($legalEntityIds->count() === 1) {
+                session(['current_legal_entity_id' => $legalEntityIds->first()]);
             }
         } else {
             session(['current_branch_id' => 'all']);
         }
-        
+
         session()->save();
         return redirect()->back();
     }
@@ -123,7 +129,7 @@ class BranchController extends Controller
             session(['current_branch_id' => 'all']);
         }
 
-        return redirect()->back()->with('success', 'Выбранные филиалы удалены');
+        return redirect()->back()->with('success', 'Выбранные точки удалены');
     }
 
     public function bulkExport(Request $request)

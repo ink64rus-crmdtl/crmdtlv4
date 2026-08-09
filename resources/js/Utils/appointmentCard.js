@@ -7,7 +7,7 @@ export const APPOINTMENT_FIELDS = [
     { key: 'client', label: 'Клиент', icon: 'ri-user-line' },
     { key: 'vehicle', label: 'Автомобиль', icon: 'ri-car-line' },
     { key: 'phone', label: 'Телефон', icon: 'ri-phone-line' },
-    { key: 'branch', label: 'Филиал', icon: 'ri-store-2-line' },
+    { key: 'branch', label: 'Точка', icon: 'ri-store-2-line' },
     { key: 'employee', label: 'Мастер', icon: 'ri-user-star-line' },
     { key: 'post', label: 'Пост', icon: 'ri-parking-box-line' },
     { key: 'status', label: 'Статус', icon: 'ri-flag-line' },

@@ -15,7 +15,7 @@ use Carbon\Carbon;
  * с заданным employees.salary_amount. Запускается ЕЖЕЧАСНО через
  * `tenants:run payroll:accrue-salaries` (см. bootstrap/app.php) — не
  * dailyAt('00:00'), по той же причине, что и TakeDailyAccountSnapshots:
- * филиалы тенанта могут быть в разных часовых поясах. Команда сама проверяет,
+ * точки тенанта могут быть в разных часовых поясах. Команда сама проверяет,
  * у каких поясов сейчас полночь И совпадает ли сегодняшнее число с
  * настроенным днём начисления (Setting payroll_salary_accrual_day).
  *
@@ -33,7 +33,7 @@ use Carbon\Carbon;
 class AccruePayrollSalaries extends Command
 {
     protected $signature = 'payroll:accrue-salaries {--date= : Ручной бэкафилл на конкретную дату (по всем поясам, без проверки дня начисления)}';
-    protected $description = 'Начислить оклад активным сотрудникам с заданным окладом (по дню начисления из настроек, с учётом часового пояса филиалов)';
+    protected $description = 'Начислить оклад активным сотрудникам с заданным окладом (по дню начисления из настроек, с учётом часового пояса точек)';
 
     public function handle(): int
     {

@@ -77,8 +77,14 @@ const deleteDocument = (doc) => {
     }
 };
 
-const regenerateDocument = (doc) => {
-    router.post(route('documents.regenerate', doc.id), {}, { preserveScroll: true });
+const regenerateAsNew = (doc) => {
+    router.post(route('documents.regenerate-as-new', doc.id), {}, { preserveScroll: true });
+};
+
+const replaceDocument = (doc) => {
+    if (confirm(`Заменить документ №${doc.number} актуальными данными? Номер останется прежним, содержимое и дата формирования обновятся.`)) {
+        router.post(route('documents.replace', doc.id), {}, { preserveScroll: true });
+    }
 };
 
 // --- ЗАРПЛАТА (Фаза 10.1): администратор заказа + распределение выплат по позиции ---
@@ -159,6 +165,7 @@ const paymentStatuses = {
 // Форма редактирования шапки
 const form = useForm({
     branch_id: '',
+    legal_entity_id: '',
     client_id: '',
     vehicle_id: '',
     status: '',
@@ -166,13 +173,39 @@ const form = useForm({
     custom_fields: {},
 });
 
+// --- Юрлицо заказа (см. Operations/WorkOrders/Index.vue — тот же паттерн) ---
+const currentSidebarLegalEntityId = computed(() => page.props.current_legal_entity_id ? Number(page.props.current_legal_entity_id) : null);
+
+const legalEntitiesForSelectedBranch = computed(() => {
+    const branch = props.branches.find(b => b.id === form.branch_id);
+    return branch?.legal_entities || [];
+});
+
+const isLegalEntityLocked = computed(() => {
+    return currentSidebarLegalEntityId.value !== null
+        && legalEntitiesForSelectedBranch.value.some(le => le.id === currentSidebarLegalEntityId.value);
+});
+
+const defaultLegalEntityIdFor = (branchId) => {
+    const options = props.branches.find(b => b.id === branchId)?.legal_entities || [];
+    if (currentSidebarLegalEntityId.value !== null && options.some(le => le.id === currentSidebarLegalEntityId.value)) {
+        return currentSidebarLegalEntityId.value;
+    }
+    return options.length === 1 ? options[0].id : '';
+};
+
+const onBranchChangedInForm = () => {
+    form.legal_entity_id = defaultLegalEntityIdFor(form.branch_id);
+};
+
 const openModal = () => {
     form.branch_id = props.workOrder.branch_id;
+    form.legal_entity_id = props.workOrder.legal_entity_id || '';
     form.client_id = props.workOrder.client_id;
     form.vehicle_id = props.workOrder.vehicle_id || '';
     form.status = props.workOrder.status;
     form.mileage = props.workOrder.mileage || '';
-    
+
     const cf = {};
     props.customFieldDefs.forEach(def => {
         const existingVal = props.customFieldsData.find(d => d.definition.id === def.id)?.value;
@@ -985,15 +1018,19 @@ const formatMoney = (amount) => {
                         <div class="flex-1 overflow-y-auto custom-scrollbar">
                             <table v-if="workOrder.documents && workOrder.documents.length > 0" class="min-w-full text-left">
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-                                    <tr v-for="doc in workOrder.documents" :key="doc.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                    <tr v-for="doc in workOrder.documents" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
                                         <td class="py-3 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
                                             {{ doc.number }}
-                                            <i v-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем перегенерировать"></i>
+                                            <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
+                                            <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем обновить документ"></i>
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
                                         <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
                                         <td class="py-3 px-6 text-sm text-right space-x-1">
-                                            <button v-if="doc.is_stale" @click="regenerateDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Перегенерировать с текущими данными"><i class="ri-refresh-line"></i></button>
+                                            <template v-if="doc.is_stale && !doc.superseded_by_document_id">
+                                                <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)"><i class="ri-file-add-line"></i></button>
+                                                <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)"><i class="ri-refresh-line"></i></button>
+                                            </template>
                                             <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать"><i class="ri-printer-line"></i></a>
                                             <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF"><i class="ri-download-2-line"></i></a>
                                             <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
@@ -1443,21 +1480,22 @@ const formatMoney = (amount) => {
                             
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Филиал <span class="text-danger">*</span></label>
-                                    <select 
-                                        v-model="form.branch_id" 
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                                    <select
+                                        v-model="form.branch_id"
+                                        @change="onBranchChangedInForm"
                                         required
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                     >
-                                        <option value="" disabled class="bg-white dark:bg-gray-800">Выберите филиал...</option>
+                                        <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
                                         <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                     </select>
                                     <span v-if="form.errors.branch_id" class="text-xs text-danger mt-1">{{ form.errors.branch_id }}</span>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статус <span class="text-danger">*</span></label>
-                                    <select 
-                                        v-model="form.status" 
+                                    <select
+                                        v-model="form.status"
                                         required
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                     >
@@ -1465,6 +1503,22 @@ const formatMoney = (amount) => {
                                     </select>
                                     <span v-if="form.errors.status" class="text-xs text-danger mt-1">{{ form.errors.status }}</span>
                                 </div>
+                            </div>
+
+                            <div v-if="legalEntitiesForSelectedBranch.length > 0">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Юрлицо</label>
+                                <select
+                                    v-model="form.legal_entity_id"
+                                    :disabled="isLegalEntityLocked"
+                                    :class="[isLegalEntityLocked ? 'bg-gray-50 dark:bg-gray-800/60 cursor-not-allowed text-gray-500 dark:text-gray-400' : 'bg-transparent text-gray-800 dark:text-gray-200', 'block w-full rounded-md border border-gray-200 dark:border-gray-700 py-2 px-3 text-sm focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0']"
+                                >
+                                    <option value="" class="bg-white dark:bg-gray-800">Не указано (без реквизитов в документах)</option>
+                                    <option v-for="le in legalEntitiesForSelectedBranch" :key="le.id" :value="le.id" class="bg-white dark:bg-gray-800">{{ le.name }}</option>
+                                </select>
+                                <p v-if="isLegalEntityLocked" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                                    Зафиксировано юрлицом, выбранным в шапке. Чтобы выставить документ от другого — переключите юрлицо в шапке сайта.
+                                </p>
+                                <span v-if="form.errors.legal_entity_id" class="text-xs text-danger mt-1">{{ form.errors.legal_entity_id }}</span>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

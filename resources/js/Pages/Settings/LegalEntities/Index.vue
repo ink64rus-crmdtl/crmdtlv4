@@ -15,6 +15,7 @@ const props = defineProps({
     filters: Object,
     tenantCountry: String,
     countryConfig: Object,
+    branches: Array,
 });
 
 const isModalOpen = ref(false);
@@ -36,6 +37,7 @@ const form = useForm({
     tax_id: '',
     requisites: {},
     is_active: true,
+    branch_ids: [],
 });
 
 const accountForm = useForm({
@@ -49,6 +51,47 @@ const accountForm = useForm({
     corr_account: '',
     is_default_for_invoicing: false,
     is_active: true,
+});
+
+// --- Автоподстановка банка по БИК (DaData) ---
+// bank_name/corr_account намеренно нередактируемы вручную (см. форму ниже) —
+// заполняются только отсюда, чтобы название банка не могло разойтись с БИК
+// в готовом документе. bikLookupState: 'idle' | 'loading' | 'found' | 'not_found' | 'not_configured'.
+const bikLookupState = ref('idle');
+
+const lookupBik = useDebounceFn(async () => {
+    const bik = accountForm.bik.trim();
+
+    if (bik.length < 5) {
+        bikLookupState.value = 'idle';
+        accountForm.bank_name = '';
+        accountForm.corr_account = '';
+        return;
+    }
+
+    bikLookupState.value = 'loading';
+
+    try {
+        const { data } = await axios.get(route('settings.accounts.bik-lookup'), { params: { bik } });
+
+        if (data.found) {
+            accountForm.bank_name = data.bank_name;
+            accountForm.corr_account = data.corr_account;
+            bikLookupState.value = 'found';
+        } else {
+            accountForm.bank_name = '';
+            accountForm.corr_account = '';
+            bikLookupState.value = data.configured ? 'not_found' : 'not_configured';
+        }
+    } catch {
+        accountForm.bank_name = '';
+        accountForm.corr_account = '';
+        bikLookupState.value = 'not_found';
+    }
+}, 500);
+
+watch(() => accountForm.bik, () => {
+    if (accountForm.type === 'bank') lookupBik();
 });
 
 const accountTypeLabels = {
@@ -114,6 +157,10 @@ const currentCountrySchema = computed(() => {
     return props.countryConfig?.requisite_schema || [];
 });
 
+const signatorySchema = computed(() => {
+    return props.countryConfig?.signatory_schema || [];
+});
+
 const bankLabels = computed(() => {
     return props.countryConfig?.bank_labels || {
         bik: 'БИК / SWIFT',
@@ -129,11 +176,13 @@ const openModal = (entity = null) => {
         form.tax_id = entity.tax_id || '';
         form.requisites = entity.requisites || {};
         form.is_active = Boolean(entity.is_active);
+        form.branch_ids = (entity.branches || []).map(b => b.id);
     } else {
         editingEntityId.value = null;
         form.reset();
         form.requisites = {};
         form.is_active = true;
+        form.branch_ids = [];
     }
     activeTab.value = 'main';
     isModalOpen.value = true;
@@ -179,7 +228,11 @@ const openAccountModal = (account = null) => {
         accountForm.corr_account = account.corr_account || '';
         accountForm.is_default_for_invoicing = Boolean(account.is_default_for_invoicing);
         accountForm.is_active = Boolean(account.is_active);
+        // Уже сохранённый счёт — считаем БИК/банк ранее подтверждёнными, не
+        // дёргаем DaData заново, пока пользователь сам не тронет поле БИК.
+        bikLookupState.value = account.bank_name ? 'found' : 'idle';
     } else {
+        bikLookupState.value = 'idle';
         accountForm.reset();
         accountForm.legal_entity_id = editingEntityId.value;
         accountForm.type = 'cash';
@@ -231,8 +284,8 @@ const deleteAccount = (account) => {
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Как устроена структура компании?">
-                <p>В нашей системе <strong>Юридическое лицо</strong> — это исключительно финансовый профиль. Он используется только для привязки расчетных счетов (касс) и подстановки реквизитов в печатные документы (Акты, Заказ-наряды).</p>
-                <p>Вся реальная работа (записи клиентов, склады, сотрудники) привязывается к <strong>Филиалам</strong> (физическим адресам). Вы можете привязать Филиал к конкретному Юрлицу, чтобы документы формировались автоматически.</p>
+                <p>В нашей системе <strong>Юридическое лицо</strong> — это исключительно финансовый профиль: реквизиты, банковские счета и подписанты для печатных документов (Акты, Счета, Заказ-наряды). Вся реальная работа (записи клиентов, склады, сотрудники, заказы) привязывается к <strong>Точке</strong> — она первична, юрлицо только "подключается" к ней.</p>
+                <p>Одна точка может выставлять документы сразу от нескольких юрлиц (например, часть заказов — от ИП, часть — от ООО), и одно юрлицо может обслуживать несколько точек — привязка настраивается прямо здесь, при создании/редактировании юрлица.</p>
                 <p class="text-xs mt-2 opacity-80"><i class="ri-error-warning-line align-middle"></i> Примечание: Если у вас несколько юрлиц с абсолютно разными базами клиентов, разными складами и независимыми сотрудниками, мы настоятельно рекомендуем создать для них отдельные аккаунты (Тенанты) во избежание путаницы.</p>
             </PageHelper>
 
@@ -282,6 +335,7 @@ const deleteAccount = (account) => {
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрисдикция</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Налоговый номер</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точки</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Расчетные счета</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
@@ -304,6 +358,14 @@ const deleteAccount = (account) => {
                                     </span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entity.tax_id || '—' }}</td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                    <div class="flex flex-wrap gap-1" v-if="entity.branches && entity.branches.length > 0">
+                                        <span v-for="b in entity.branches" :key="b.id" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            <i class="ri-store-2-line"></i> {{ b.name }}
+                                        </span>
+                                    </div>
+                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">—</span>
+                                </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span class="inline-flex items-center gap-1.5 font-medium text-xs text-gray-600 dark:text-gray-400">
                                         <i class="ri-wallet-3-line"></i> {{ entity.accounts?.length || 0 }} сч.
@@ -337,7 +399,7 @@ const deleteAccount = (account) => {
                                 </td>
                             </tr>
                             <tr v-if="legalEntities.data.length === 0">
-                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Юридические лица еще не добавлены. Нажмите "Добавить юрлицо".
                                 </td>
                             </tr>
@@ -362,7 +424,7 @@ const deleteAccount = (account) => {
                 </div>
 
                 <!-- Вкладки внутри модалки -->
-                <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/50" v-if="editingEntity">
+                <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/50">
                     <button
                         type="button"
                         @click="activeTab = 'main'"
@@ -374,6 +436,17 @@ const deleteAccount = (account) => {
                         Основная информация
                     </button>
                     <button
+                        type="button"
+                        @click="activeTab = 'signatures'"
+                        :class="[
+                            activeTab === 'signatures' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2',
+                            'py-3.5 px-2 text-sm transition-colors focus:outline-none'
+                        ]"
+                    >
+                        Подписи
+                    </button>
+                    <button
+                        v-if="editingEntity"
                         type="button"
                         @click="activeTab = 'accounts'"
                         :class="[
@@ -388,72 +461,117 @@ const deleteAccount = (account) => {
                     </button>
                 </div>
 
-                <!-- Содержимое Вкладки 1: Основная информация -->
-                <form v-if="activeTab === 'main'" @submit.prevent="submitEntity" class="flex flex-col">
+                <!-- Содержимое Вкладок 1-2: Основная информация / Подписи (общая форма — оба относятся к одному submitEntity) -->
+                <form v-show="activeTab === 'main' || activeTab === 'signatures'" @submit.prevent="submitEntity" class="flex flex-col">
                     <div class="p-6 space-y-5">
-                        
-                        <div v-if="form.errors.tax_id" class="p-3 bg-danger/10 border border-danger/20 rounded-md text-sm text-danger font-medium flex items-center gap-2">
-                            <i class="ri-error-warning-line text-lg"></i> {{ form.errors.tax_id }}
+
+                        <div v-show="activeTab === 'main'" class="space-y-5">
+                            <div v-if="form.errors.tax_id" class="p-3 bg-danger/10 border border-danger/20 rounded-md text-sm text-danger font-medium flex items-center gap-2">
+                                <i class="ri-error-warning-line text-lg"></i> {{ form.errors.tax_id }}
+                            </div>
+
+                            <!-- Инфо блок юрисдикции -->
+                            <div class="flex items-center justify-between bg-info/10 p-3.5 rounded-md border border-info/20">
+                                <span class="text-xs font-bold text-info uppercase tracking-wider">Страна юрисдикции:</span>
+                                <span class="text-sm font-bold text-info">{{ countryConfig?.name }} ({{ tenantCountry }})</span>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Официальное название (ИП / ООО) <span class="text-danger">*</span></label>
+                                <input
+                                    v-model="form.name"
+                                    type="text"
+                                    required
+                                    placeholder="ООО Детейлинг Групп"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                />
+                            </div>
+
+                            <!-- Привязка к точкам: юрлицо без точки существовать не может (кроме
+                                 самой первой точки в системе — та создастся автоматически). Одна
+                                 точка может иметь несколько юрлиц и наоборот — многие-ко-многим. -->
+                            <div v-if="branches.length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-4">
+                                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+                                    От каких точек это юрлицо может выставлять документы? <span class="text-danger">*</span>
+                                </h4>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Выберите хотя бы одну. Точка может быть отмечена сразу у нескольких юрлиц.</p>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <label v-for="branch in branches" :key="branch.id" class="flex items-center cursor-pointer group">
+                                        <input type="checkbox" :value="branch.id" v-model="form.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ branch.name }}</span>
+                                    </label>
+                                </div>
+                                <span v-if="form.errors.branch_ids" class="text-xs text-danger mt-1 block">{{ form.errors.branch_ids }}</span>
+                            </div>
+                            <div v-else class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
+                                <i class="ri-information-line text-info mr-1"></i>
+                                В системе пока нет ни одной точки — она будет создана автоматически («Основная») и сразу привязана к этому юрлицу.
+                            </div>
+
+                            <!-- Динамические реквизиты под юрисдикцию тенанта -->
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+                                <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">
+                                    Налоговые реквизиты
+                                </h4>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div v-for="field in currentCountrySchema" :key="field.key" :class="field.type === 'textarea' ? 'sm:col-span-2' : ''">
+                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                            {{ field.label }} <span v-if="field.required" class="text-danger">*</span>
+                                        </label>
+
+                                        <textarea
+                                            v-if="field.type === 'textarea'"
+                                            v-model="form.requisites[field.key]"
+                                            :required="field.required"
+                                            :placeholder="field.placeholder"
+                                            rows="2"
+                                            class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                        ></textarea>
+
+                                        <input
+                                            v-else
+                                            v-model="form.requisites[field.key]"
+                                            :type="field.type"
+                                            :required="field.required"
+                                            :placeholder="field.placeholder"
+                                            class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Toggle Switch (Attex Style) -->
+                            <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                                <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
+                                    <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                                </div>
+                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
+                                    Юридическое лицо активно
+                                </label>
+                            </div>
                         </div>
 
-                        <!-- Инфо блок юрисдикции -->
-                        <div class="flex items-center justify-between bg-info/10 p-3.5 rounded-md border border-info/20">
-                            <span class="text-xs font-bold text-info uppercase tracking-wider">Страна юрисдикции:</span>
-                            <span class="text-sm font-bold text-info">{{ countryConfig?.name }} ({{ tenantCountry }})</span>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Официальное название (ИП / ООО) <span class="text-danger">*</span></label>
-                            <input 
-                                v-model="form.name" 
-                                type="text" 
-                                required 
-                                placeholder="ООО Детейлинг Групп" 
-                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                            />
-                        </div>
-
-                        <!-- Динамические реквизиты под юрисдикцию тенанта -->
-                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
-                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">
-                                Налоговые реквизиты
+                        <!-- Подписанты (для печатных документов — Акт/Счёт/Договор) -->
+                        <div v-show="activeTab === 'signatures'">
+                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+                                Подписи в документах
                             </h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Должность и ФИО для блока подписи в печатных формах (счета, акты, договоры). Необязательно.</p>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div v-for="field in currentCountrySchema" :key="field.key" :class="field.type === 'textarea' ? 'sm:col-span-2' : ''">
+                                <div v-for="field in signatorySchema" :key="field.key">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                        {{ field.label }} <span v-if="field.required" class="text-danger">*</span>
+                                        {{ field.label }}
                                     </label>
-
-                                    <textarea
-                                        v-if="field.type === 'textarea'"
-                                        v-model="form.requisites[field.key]"
-                                        :required="field.required"
-                                        :placeholder="field.placeholder"
-                                        rows="2"
-                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                                    ></textarea>
-
                                     <input
-                                        v-else
                                         v-model="form.requisites[field.key]"
-                                        :type="field.type"
-                                        :required="field.required"
+                                        type="text"
                                         :placeholder="field.placeholder"
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                     />
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Toggle Switch (Attex Style) -->
-                        <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
-                            <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
-                                <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
-                            </div>
-                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
-                                Юридическое лицо активно
-                            </label>
                         </div>
                     </div>
 
@@ -602,44 +720,64 @@ const deleteAccount = (account) => {
 
                         <template v-if="accountForm.type === 'bank'">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Наименование банка</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.bik }}</label>
+                                <input
+                                    v-model="accountForm.bik"
+                                    type="text"
+                                    placeholder="044525225"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                />
+                                <p v-if="bikLookupState === 'loading'" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-1">
+                                    <i class="ri-loader-4-line animate-spin"></i> Ищем банк по БИК...
+                                </p>
+                                <p v-else-if="bikLookupState === 'found'" class="text-xs text-success mt-1.5 flex items-center gap-1">
+                                    <i class="ri-checkbox-circle-line"></i> Банк найден и подставлен автоматически
+                                </p>
+                                <p v-else-if="bikLookupState === 'not_found'" class="text-xs text-danger mt-1.5 flex items-center gap-1">
+                                    <i class="ri-error-warning-line"></i> БИК не найден — проверьте номер
+                                </p>
+                                <p v-else-if="bikLookupState === 'not_configured'" class="text-xs text-warning mt-1.5 flex items-center gap-1">
+                                    <i class="ri-error-warning-line"></i> Автозаполнение недоступно — администратор платформы не подключил DaData, заполните банк и корсчёт вручную
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    Наименование банка
+                                    <span v-if="bikLookupState !== 'not_configured'" class="text-gray-400 font-normal">(автоматически по БИК)</span>
+                                </label>
                                 <input
                                     v-model="accountForm.bank_name"
                                     type="text"
-                                    placeholder="ПАО Сбербанк"
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                    :readonly="bikLookupState !== 'not_configured'"
+                                    placeholder="Заполнится автоматически по БИК"
+                                    :class="[bikLookupState !== 'not_configured' ? 'bg-gray-50 dark:bg-gray-800/60 cursor-not-allowed text-gray-500 dark:text-gray-400' : 'bg-transparent text-gray-800 dark:text-gray-200', 'block w-full rounded-md border border-gray-200 dark:border-gray-700 py-2 px-3 text-sm focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500']"
                                 />
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.bik }}</label>
-                                    <input
-                                        v-model="accountForm.bik"
-                                        type="text"
-                                        placeholder="044525225"
-                                        class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.corr_account }}</label>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                        {{ bankLabels.corr_account }}
+                                        <span v-if="bikLookupState !== 'not_configured'" class="text-gray-400 font-normal">(авто)</span>
+                                    </label>
                                     <input
                                         v-model="accountForm.corr_account"
                                         type="text"
+                                        :readonly="bikLookupState !== 'not_configured'"
                                         placeholder="30101810400000000225"
+                                        :class="[bikLookupState !== 'not_configured' ? 'bg-gray-50 dark:bg-gray-800/60 cursor-not-allowed text-gray-500 dark:text-gray-400' : 'bg-transparent text-gray-800 dark:text-gray-200', 'block w-full rounded-md border border-gray-200 dark:border-gray-700 py-2 px-3 text-sm focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500']"
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.account_number }}</label>
+                                    <input
+                                        v-model="accountForm.account_number"
+                                        type="text"
+                                        placeholder="40702810938000001234"
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                     />
                                 </div>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{{ bankLabels.account_number }}</label>
-                                <input
-                                    v-model="accountForm.account_number"
-                                    type="text"
-                                    placeholder="40702810938000001234"
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                                />
                             </div>
                         </template>
 

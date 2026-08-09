@@ -46,11 +46,29 @@ class DocumentPlaceholderService
         return ['flat' => $flat, 'tables' => $tables, 'legal_entity' => $legalEntity];
     }
 
+    /**
+     * Приоритет — явный выбор на самой записи (WorkOrder.legal_entity_id —
+     * точка теперь может иметь несколько юрлиц, branch_legal_entity, так что
+     * "чьё юрлицо" однозначно не выводится). Фолбэк — юрлицо точки, но
+     * ТОЛЬКО если оно у неё ровно одно: при 0 (точка работает без юрлица,
+     * это осознанно допустимо) или 2+ (неоднозначно, запись должна была
+     * явно выбрать) возвращаем null — DocumentGenerationService в этом
+     * случае просто формирует документ с пустыми реквизитами, не падает.
+     */
     public static function resolveLegalEntity(Model $entity): ?LegalEntity
     {
-        $branch = $entity->branch ?? null;
+        if ($entity->legal_entity_id) {
+            return LegalEntity::find($entity->legal_entity_id);
+        }
 
-        return $branch?->legalEntity;
+        $branch = $entity->branch ?? null;
+        if (!$branch) {
+            return null;
+        }
+
+        $legalEntities = $branch->legalEntities;
+
+        return $legalEntities->count() === 1 ? $legalEntities->first() : null;
     }
 
     private static function companyPlaceholders(?LegalEntity $legalEntity, ?Branch $branch): array
@@ -74,7 +92,11 @@ class DocumentPlaceholderService
             $requisites = (array) $legalEntity->requisites;
             $schema = CountryConfigService::getForCountry((string) ($requisites['country_code'] ?? ''));
 
-            foreach ($schema['requisite_schema'] ?? [] as $field) {
+            // signatory_schema (должность/ФИО руководителя и бухгалтера) —
+            // те же поля, что и requisite_schema, но не зависят от страны
+            // (CountryConfigService::signatorySchema) — нужны в подписях
+            // печатных форм (Акт/Счёт/Договор — CLAUDE.md, документооборот).
+            foreach ([...($schema['requisite_schema'] ?? []), ...($schema['signatory_schema'] ?? [])] as $field) {
                 $placeholders['legal_entity.' . $field['key']] = '';
             }
 
@@ -117,6 +139,7 @@ class DocumentPlaceholderService
             'client.name' => $workOrder->client?->name ?? '',
             'client.phone' => $workOrder->client?->phone ?? '',
             'vehicle.plate_number' => $workOrder->vehicle?->plate_number ?? '',
+            ...self::clientRequisitePlaceholders($workOrder->client),
         ];
     }
 
@@ -149,7 +172,31 @@ class DocumentPlaceholderService
             'client.name' => $client->name,
             'client.phone' => $client->phone ?? '',
             'client.email' => $client->email ?? '',
+            ...self::clientRequisitePlaceholders($client),
         ];
+    }
+
+    /**
+     * B2B-клиент — сам сторона договора (не только тенант): его реквизиты
+     * (ИНН/КПП, должность и ФИО руководителя — CountryConfigService::
+     * signatorySchema) нужны в печатной форме так же, как и у тенанта. У
+     * B2C requisites — паспортные данные (другой набор ключей, форма в
+     * CRM/Clients/Index.vue), разворачиваем как есть без привязки к схеме —
+     * какие ключи реально лежат в JSON, такие и станут {{client.*}}.
+     */
+    private static function clientRequisitePlaceholders(?Client $client): array
+    {
+        if (!$client) {
+            return [];
+        }
+
+        $placeholders = [];
+
+        foreach ((array) $client->requisites as $key => $value) {
+            $placeholders['client.' . $key] = (string) $value;
+        }
+
+        return $placeholders;
     }
 
     private static function money(int $amountInMinorUnits): string

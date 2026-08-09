@@ -67,7 +67,7 @@ class PeriodClosureController extends Controller
     private function suggestedPeriodEndDate(): ?string
     {
         // Закрытие периода — общетенантное действие (таблица без branch_id), поэтому "сегодня"
-        // берем по часовому поясу тенанта, а не филиала.
+        // берем по часовому поясу тенанта, а не точки.
         $today = Carbon::now(TimezoneResolver::forTenant())->startOfDay();
         $currentQuarterStartMonth = (intdiv($today->month - 1, 3)) * 3 + 1;
         $lastCompletedQuarterEnd = Carbon::create($today->year, $currentQuarterStartMonth, 1)->subDay();

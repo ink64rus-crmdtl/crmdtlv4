@@ -45,7 +45,7 @@ class AppointmentController extends Controller
 
         $appointments = $query->paginate(15)->withQueryString();
 
-        // start_at/end_at — время по часовому поясу филиала (wall-clock), а не UTC-метка аудита.
+        // start_at/end_at — время по часовому поясу точки (wall-clock), а не UTC-метка аудита.
         // Добавляем локальные представления для отображения и для предзаполнения формы редактирования.
         $appointments->getCollection()->transform(function (Appointment $appointment) {
             $tz = TimezoneResolver::forBranch($appointment->branch_id);
@@ -68,7 +68,7 @@ class AppointmentController extends Controller
             ['key' => 'start_at', 'label' => 'Время записи'],
             ['key' => 'client', 'label' => 'Клиент'],
             ['key' => 'vehicle', 'label' => 'Автомобиль'],
-            ['key' => 'branch', 'label' => 'Филиал'],
+            ['key' => 'branch', 'label' => 'Точка'],
             ['key' => 'employee', 'label' => 'Мастер'],
             ['key' => 'status', 'label' => 'Статус'],
             ['key' => 'comment', 'label' => 'Комментарий'],
@@ -87,7 +87,7 @@ class AppointmentController extends Controller
             ['key' => 'client', 'label' => 'Клиент'],
             ['key' => 'vehicle', 'label' => 'Автомобиль'],
             ['key' => 'phone', 'label' => 'Телефон'],
-            ['key' => 'branch', 'label' => 'Филиал'],
+            ['key' => 'branch', 'label' => 'Точка'],
             ['key' => 'employee', 'label' => 'Мастер'],
             ['key' => 'post', 'label' => 'Пост'],
             ['key' => 'status', 'label' => 'Статус'],
@@ -134,11 +134,11 @@ class AppointmentController extends Controller
 
     /**
      * JSON-фид для FullCalendar (Фаза 9.1). Возвращает записи, пересекающие видимый
-     * диапазон календаря, с временем уже переведённым в пояс филиала (виджет
+     * диапазон календаря, с временем уже переведённым в пояс точки (виджет
      * настроен на timeZone:'local' — отображает переданные строки как есть,
      * без повторной конвертации браузером). Диапазон запроса намеренно расширен
      * на сутки в обе стороны — FullCalendar присылает границы без метки часового
-     * пояса, а сами записи могут быть в разных поясах у разных филиалов тенанта.
+     * пояса, а сами записи могут быть в разных поясах у разных точек тенанта.
      */
     public function calendarEvents(Request $request)
     {
@@ -528,7 +528,7 @@ class AppointmentController extends Controller
     }
 
     /**
-     * Дата записи в локальном времени филиала — для точного текста события в
+     * Дата записи в локальном времени точки — для точного текста события в
      * Истории (см. CLAUDE.md §7): по roll-up событие видно и на карточке
      * Клиента/Автомобиля, где без даты непонятно, о какой именно записи речь.
      */

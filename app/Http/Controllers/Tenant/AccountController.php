@@ -4,10 +4,36 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Services\DadataService;
 use Illuminate\Http\Request;
 
 class AccountController extends Controller
 {
+    /**
+     * Автоподстановка названия банка и корсчёта по БИК (DaData) — фронт
+     * (Settings/LegalEntities/Index.vue) держит эти поля нередактируемыми
+     * именно потому, что заполняются они только отсюда, без ручного ввода
+     * (защита от опечаток/несовпадения банка и БИК в документах).
+     */
+    public function lookupBik(Request $request)
+    {
+        $validated = $request->validate([
+            'bik' => ['required', 'string', 'min:5', 'max:20'],
+        ]);
+
+        if (!DadataService::isConfigured()) {
+            return response()->json(['found' => false, 'configured' => false]);
+        }
+
+        $result = DadataService::lookupBank($validated['bik']);
+
+        if (!$result) {
+            return response()->json(['found' => false, 'configured' => true]);
+        }
+
+        return response()->json(['found' => true, 'configured' => true, ...$result]);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([

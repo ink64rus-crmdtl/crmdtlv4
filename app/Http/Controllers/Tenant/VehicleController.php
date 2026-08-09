@@ -28,7 +28,7 @@ class VehicleController extends Controller
     {
         $user = auth()->user();
         
-        // Получаем автомобили, владельцы которых доступны в текущем филиале (BranchScope на клиенте)
+        // Получаем автомобили, владельцы которых доступны в текущей точке (BranchScope на клиенте)
         $query = Vehicle::whereHas('client')->with(['client', 'make', 'vehicleModel']);
         
         // Применяем серверную фильтрацию и поиск
