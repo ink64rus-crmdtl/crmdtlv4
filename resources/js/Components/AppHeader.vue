@@ -35,6 +35,20 @@ const filteredBranches = computed(() => {
     return branches.value.filter(b => !b.legal_entities?.length || b.legal_entities.some(le => le.id === currentLEId.value));
 });
 
+// Точка теперь первична — переключатель юрлица показывает и скрывает себя
+// не по общему числу юрлиц в тенанте (page.props.legal_entities — это ВСЕ
+// доступные пользователю юрлица, вне зависимости от того, видна ли ему хоть
+// одна их точка), а по тому, есть ли реальный выбор юрлица СРЕДИ ВИДИМЫХ
+// точек — иначе в списке могло появиться юрлицо, не привязанное ни к одной
+// видимой точке, выбор которого ничего осмысленного не отфильтрует. Если
+// точка всего одна и юрлицо у неё одно (или нет вовсе) — оба переключателя
+// пропадают сами по себе (visibleLegalEntities.length <= 1 в этом случае).
+const visibleLegalEntities = computed(() => {
+    const map = new Map();
+    branches.value.forEach(b => (b.legal_entities || []).forEach(le => map.set(le.id, le)));
+    return Array.from(map.values());
+});
+
 // --- Система уведомлений ---
 const notifications = ref([]);
 const unreadCount = computed(() => notifications.value.filter(n => !n.read_at).length);
@@ -92,49 +106,7 @@ onUnmounted(() => {
 
             <div class="flex items-center gap-5">
                 
-                <!-- Переключатель Юрлиц (Показываем только если их больше 1) -->
-                <Dropdown align="right" width="48" v-if="legalEntities.length > 1">
-                    <template #trigger>
-                        <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
-                            <i class="ri-bank-line text-primary"></i>
-                            <span>{{ currentLEName }}</span>
-                            <i class="ri-arrow-down-s-line text-secondary"></i>
-                        </button>
-                    </template>
-
-                    <template #content>
-                        <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700/50">
-                            Юридические лица
-                        </div>
-                        
-                        <!-- Пункт "Все юрлица" -->
-                        <DropdownLink 
-                            :href="route('legal-entities.switch')" 
-                            method="post" 
-                            as="button"
-                        >
-                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': currentLEId === null}">
-                                <i class="ri-global-line"></i> Все юрлица
-                                <i v-if="currentLEId === null" class="ri-check-line ml-auto"></i>
-                            </div>
-                        </DropdownLink>
-
-                        <DropdownLink 
-                            v-for="le in legalEntities" 
-                            :key="le.id" 
-                            :href="route('legal-entities.switch', le.id)" 
-                            method="post" 
-                            as="button"
-                        >
-                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': le.id === currentLEId}">
-                                <i class="ri-bank-line"></i> {{ le.name }}
-                                <i v-if="le.id === currentLEId" class="ri-check-line ml-auto"></i>
-                            </div>
-                        </DropdownLink>
-                    </template>
-                </Dropdown>
-
-                <!-- Переключатель Точек (Показываем только если их больше 1) -->
+                <!-- Переключатель Точек — первичная единица, слева. Показываем только если их больше 1. -->
                 <Dropdown align="right" width="48" v-if="filteredBranches.length > 1">
                     <template #trigger>
                         <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
@@ -161,16 +133,58 @@ onUnmounted(() => {
                             </div>
                         </DropdownLink>
 
-                        <DropdownLink 
-                            v-for="branch in filteredBranches" 
-                            :key="branch.id" 
-                            :href="route('branches.switch', branch.id)" 
-                            method="post" 
+                        <DropdownLink
+                            v-for="branch in filteredBranches"
+                            :key="branch.id"
+                            :href="route('branches.switch', branch.id)"
+                            method="post"
                             as="button"
                         >
                             <div class="flex items-center gap-2" :class="{'text-primary font-semibold': branch.id === currentBranchId}">
                                 <i class="ri-store-2-line"></i> {{ branch.name }}
                                 <i v-if="branch.id === currentBranchId" class="ri-check-line ml-auto"></i>
+                            </div>
+                        </DropdownLink>
+                    </template>
+                </Dropdown>
+
+                <!-- Переключатель Юрлиц — справа. Показываем только если среди видимых точек есть реальный выбор юрлица. -->
+                <Dropdown align="right" width="48" v-if="visibleLegalEntities.length > 1">
+                    <template #trigger>
+                        <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
+                            <i class="ri-bank-line text-primary"></i>
+                            <span>{{ currentLEName }}</span>
+                            <i class="ri-arrow-down-s-line text-secondary"></i>
+                        </button>
+                    </template>
+
+                    <template #content>
+                        <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700/50">
+                            Юридические лица
+                        </div>
+
+                        <!-- Пункт "Все юрлица" -->
+                        <DropdownLink
+                            :href="route('legal-entities.switch')"
+                            method="post"
+                            as="button"
+                        >
+                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': currentLEId === null}">
+                                <i class="ri-global-line"></i> Все юрлица
+                                <i v-if="currentLEId === null" class="ri-check-line ml-auto"></i>
+                            </div>
+                        </DropdownLink>
+
+                        <DropdownLink
+                            v-for="le in visibleLegalEntities"
+                            :key="le.id"
+                            :href="route('legal-entities.switch', le.id)"
+                            method="post"
+                            as="button"
+                        >
+                            <div class="flex items-center gap-2" :class="{'text-primary font-semibold': le.id === currentLEId}">
+                                <i class="ri-bank-line"></i> {{ le.name }}
+                                <i v-if="le.id === currentLEId" class="ri-check-line ml-auto"></i>
                             </div>
                         </DropdownLink>
                     </template>

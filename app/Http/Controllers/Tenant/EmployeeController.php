@@ -37,7 +37,7 @@ class EmployeeController extends Controller
     {
         $user = auth()->user();
         
-        $query = Employee::with(['user.roles', 'branch', 'position']);
+        $query = Employee::with(['user.roles', 'branch' => fn ($q) => $q->withTrashed(), 'position']);
         
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
@@ -164,7 +164,7 @@ class EmployeeController extends Controller
 
     public function show(Employee $employee): Response
     {
-        $employee->load(['user.roles', 'branch', 'position', 'secondaryPosition']);
+        $employee->load(['user.roles', 'branch' => fn ($q) => $q->withTrashed(), 'position', 'secondaryPosition']);
         
         $resolvedScopes = [];
         $userScopes = [];

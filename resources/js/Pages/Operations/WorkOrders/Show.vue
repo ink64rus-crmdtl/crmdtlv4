@@ -8,6 +8,7 @@ import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import WorkOrderItemPayoutModal from '@/Components/WorkOrderItemPayoutModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
+import PointBadge from '@/Components/PointBadge.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
@@ -784,6 +785,7 @@ const formatMoney = (amount) => {
                             :title="workOrder.status === 'completed' ? 'Заказ завершён — статус зафиксирован, изменение недоступно' : ''"
                             @update:model-value="changeStatus"
                         />
+                        <PointBadge :branch="workOrder.branch" :legal-entity="workOrder.legal_entity" />
                     </div>
                 </div>
 
@@ -1479,7 +1481,7 @@ const formatMoney = (amount) => {
                         <div class="p-6 space-y-4">
                             
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
+                                <div v-if="branches.length > 1">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
                                     <select
                                         v-model="form.branch_id"

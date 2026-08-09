@@ -8,6 +8,7 @@ import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import Modal from '@/Components/Modal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
+import PointBadge from '@/Components/PointBadge.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -510,6 +511,7 @@ const deleteOrder = (order) => {
                         <span :class="[paymentStatuses[previewOrder.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase']">
                             {{ paymentStatuses[previewOrder.payment_status]?.label || previewOrder.payment_status }}
                         </span>
+                        <PointBadge :branch="previewOrder.branch" :legal-entity="previewOrder.legal_entity" />
                     </div>
 
                     <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700/50 space-y-4">
@@ -688,7 +690,7 @@ const deleteOrder = (order) => {
                 <form @submit.prevent="submit" class="flex flex-col">
                     <div class="p-6 space-y-4">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
+                            <div v-if="branches.length > 1">
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
                                 <select v-model="form.branch_id" @change="onBranchChangedInForm" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>

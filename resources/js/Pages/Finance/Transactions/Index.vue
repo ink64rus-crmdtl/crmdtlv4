@@ -336,6 +336,11 @@ const totalBalance = computed(() => {
                                             <i :class="transactionTypes[tx.type]?.icon"></i> {{ transactionTypes[tx.type]?.label || tx.type }}
                                         </span>
                                     </template>
+                                    <template v-else-if="col.key === 'branch'">
+                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300" :title="tx.branch && tx.branch.deleted_at ? 'Точка удалена из системы' : ''">
+                                            <i class="ri-store-2-line"></i> {{ tx.branch ? tx.branch.name : '—' }}<span v-if="tx.branch && tx.branch.deleted_at" class="opacity-70">(удалена)</span>
+                                        </span>
+                                    </template>
                                     <template v-else-if="col.key === 'account'">
                                         <span class="font-medium">{{ tx.account ? tx.account.name : '—' }}</span>
                                     </template>
@@ -494,7 +499,7 @@ const totalBalance = computed(() => {
                             </div>
                         </div>
 
-                        <div>
+                        <div v-if="branches.length > 1">
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка (Центр затрат) <span class="text-danger">*</span></label>
                             <select v-model="form.branch_id" required :disabled="!!editingTransaction" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60">
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>

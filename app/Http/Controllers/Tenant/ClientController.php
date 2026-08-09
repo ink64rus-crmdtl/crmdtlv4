@@ -30,7 +30,7 @@ class ClientController extends Controller
         $user = auth()->user();
         
         // Базовый запрос с подгрузкой связей
-        $query = Client::with(['branch', 'group']);
+        $query = Client::with(['branch' => fn ($q) => $q->withTrashed(), 'group']);
         
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
@@ -142,7 +142,7 @@ class ClientController extends Controller
     public function show(Client $client): Response
     {
         // Загружаем автомобили вместе с марками и моделями
-        $client->load(['branch', 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
+        $client->load(['branch' => fn ($q) => $q->withTrashed(), 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $client->documents->each->append('is_stale');
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();

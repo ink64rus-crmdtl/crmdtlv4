@@ -50,7 +50,7 @@ class WorkOrderController extends Controller
     {
         $user = auth()->user();
         
-        $query = WorkOrder::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel']);
+        $query = WorkOrder::with(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel']);
         
         $query = QueryFilterService::apply(
             $query,
@@ -139,7 +139,7 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
+        $workOrder->load(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $workOrder->documents->each->append('is_stale');
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();

@@ -21,7 +21,7 @@ class TransactionController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = Transaction::with(['account', 'branch', 'category', 'payable', 'editor', 'reconciler']);
+        $query = Transaction::with(['account', 'branch' => fn ($q) => $q->withTrashed(), 'category', 'payable', 'editor', 'reconciler']);
 
         // Кастомный поиск по комментарию
         if ($request->filled('search')) {
@@ -49,6 +49,7 @@ class TransactionController extends Controller
         $availableColumns = [
             ['key' => 'date', 'label' => 'Дата'],
             ['key' => 'type', 'label' => 'Тип'],
+            ['key' => 'branch', 'label' => 'Точка'],
             ['key' => 'account', 'label' => 'Счет / Касса'],
             ['key' => 'category', 'label' => 'Статья'],
             ['key' => 'amount', 'label' => 'Сумма'],
