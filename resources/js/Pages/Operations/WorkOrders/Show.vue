@@ -35,6 +35,7 @@ const props = defineProps({
     candidateAppointment: { type: Object, default: () => null },
     activities: { type: Array, default: () => [] },
     comments: { type: Array, default: () => [] },
+    documentTemplates: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -51,7 +52,34 @@ const linkCandidateAppointment = () => {
 const openAppointment = (appointmentId) => {
     router.visit(route('operations.appointments.index', { appointment: appointmentId }));
 };
-const activeMainTab = ref('items'); // 'items', 'comments', 'history'
+const activeMainTab = ref('items'); // 'items', 'payroll', 'comments', 'history', 'documents'
+
+// --- Документы (Фаза 12) ---
+const selectedDocumentTemplateId = ref(props.documentTemplates[0]?.id ?? '');
+const generatingDocument = ref(false);
+
+const generateDocument = () => {
+    if (!selectedDocumentTemplateId.value) return;
+    generatingDocument.value = true;
+    router.post(route('documents.generate'), {
+        document_template_id: selectedDocumentTemplateId.value,
+        entity_type: 'work_order',
+        entity_id: props.workOrder.id,
+    }, {
+        preserveScroll: true,
+        onFinish: () => { generatingDocument.value = false; },
+    });
+};
+
+const deleteDocument = (doc) => {
+    if (confirm(`Удалить документ №${doc.number}? Если это последний выданный номер — следующий документ получит тот же номер.`)) {
+        router.delete(route('documents.destroy', doc.id), { preserveScroll: true });
+    }
+};
+
+const regenerateDocument = (doc) => {
+    router.post(route('documents.regenerate', doc.id), {}, { preserveScroll: true });
+};
 
 // --- ЗАРПЛАТА (Фаза 10.1): администратор заказа + распределение выплат по позиции ---
 const adminEligibleEmployees = computed(() => props.employees.filter(e => e.position?.payroll_role === 'admin'));
@@ -799,9 +827,9 @@ const formatMoney = (amount) => {
             <!-- Центральная колонка: Работы и Таймлайн -->
             <div class="w-full lg:flex-1 lg:min-w-0 space-y-6">
                 
-                <!-- Вкладки (Работы / Комментарии / История) -->
-                <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col h-full min-h-[600px]">
-                    <div class="flex space-x-6 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/50">
+                <!-- Вкладки (Работы / Комментарии / История / Документы) -->
+                <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col min-h-[400px]">
+                    <div class="flex flex-wrap gap-x-6 gap-y-1 border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50/50 dark:bg-gray-800/50">
                         <button @click="activeMainTab = 'items'" :class="[activeMainTab === 'items' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-tools-line"></i> Работы и Материалы
                         </button>
@@ -814,6 +842,10 @@ const formatMoney = (amount) => {
                         </button>
                         <button @click="activeMainTab = 'history'" :class="[activeMainTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-history-line"></i> История
+                        </button>
+                        <button @click="activeMainTab = 'documents'" :class="[activeMainTab === 'documents' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-file-text-line"></i> Документы
+                            <span v-if="workOrder.documents && workOrder.documents.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{{ workOrder.documents.length }}</span>
                         </button>
                     </div>
 
@@ -938,6 +970,39 @@ const formatMoney = (amount) => {
 
                     <div v-if="activeMainTab === 'history'" class="flex-1 flex flex-col min-h-0">
                         <ActivityTimeline :activities="activities" />
+                    </div>
+
+                    <div v-if="activeMainTab === 'documents'" class="flex-1 flex flex-col min-h-0">
+                        <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] flex items-center gap-2">
+                            <select v-if="documentTemplates.length > 0" v-model="selectedDocumentTemplateId" class="block w-64 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option v-for="t in documentTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                            <button v-if="documentTemplates.length > 0" @click="generateDocument" :disabled="generatingDocument" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm disabled:opacity-50">
+                                <i class="ri-file-add-line"></i> Сформировать документ
+                            </button>
+                            <p v-else class="text-sm text-gray-400">Нет активных шаблонов документов для заказов — настройте их в Настройках → Шаблоны документов.</p>
+                        </div>
+                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                            <table v-if="workOrder.documents && workOrder.documents.length > 0" class="min-w-full text-left">
+                                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                    <tr v-for="doc in workOrder.documents" :key="doc.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                        <td class="py-3 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                                            {{ doc.number }}
+                                            <i v-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем перегенерировать"></i>
+                                        </td>
+                                        <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
+                                        <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
+                                        <td class="py-3 px-6 text-sm text-right space-x-1">
+                                            <button v-if="doc.is_stale" @click="regenerateDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Перегенерировать с текущими данными"><i class="ri-refresh-line"></i></button>
+                                            <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать"><i class="ri-printer-line"></i></a>
+                                            <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF"><i class="ri-download-2-line"></i></a>
+                                            <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-else class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Документов по этому заказу ещё нет.</div>
+                        </div>
                     </div>
 
                     <div v-if="activeMainTab === 'payroll'" class="flex-1 flex flex-col min-h-0">

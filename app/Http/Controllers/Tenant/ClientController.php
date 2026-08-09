@@ -12,6 +12,7 @@ use App\Models\ListView;
 use App\Models\Lookup;
 use App\Models\WorkOrder;
 use App\Models\Channel;
+use App\Models\DocumentTemplate;
 use App\Services\FieldPermissionService;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
@@ -141,7 +142,8 @@ class ClientController extends Controller
     public function show(Client $client): Response
     {
         // Загружаем автомобили вместе с марками и моделями
-        $client->load(['branch', 'group', 'vehicles.make', 'vehicles.vehicleModel']);
+        $client->load(['branch', 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntity'])->orderBy('id', 'desc')]);
+        $client->documents->each->append('is_stale');
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'client')->where('entity_id', $client->id)->get();
@@ -191,6 +193,7 @@ class ClientController extends Controller
             'messengerChannels' => Channel::where('is_active', true)
                 ->whereIn('provider', ['wappi_pro', 'green_api'])
                 ->get(['id', 'name', 'messenger_type']),
+            'documentTemplates' => DocumentTemplate::where('entity_type', 'client')->where('is_active', true)->get(['id', 'name']),
         ]);
     }
 

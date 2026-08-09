@@ -83,27 +83,6 @@ class HandleInertiaRequests extends Middleware
             'current_branch_id' => fn () => ($request->user() && tenancy()->initialized)
                 ? BranchContext::current() // null means 'all'
                 : null,
-            // Ссылка на кабинет администратора платформы (Фаза 16) — показывается
-            // в тенантском сайдбаре только тенантским isAdmin-пользователям
-            // (AppSidebar.vue). ВАЖНО: это лишь ярлык на страницу логина другого,
-            // полностью отдельного контура (гвард platform_admin, central БД) —
-            // сама по себе видимость ссылки прав не даёт, доступ по-прежнему
-            // требует отдельных central-учётных данных. На сегодняшнем этапе
-            // (единственный тенант — сам оператор платформы) это осознанное
-            // упрощение; когда появятся независимые клиентские тенанты, их
-            // администраторам показывать этот ярлык уже не будет иметь смысла —
-            // потребуется более узкое условие видимости, чем общий isAdmin.
-            'platformAdminUrl' => $this->platformAdminUrl($request),
         ];
-    }
-
-    private function platformAdminUrl(Request $request): string
-    {
-        $centralDomains = config('tenancy.central_domains', []);
-        $domain = in_array('localhost', $centralDomains, true) ? 'localhost' : ($centralDomains[0] ?? 'localhost');
-        $port = $request->getPort();
-        $portSuffix = in_array($port, [80, 443], true) ? '' : ':' . $port;
-
-        return $request->getScheme() . '://' . $domain . $portSuffix . '/admin/login';
     }
 }

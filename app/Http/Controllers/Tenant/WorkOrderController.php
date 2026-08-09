@@ -33,6 +33,7 @@ use App\Services\PayrollCalculationService;
 use App\Models\Payroll;
 use App\Models\StockMovement;
 use App\Models\MessageTemplate;
+use App\Models\DocumentTemplate;
 use App\Services\Messaging\ChatDispatchService;
 use App\Services\Messaging\MessageTemplateService;
 use App\Jobs\ExportEntitiesJob;
@@ -138,7 +139,8 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee']);
+        $workOrder->load(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntity'])->orderBy('id', 'desc')]);
+        $workOrder->documents->each->append('is_stale');
         
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'work_order')->where('entity_id', $workOrder->id)->get();
@@ -221,6 +223,7 @@ class WorkOrderController extends Controller
             'candidateAppointment' => $candidateAppointment,
             'activities' => $activities,
             'comments' => $comments,
+            'documentTemplates' => DocumentTemplate::where('entity_type', 'work_order')->where('is_active', true)->get(['id', 'name']),
         ]);
     }
 

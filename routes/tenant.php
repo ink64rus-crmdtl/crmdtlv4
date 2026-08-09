@@ -41,6 +41,8 @@ use App\Http\Controllers\Tenant\MessengerWebhookController;
 use App\Http\Controllers\Tenant\ChannelController;
 use App\Http\Controllers\Tenant\ChatController;
 use App\Http\Controllers\Tenant\MessageTemplateController;
+use App\Http\Controllers\Tenant\DocumentTemplateController;
+use App\Http\Controllers\Tenant\DocumentController;
 use App\Http\Controllers\Tenant\CommunicationsController;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
@@ -212,6 +214,21 @@ Route::middleware([
         // Общение: единый инбокс внешних чатов (Фаза 11.3)
         Route::get('/communications', [CommunicationsController::class, 'index'])->name('communications.index');
         Route::get('/communications/chats', [CommunicationsController::class, 'chats'])->name('communications.chats');
+
+        // Настройки: Шаблоны документов (Фаза 12)
+        Route::get('/settings/document-templates', [DocumentTemplateController::class, 'index'])->name('settings.document-templates.index');
+        Route::post('/settings/document-templates', [DocumentTemplateController::class, 'store'])->name('settings.document-templates.store');
+        Route::put('/settings/document-templates/{documentTemplate}', [DocumentTemplateController::class, 'update'])->name('settings.document-templates.update');
+        Route::delete('/settings/document-templates/{documentTemplate}', [DocumentTemplateController::class, 'destroy'])->name('settings.document-templates.destroy');
+
+        // Документы: реестр + генерация печатных форм (Фаза 12)
+        Route::get('/documents', [DocumentController::class, 'index'])->name('documents.index');
+        Route::post('/documents/generate', [DocumentController::class, 'generate'])->name('documents.generate');
+        Route::get('/documents/templates-for/{entityType}', [DocumentController::class, 'templatesFor'])->name('documents.templates-for');
+        Route::get('/documents/{document}/download', [DocumentController::class, 'download'])->name('documents.download');
+        Route::get('/documents/{document}/print', [DocumentController::class, 'print'])->name('documents.print');
+        Route::delete('/documents/{document}', [DocumentController::class, 'destroy'])->name('documents.destroy');
+        Route::post('/documents/{document}/regenerate', [DocumentController::class, 'regenerate'])->name('documents.regenerate');
 
         // HR: Должности
         Route::get('/hr/positions', [PositionController::class, 'index'])->name('hr.positions.index');
