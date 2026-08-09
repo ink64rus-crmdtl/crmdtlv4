@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
+import { groupColorMeta } from '@/Components/GroupColorPicker.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import ChatPanel from '@/Components/ChatPanel.vue';
@@ -107,6 +108,15 @@ const clientForm = useForm({
     custom_fields: {},
 });
 
+const resetGroupAuto = () => {
+    router.post(route('crm.clients.group.auto', props.client.id), {}, {
+        preserveScroll: true,
+        onSuccess: () => {
+            clientForm.client_group_id = props.client.client_group_id || '';
+        },
+    });
+};
+
 const openClientModal = () => {
     const client = props.client;
     clientForm.branch_id = client.branch_id;
@@ -199,7 +209,7 @@ const currentCountrySchema = computed(() => {
                 <!-- Аватар и статус -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex flex-col items-center text-center relative overflow-hidden">
                     <!-- Декоративный фон для группы -->
-                    <div v-if="client.group" :class="[`bg-${client.group.color}-500`, 'absolute top-0 left-0 w-full h-2 opacity-20']"></div>
+                    <div v-if="client.group" :class="[groupColorMeta(client.group.color).swatch, 'absolute top-0 left-0 w-full h-2 opacity-20']"></div>
                     
                     <div class="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-4xl mb-4 mt-2">
                         {{ client.name.charAt(0) }}
@@ -216,7 +226,7 @@ const currentCountrySchema = computed(() => {
                             <i :class="client.type === 'b2b' ? 'ri-building-line' : 'ri-user-line'"></i>
                             {{ client.type === 'b2b' ? 'Юрлицо' : 'Физлицо' }}
                         </span>
-                        <span v-if="client.group" :class="[`bg-${client.group.color}-100 text-${client.group.color}-700 dark:bg-${client.group.color}-900/30 dark:text-${client.group.color}-400`, 'inline-flex items-center gap-1.5 py-1 px-3 rounded-full text-[10px] font-bold tracking-wide uppercase']">
+                        <span v-if="client.group" :class="[groupColorMeta(client.group.color).badge, 'inline-flex items-center gap-1.5 py-1 px-3 rounded-full text-[10px] font-bold tracking-wide uppercase']">
                             {{ client.group.name }}
                         </span>
                         <span v-if="client.segment" :class="[segmentClass(client.segment), 'inline-flex items-center gap-1.5 py-1 px-3 rounded-full text-[10px] font-bold tracking-wide uppercase']">
@@ -625,14 +635,18 @@ const currentCountrySchema = computed(() => {
                                 />
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа</label>
-                                <select 
-                                    v-model="clientForm.client_group_id" 
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа лояльности</label>
+                                <select
+                                    v-model="clientForm.client_group_id"
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                 >
                                     <option value="" class="bg-white dark:bg-gray-800">Без группы</option>
                                     <option v-for="group in clientGroups" :key="group.id" :value="group.id" class="bg-white dark:bg-gray-800">{{ group.name }}</option>
                                 </select>
+                                <p v-if="client.client_group_locked" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-1.5">
+                                    <i class="ri-lock-line"></i> Выбрана вручную — автоподбор по обороту/заказам отключён.
+                                    <button type="button" @click="resetGroupAuto" class="text-primary hover:underline">Вернуть на автоподбор</button>
+                                </p>
                             </div>
                         </div>
 

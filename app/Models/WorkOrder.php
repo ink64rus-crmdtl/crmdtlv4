@@ -24,6 +24,7 @@ class WorkOrder extends Model
         'mileage',
         'total_amount',
         'discount_amount',
+        'discount_is_manual',
         'final_amount',
         'currency_id',
         'created_by',
@@ -37,6 +38,7 @@ class WorkOrder extends Model
             'mileage' => 'integer',
             'total_amount' => 'integer',
             'discount_amount' => 'integer',
+            'discount_is_manual' => 'boolean',
             'final_amount' => 'integer',
             'currency_id' => 'integer',
         ];

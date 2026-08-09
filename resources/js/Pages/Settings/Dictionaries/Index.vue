@@ -4,6 +4,7 @@ import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
 import Modal from '@/Components/Modal.vue';
+import GroupColorPicker, { groupColorMeta } from '@/Components/GroupColorPicker.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
@@ -103,27 +104,19 @@ const categoryForm = useForm({
     business_direction_id: '',
 });
 
-const groupColors = [
-    { value: 'gray', label: 'Серый', class: 'bg-gray-100 text-gray-700' },
-    { value: 'blue', label: 'Синий', class: 'bg-blue-100 text-blue-700' },
-    { value: 'green', label: 'Зеленый', class: 'bg-green-100 text-green-700' },
-    { value: 'red', label: 'Красный', class: 'bg-red-100 text-red-700' },
-    { value: 'yellow', label: 'Желтый', class: 'bg-yellow-100 text-yellow-700' },
-    { value: 'purple', label: 'Фиолетовый', class: 'bg-purple-100 text-purple-700' },
-];
-
+// Статусы заказ-наряда красятся токенами темы (info/warning/success/danger/
+// primary), а не именованной Tailwind-палитрой GROUP_COLORS — это осознанно
+// другой, более узкий набор (workflow-статус, не произвольный цвет бейджа).
 const statusColorOptions = [
-    { value: 'gray', label: 'Серый', class: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' },
-    { value: 'info', label: 'Синий (Инфо)', class: 'bg-info/10 text-info' },
-    { value: 'warning', label: 'Желтый (Внимание)', class: 'bg-warning/10 text-warning' },
-    { value: 'success', label: 'Зеленый (Успех)', class: 'bg-success/10 text-success' },
-    { value: 'danger', label: 'Красный (Опасность)', class: 'bg-danger/10 text-danger' },
-    { value: 'primary', label: 'Фирменный', class: 'bg-primary/10 text-primary' },
+    { value: 'gray', label: 'Серый', class: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300', swatch: 'bg-gray-400' },
+    { value: 'info', label: 'Синий (Инфо)', class: 'bg-info/10 text-info', swatch: 'bg-info' },
+    { value: 'warning', label: 'Желтый (Внимание)', class: 'bg-warning/10 text-warning', swatch: 'bg-warning' },
+    { value: 'success', label: 'Зеленый (Успех)', class: 'bg-success/10 text-success', swatch: 'bg-success' },
+    { value: 'danger', label: 'Красный (Опасность)', class: 'bg-danger/10 text-danger', swatch: 'bg-danger' },
+    { value: 'primary', label: 'Фирменный', class: 'bg-primary/10 text-primary', swatch: 'bg-primary' },
 ];
 
 const statusColorClass = (color) => statusColorOptions.find(c => c.value === color)?.class || statusColorOptions[0].class;
-
-const colorOptionsForType = computed(() => activeTab.value === 'work_order_status' ? statusColorOptions : groupColors);
 
 const sortLookupsByOrder = (list) => [...(list || [])].sort((a, b) => a.sort_order - b.sort_order);
 
@@ -595,7 +588,7 @@ const getLocalizedLabel = (label) => {
                                         <tr v-for="lookup in (lookups[activeTab] || [])" :key="lookup.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                             <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ lookup.value }}</td>
                                             <td v-if="activeTab === 'client_role'" class="py-4 px-6 text-sm">
-                                                <span :class="[`bg-${lookup.color || 'gray'}-100 text-${lookup.color || 'gray'}-700`, 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
+                                                <span :class="[groupColorMeta(lookup.color).badge, 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
                                                     {{ lookup.value }}
                                                 </span>
                                             </td>
@@ -776,11 +769,25 @@ Audi;A3;Седан;Класс 1</pre>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Значение <span class="text-danger">*</span></label>
                             <input v-model="lookupForm.value" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200" />
                         </div>
-                        <div v-if="['client_role', 'work_order_status'].includes(lookupForm.type)">
+                        <div v-if="lookupForm.type === 'client_role'">
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет бейджа</label>
-                            <select v-model="lookupForm.color" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200">
-                                <option v-for="color in colorOptionsForType" :key="color.value" :value="color.value" class="bg-white dark:bg-gray-800">{{ color.label }}</option>
-                            </select>
+                            <GroupColorPicker v-model="lookupForm.color" />
+                        </div>
+                        <div v-if="lookupForm.type === 'work_order_status'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цвет бейджа</label>
+                            <div class="flex flex-wrap items-center gap-2.5">
+                                <button
+                                    v-for="color in statusColorOptions"
+                                    :key="color.value"
+                                    type="button"
+                                    @click="lookupForm.color = color.value"
+                                    :class="[color.swatch, lookupForm.color === color.value ? 'ring-2 ring-offset-2 ring-gray-400 dark:ring-offset-gray-800 scale-110' : 'hover:scale-110']"
+                                    class="h-8 w-8 rounded-full shadow-sm transition-transform flex items-center justify-center"
+                                    :title="color.label"
+                                >
+                                    <i v-if="lookupForm.color === color.value" class="ri-check-line text-white text-base"></i>
+                                </button>
+                            </div>
                         </div>
                         <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
                             <div @click="lookupForm.is_active = !lookupForm.is_active" :class="[lookupForm.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">

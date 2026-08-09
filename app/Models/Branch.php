@@ -7,10 +7,14 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Spatie\Image\Enums\Fit;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
-class Branch extends Model
+class Branch extends Model implements HasMedia
 {
-    use SoftDeletes;
+    use SoftDeletes, InteractsWithMedia;
 
     protected $fillable = [
         'name',
@@ -69,5 +73,43 @@ class Branch extends Model
                         ->orDoesntHave('legalEntities');
                 })
             );
+    }
+
+    /**
+     * Логотип точки — коллекция 'logo' (singleFile), диск 'local' — как у
+     * Document/DocumentTemplate. Публичный disk НЕ подходит: stancl/tenancy
+     * суффиксирует ROOT дисков local/public под конкретного тенанта
+     * (storage/tenant{id}/app/public/...), но НЕ трогает 'url' в
+     * config/filesystems.php — сгенерированный публичный URL вёл бы мимо
+     * реального файла (в central storage/app/public, где его нет) или, того
+     * хуже, коллидировал бы с media той же id у другого тенанта. Поэтому
+     * логотип, как и документы, отдаётся не прямой ссылкой на disk-URL, а
+     * потоком через BranchController::logo() (см. logo_url ниже) — там
+     * тенантский контекст уже гарантирован тем же middleware, что и у
+     * остальных tenant-роутов. Ограничение jpg/png — и здесь
+     * (acceptsMimeTypes), и в валидации BranchController::store()/update()
+     * (двойная защита: одна на уровне пакета, другая — понятная ошибка
+     * пользователю до попытки сохранения). Конверсия 'thumb' — синхронный
+     * crop-fit 300×300 (nonQueued — единичная загрузка одного лого не
+     * bulk-операция, аналогично generate() документов из CLAUDE.md п.6).
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('logo')
+            ->useDisk('local')
+            ->singleFile()
+            ->acceptsMimeTypes(['image/jpeg', 'image/png']);
+    }
+
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('thumb')
+            ->fit(Fit::Crop, 300, 300)
+            ->nonQueued();
+    }
+
+    public function getLogoUrlAttribute(): ?string
+    {
+        return $this->getFirstMedia('logo') ? route('settings.branches.logo', $this->id) : null;
     }
 }

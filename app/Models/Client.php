@@ -17,6 +17,7 @@ class Client extends Model
     protected $fillable = [
         'branch_id',
         'client_group_id',
+        'client_group_locked',
         'is_lead',
         'type',
         'name',
@@ -37,6 +38,7 @@ class Client extends Model
     {
         return [
             'is_lead' => 'boolean',
+            'client_group_locked' => 'boolean',
             'discount_percent' => 'integer',
             'balance' => 'integer',
             'bonus_points' => 'integer',

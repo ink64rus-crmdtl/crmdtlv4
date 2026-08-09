@@ -18,6 +18,7 @@ use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
 use App\Services\ActivityLogger;
 use App\Services\ClientSegmentService;
+use App\Services\LoyaltyGradeService;
 use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -250,6 +251,11 @@ class ClientController extends Controller
             $client = Client::create([
                 'branch_id' => $validated['branch_id'],
                 'client_group_id' => $validated['client_group_id'] ?? null,
+                // Группу выбрали явно при заведении клиента — считаем это ручным
+                // решением (LoyaltyGradeService её больше не тронет). Оставили
+                // пустой ("Без группы") — можно, автоподбор начнёт работать
+                // с первой же оплаты, если клиент наберёт нужный оборот/заказы.
+                'client_group_locked' => !empty($validated['client_group_id']),
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
                 'role' => $validated['role'] ?? null,
@@ -297,9 +303,16 @@ class ClientController extends Controller
         ]);
 
         DB::transaction(function () use ($validated, $client) {
+            $newGroupId = $validated['client_group_id'] ?? null;
+            // Лочим автоподбор, ТОЛЬКО если группу реально поменяли этим
+            // сохранением — если поле просто "проехало" с тем же значением
+            // (правили что-то другое в форме), ручного решения тут не было.
+            $groupChanged = $newGroupId != $client->client_group_id;
+
             $client->update([
                 'branch_id' => $validated['branch_id'],
-                'client_group_id' => $validated['client_group_id'] ?? null,
+                'client_group_id' => $newGroupId,
+                'client_group_locked' => $groupChanged ? true : $client->client_group_locked,
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
                 'role' => $validated['role'] ?? null,
@@ -325,6 +338,19 @@ class ClientController extends Controller
         return redirect()->back()->with('success', 'Данные клиента обновлены');
     }
 
+    /**
+     * Возврат клиента под автоподбор грейда (LoyaltyGradeService) после
+     * ручного выбора группы — снимает лок и сразу пересчитывает, чтобы
+     * менеджер увидел результат немедленно, не дожидаясь следующей оплаты.
+     */
+    public function resetGroupToAuto(Client $client)
+    {
+        $client->update(['client_group_locked' => false]);
+        LoyaltyGradeService::evaluate($client);
+
+        return redirect()->back()->with('success', 'Группа клиента возвращена на автоподбор');
+    }
+
     public function addComment(Request $request, Client $client)
     {
         $validated = $request->validate([
@@ -342,36 +368,58 @@ class ClientController extends Controller
         return redirect()->back()->with('success', 'Клиент удален');
     }
 
-    public function storeGroup(Request $request)
+    /**
+     * Правила автоподбора (min_turnover_amount/min_orders_count/
+     * auto_assign_period_days/sort_order) сюда не входят намеренно — эта
+     * форма используется и в лёгкой модалке "добавить группу на лету" прямо
+     * из карточки клиента (CRM/Clients/Index.vue), где полноценная настройка
+     * правил была бы лишней; полное управление — Settings/Loyalty/Index.vue,
+     * там поля дополнительно шлются и попадают сюда же через $request->only().
+     */
+    private function validateGroupBasics(Request $request): array
     {
-        $validated = $request->validate([
+        return $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'color' => ['nullable', 'string', 'max:50'],
             'cashback_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'min_turnover_amount' => ['nullable', 'numeric', 'min:0'],
+            'min_orders_count' => ['nullable', 'integer', 'min:0'],
+            'auto_assign_period_days' => ['nullable', 'integer', 'min:1'],
+            'sort_order' => ['nullable', 'integer'],
         ]);
+    }
 
-        ClientGroup::create([
+    private function groupAttributesFrom(array $validated): array
+    {
+        return [
             'name' => $validated['name'],
             'color' => $validated['color'] ?? 'gray',
             'cashback_percent' => $validated['cashback_percent'] ?? 0,
-        ]);
+            'discount_percent' => $validated['discount_percent'] ?? 0,
+            // Копейки — форма присылает рубли.
+            'min_turnover_amount' => isset($validated['min_turnover_amount']) && $validated['min_turnover_amount'] !== ''
+                ? (int) round($validated['min_turnover_amount'] * 100) : null,
+            'min_orders_count' => $validated['min_orders_count'] ?? null,
+            'auto_assign_period_days' => $validated['auto_assign_period_days'] ?? 90,
+            'sort_order' => $validated['sort_order'] ?? 0,
+        ];
+    }
+
+    public function storeGroup(Request $request)
+    {
+        $validated = $this->validateGroupBasics($request);
+
+        ClientGroup::create($this->groupAttributesFrom($validated));
 
         return redirect()->back()->with('success', 'Группа добавлена');
     }
 
     public function updateGroup(Request $request, ClientGroup $clientGroup)
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'color' => ['nullable', 'string', 'max:50'],
-            'cashback_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-        ]);
+        $validated = $this->validateGroupBasics($request);
 
-        $clientGroup->update([
-            'name' => $validated['name'],
-            'color' => $validated['color'] ?? 'gray',
-            'cashback_percent' => $validated['cashback_percent'] ?? 0,
-        ]);
+        $clientGroup->update($this->groupAttributesFrom($validated));
 
         return redirect()->back()->with('success', 'Группа обновлена');
     }

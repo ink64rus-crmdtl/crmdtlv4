@@ -30,6 +30,7 @@ use App\Services\FinanceService;
 use App\Services\TimezoneResolver;
 use App\Services\ActivityLogger;
 use App\Services\PayrollCalculationService;
+use App\Services\LoyaltyGradeService;
 use App\Models\Payroll;
 use App\Models\StockMovement;
 use App\Models\MessageTemplate;
@@ -734,14 +735,27 @@ class WorkOrderController extends Controller
     public function updateDiscount(Request $request, WorkOrder $workOrder)
     {
         $validated = $request->validate([
-            'discount_amount' => ['required', 'numeric', 'min:0'],
+            'discount_amount' => ['required_if:auto,false', 'nullable', 'numeric', 'min:0'],
+            'auto' => ['nullable', 'boolean'],
         ]);
 
-        $workOrder->discount_amount = (int) round($validated['discount_amount'] * 100);
+        $auto = !empty($validated['auto']);
+
+        if ($auto) {
+            // Возврат к автоматической скидке по грейду клиента — сама сумма
+            // считается ниже в recalculateTotals(), здесь только снимаем флаг.
+            $workOrder->discount_is_manual = false;
+        } else {
+            $workOrder->discount_amount = (int) round($validated['discount_amount'] * 100);
+            $workOrder->discount_is_manual = true;
+        }
         $workOrder->save();
 
         $this->recalculateTotals($workOrder);
-        ActivityLogger::log($workOrder, "Скидка по заказу №{$workOrder->id} изменена на " . $this->formatMoney($workOrder->discount_amount), $this->workOrderLink($workOrder), 'discount_updated');
+        $message = $auto
+            ? "Скидка по заказу №{$workOrder->id} возвращена на автоматическую (по грейду клиента)"
+            : "Скидка по заказу №{$workOrder->id} изменена на " . $this->formatMoney($workOrder->discount_amount);
+        ActivityLogger::log($workOrder, $message, $this->workOrderLink($workOrder), 'discount_updated');
 
         return redirect()->back()->with('success', 'Скидка обновлена');
     }
@@ -850,6 +864,10 @@ class WorkOrderController extends Controller
                 }
                 ActivityLogger::log($workOrder, $paymentMessage, $this->workOrderLink($workOrder), 'payment_received');
             });
+
+            // Переоценка грейда клиента — вне транзакции оплаты (не финансовая
+            // операция, откатывать её вместе с платежом не нужно).
+            LoyaltyGradeService::evaluate($workOrder->client);
 
             return redirect()->back()->with('success', 'Оплата успешно принята');
         } catch (Exception $e) {
@@ -993,12 +1011,22 @@ class WorkOrderController extends Controller
     private function recalculateTotals(WorkOrder $workOrder)
     {
         $total = $workOrder->items()->sum('total');
-        $discount = $workOrder->discount_amount;
-        
+
+        if ($workOrder->discount_is_manual) {
+            $discount = $workOrder->discount_amount;
+        } else {
+            // Автоматическая скидка по грейду клиента (LoyaltyGradeService) —
+            // пересчитывается с нуля от текущей суммы заказа при каждом
+            // изменении состава позиций, пока сотрудник не задаст скидку
+            // вручную (updateDiscount() ставит discount_is_manual=true).
+            $discountPercent = $workOrder->client ? LoyaltyGradeService::resolveDiscountPercent($workOrder->client) : 0;
+            $discount = (int) round($total * $discountPercent / 100);
+        }
+
         if ($discount > $total) {
             $discount = $total;
         }
-        
+
         $final = $total - $discount;
 
         $workOrder->update([

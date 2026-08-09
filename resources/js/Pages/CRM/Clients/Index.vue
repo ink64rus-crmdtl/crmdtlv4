@@ -6,6 +6,7 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
+import GroupColorPicker, { groupColorMeta } from '@/Components/GroupColorPicker.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -164,16 +165,7 @@ const editGroupForm = useForm({
     cashback_percent: 0,
 });
 
-const groupColors = [
-    { value: 'gray', label: 'Серый', class: 'bg-gray-100 text-gray-700' },
-    { value: 'blue', label: 'Синий', class: 'bg-blue-100 text-blue-700' },
-    { value: 'green', label: 'Зеленый', class: 'bg-green-100 text-green-700' },
-    { value: 'red', label: 'Красный', class: 'bg-red-100 text-red-700' },
-    { value: 'yellow', label: 'Желтый', class: 'bg-yellow-100 text-yellow-700' },
-    { value: 'purple', label: 'Фиолетовый', class: 'bg-purple-100 text-purple-700' },
-];
-
-const groupColorClass = (color) => groupColors.find(c => c.value === color)?.class || groupColors[0].class;
+const groupColorClass = (color) => groupColorMeta(color).badge;
 
 const openGroupModal = () => {
     groupForm.reset();
@@ -341,6 +333,20 @@ const closeModal = () => {
     form.clearErrors();
 };
 
+const resetGroupAuto = () => {
+    if (!editingClient.value) return;
+    router.post(route('crm.clients.group.auto', editingClient.value.id), {}, {
+        preserveScroll: true,
+        onSuccess: () => {
+            const fresh = props.clients.data.find(c => c.id === editingClient.value.id);
+            if (fresh) {
+                editingClient.value = fresh;
+                form.client_group_id = fresh.client_group_id || '';
+            }
+        },
+    });
+};
+
 const submit = () => {
     if (editingClient.value) {
         form.put(route('crm.clients.update', editingClient.value.id), {
@@ -474,7 +480,7 @@ const formatMoney = (amount) => {
                                     </template>
 
                                     <template v-else-if="col.key === 'client_group'">
-                                        <span v-if="client.group" :class="[`bg-${client.group.color}-100 text-${client.group.color}-700 dark:bg-${client.group.color}-900/30 dark:text-${client.group.color}-400`, 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
+                                        <span v-if="client.group" :class="[groupColorMeta(client.group.color).badge, 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
                                             {{ client.group.name }}
                                         </span>
                                         <span v-else class="text-xs text-gray-400">—</span>
@@ -648,7 +654,7 @@ const formatMoney = (amount) => {
                             <p class="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 flex items-center gap-2">
                                 <i :class="previewClient.type === 'b2b' ? 'ri-building-line' : 'ri-user-line'"></i>
                                 {{ previewClient.type === 'b2b' ? 'Юридическое лицо' : 'Физическое лицо' }}
-                                <span v-if="previewClient.group" :class="[`bg-${previewClient.group.color}-100 text-${previewClient.group.color}-700 dark:bg-${previewClient.group.color}-900/30 dark:text-${previewClient.group.color}-400`, 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold ml-1']">
+                                <span v-if="previewClient.group" :class="[groupColorMeta(previewClient.group.color).badge, 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold ml-1']">
                                     {{ previewClient.group.name }}
                                 </span>
                                 <span v-if="previewClient.segment" :class="[segmentClass(previewClient.segment), 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold']">
@@ -810,8 +816,8 @@ const formatMoney = (amount) => {
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип клиента <span class="text-danger">*</span></label>
-                                <select 
-                                    v-model="form.type" 
+                                <select
+                                    v-model="form.type"
                                     required
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                 >
@@ -821,18 +827,61 @@ const formatMoney = (amount) => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
-                                <CreatableSelect 
-                                    v-model="form.role" 
-                                    :options="lookups.client_role?.map(l => l.value) || []" 
-                                    lookupType="client_role" 
-                                    placeholder="Выберите роль..." 
+                                <CreatableSelect
+                                    v-model="form.role"
+                                    :options="lookups.client_role?.map(l => l.value) || []"
+                                    lookupType="client_role"
+                                    placeholder="Выберите роль..."
                                 />
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник привлечения</label>
+                                <CreatableSelect
+                                    v-model="form.source"
+                                    :options="lookups.client_source?.map(l => l.value) || []"
+                                    lookupType="client_source"
+                                    placeholder="Авито, 2GIS, Рекомендация..."
+                                />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя / Название <span class="text-danger">*</span></label>
+                                <input
+                                    v-model="form.name"
+                                    type="text"
+                                    required
+                                    placeholder="Иван Иванов"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                />
+                                <span v-if="form.errors.name" class="text-xs text-danger mt-1">{{ form.errors.name }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Псевдоним (Кратко)</label>
+                                <input
+                                    v-model="form.alias"
+                                    type="text"
+                                    placeholder="Иван BMW"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата рождения / основания</label>
+                                <input
+                                    v-model="form.birth_date"
+                                    type="date"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа лояльности</label>
                                 <div class="flex gap-2">
-                                    <select 
-                                        v-model="form.client_group_id" 
+                                    <select
+                                        v-model="form.client_group_id"
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                     >
                                         <option value="" class="bg-white dark:bg-gray-800">Без группы</option>
@@ -842,39 +891,11 @@ const formatMoney = (amount) => {
                                         <i class="ri-add-line text-gray-600 dark:text-gray-300"></i>
                                     </button>
                                 </div>
+                                <p v-if="editingClient?.client_group_locked" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-1.5">
+                                    <i class="ri-lock-line"></i> Выбрана вручную.
+                                    <button type="button" @click="resetGroupAuto" class="text-primary hover:underline">Вернуть на автоподбор</button>
+                                </p>
                             </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя / Название <span class="text-danger">*</span></label>
-                                <input 
-                                    v-model="form.name" 
-                                    type="text" 
-                                    required 
-                                    placeholder="Иван Иванов" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                                <span v-if="form.errors.name" class="text-xs text-danger mt-1">{{ form.errors.name }}</span>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Псевдоним (Кратко)</label>
-                                <input 
-                                    v-model="form.alias" 
-                                    type="text" 
-                                    placeholder="Иван BMW" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата рождения / основания</label>
-                            <input 
-                                v-model="form.birth_date" 
-                                type="date" 
-                                class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" 
-                            />
                         </div>
                     </div>
 
@@ -901,25 +922,14 @@ const formatMoney = (amount) => {
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
-                                <input 
-                                    v-model="form.email" 
-                                    type="email" 
-                                    placeholder="client@mail.ru" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
-                                />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник привлечения</label>
-                                <CreatableSelect 
-                                    v-model="form.source" 
-                                    :options="lookups.client_source?.map(l => l.value) || []" 
-                                    lookupType="client_source" 
-                                    placeholder="Авито, 2GIS, Рекомендация..." 
-                                />
-                            </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email</label>
+                            <input
+                                v-model="form.email"
+                                type="email"
+                                placeholder="client@mail.ru"
+                                class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                            />
                         </div>
 
                         <div>
@@ -1234,9 +1244,7 @@ const formatMoney = (amount) => {
                                         <input v-model="editGroupForm.cashback_percent" type="number" step="0.01" min="0" max="100" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                     </div>
                                 </div>
-                                <div class="flex flex-wrap gap-1.5">
-                                    <button v-for="c in groupColors" :key="c.value" type="button" @click="editGroupForm.color = c.value" :class="[c.class, editGroupForm.color === c.value ? 'ring-2 ring-offset-1 ring-primary' : 'opacity-60 hover:opacity-100', 'px-2 py-0.5 rounded text-xs font-medium transition-all']">{{ c.label }}</button>
-                                </div>
+                                <GroupColorPicker v-model="editGroupForm.color" />
                                 <div class="flex justify-end gap-2">
                                     <button type="button" @click="cancelEditGroup()" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
                                         Отмена
@@ -1264,9 +1272,7 @@ const formatMoney = (amount) => {
                                 <input v-model="groupForm.cashback_percent" type="number" step="0.01" min="0" max="100" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                             </div>
                         </div>
-                        <div class="flex flex-wrap gap-1.5">
-                            <button v-for="c in groupColors" :key="c.value" type="button" @click="groupForm.color = c.value" :class="[c.class, groupForm.color === c.value ? 'ring-2 ring-offset-1 ring-primary' : 'opacity-60 hover:opacity-100', 'px-2 py-0.5 rounded text-xs font-medium transition-all']">{{ c.label }}</button>
-                        </div>
+                        <GroupColorPicker v-model="groupForm.color" />
                         <div class="flex justify-end">
                             <button type="submit" :disabled="groupForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
                                 <i class="ri-add-line mr-1"></i> Добавить группу

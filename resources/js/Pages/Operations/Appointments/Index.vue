@@ -189,6 +189,11 @@ const withCurrentValue = (slots, current) => (current && !slots.includes(current
 const startTimeSlots = computed(() => withCurrentValue(buildTimeSlots(startDate.value), startTime.value));
 const endTimeSlots = computed(() => withCurrentValue(buildTimeSlots(endDate.value), endTime.value));
 const startDayClosed = computed(() => hoursForDate(startDate.value)?.closed || false);
+// В отличие от startDayClosed (мягкое предупреждение — начать в закрытый день
+// можно, см. текст ниже), для окончания записи это жёсткий запрет — сервер
+// (AppointmentController::assertEndWithinWorkingDay) отклонит сохранение,
+// здесь просто даём то же предупреждение сразу, до попытки отправки формы.
+const endDayClosed = computed(() => hoursForDate(endDate.value)?.closed || false);
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -1202,6 +1207,9 @@ const toggleDefaultView = () => {
                                         <option v-for="slot in endTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
                                     </select>
                                 </div>
+                                <p v-if="endDate && endDayClosed" class="mt-1 text-xs text-danger">
+                                    <i class="ri-error-warning-line"></i> Точка не работает в этот день — окончание записи нельзя ставить на нерабочий день.
+                                </p>
                                 <p v-if="form.errors.end_at" class="mt-1 text-xs text-danger">{{ form.errors.end_at }}</p>
                             </div>
                         </div>
@@ -1270,7 +1278,7 @@ const toggleDefaultView = () => {
                         <span v-else></span>
                         <div class="flex gap-3">
                             <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                            <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                            <button type="submit" :disabled="form.processing || (endDate && endDayClosed)" :title="endDate && endDayClosed ? 'Окончание записи выпадает на нерабочий день точки' : ''" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
                         </div>
                     </div>
                 </form>

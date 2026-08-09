@@ -27,7 +27,37 @@ const form = useForm({
     timezone: 'Europe/Moscow',
     is_active: true,
     working_hours: null,
+    logo: null,
+    remove_logo: false,
 });
+
+// --- Логотип точки (jpg/png, автоматически обрезается сервером до 300×300) ---
+const logoInput = ref(null);
+const logoPreviewUrl = ref(null);
+
+const pickLogo = () => logoInput.value?.click();
+
+const onLogoSelected = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+        alert('Логотип принимается только в формате JPG или PNG.');
+        e.target.value = '';
+        return;
+    }
+
+    form.logo = file;
+    form.remove_logo = false;
+    logoPreviewUrl.value = URL.createObjectURL(file);
+};
+
+const removeLogo = () => {
+    form.logo = null;
+    form.remove_logo = true;
+    logoPreviewUrl.value = null;
+    if (logoInput.value) logoInput.value.value = '';
+};
 
 // Свои часы работы для точки (иначе действует расписание по умолчанию всего детейлинг-центра)
 const useCustomHours = ref(false);
@@ -96,11 +126,15 @@ const openModal = (branch = null) => {
         form.is_active = Boolean(branch.is_active);
         form.working_hours = branch.working_hours || null;
         useCustomHours.value = !!branch.working_hours;
+        form.logo = null;
+        form.remove_logo = false;
+        logoPreviewUrl.value = branch.logo_url || null;
     } else {
         form.reset();
         form.is_active = true;
         form.working_hours = null;
         useCustomHours.value = false;
+        logoPreviewUrl.value = null;
     }
     isModalOpen.value = true;
 };
@@ -110,7 +144,13 @@ const closeModal = () => {
     editingBranch.value = null;
     form.reset();
     form.clearErrors();
+    // Сбрасываем transform, который submit() навешивает на PUT (_method-spoofing
+    // для загрузки файла) — иначе он молча "прилипает" и следующее создание
+    // новой точки (POST) уедет с чужим _method=put.
+    form.transform(data => data);
     useCustomHours.value = false;
+    logoPreviewUrl.value = null;
+    if (logoInput.value) logoInput.value.value = '';
 };
 
 const buildDefaultSchedule = () => ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => ({
@@ -130,11 +170,13 @@ watch(useCustomHours, (value) => {
 
 const submit = () => {
     if (editingBranch.value) {
-        form.put(route('settings.branches.update', editingBranch.value.id), {
+        form.transform(data => ({ ...data, _method: 'put' })).post(route('settings.branches.update', editingBranch.value.id), {
+            forceFormData: true,
             onSuccess: () => closeModal(),
         });
     } else {
         form.post(route('settings.branches.store'), {
+            forceFormData: true,
             onSuccess: () => closeModal(),
         });
     }
@@ -224,7 +266,8 @@ const deleteBranch = (branch) => {
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">
                                     <div class="flex items-center gap-2">
-                                        <i class="ri-store-2-line text-primary"></i>
+                                        <img v-if="branch.logo_url" :src="branch.logo_url" alt="" class="w-6 h-6 rounded object-cover shrink-0" />
+                                        <i v-else class="ri-store-2-line text-primary"></i>
                                         {{ branch.name }}
                                     </div>
                                 </td>
@@ -300,6 +343,27 @@ const deleteBranch = (branch) => {
                             <span v-if="editingBranch.legal_entities?.length">{{ editingBranch.legal_entities.map(le => le.name).join(', ') }}</span>
                             <span v-else>ни одного</span>
                             — настраивается со стороны юрлица, см. Настройки → Юридические лица.
+                        </div>
+
+                        <div class="flex items-center gap-4">
+                            <div class="w-20 h-20 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center overflow-hidden shrink-0">
+                                <img v-if="logoPreviewUrl" :src="logoPreviewUrl" alt="Логотип точки" class="w-full h-full object-cover" />
+                                <i v-else class="ri-store-2-line text-3xl text-gray-300 dark:text-gray-600"></i>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Логотип точки</label>
+                                <input ref="logoInput" type="file" accept="image/jpeg,image/png" class="hidden" @change="onLogoSelected" />
+                                <div class="flex gap-2">
+                                    <button type="button" @click="pickLogo" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        <i class="ri-upload-2-line mr-1"></i> {{ logoPreviewUrl ? 'Заменить' : 'Загрузить' }}
+                                    </button>
+                                    <button v-if="logoPreviewUrl" type="button" @click="removeLogo" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-danger hover:bg-danger/5">
+                                        Удалить
+                                    </button>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-1">JPG или PNG, автоматически обрезается до 300×300</p>
+                                <span v-if="form.errors.logo" class="text-xs text-danger mt-1 block">{{ form.errors.logo }}</span>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

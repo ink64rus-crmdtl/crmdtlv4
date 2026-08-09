@@ -27,6 +27,7 @@ class BranchController extends Controller
         }
 
         $branchesList = $query->paginate(15)->withQueryString();
+        $branchesList->getCollection()->each->append('logo_url');
 
         return Inertia::render('Settings/Branches/Index', [
             'branchesList' => $branchesList,
@@ -55,9 +56,15 @@ class BranchController extends Controller
             'working_hours.*.is_open' => ['required_with:working_hours', 'boolean'],
             'working_hours.*.open' => ['nullable', 'string'],
             'working_hours.*.close' => ['nullable', 'string'],
+            'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:5120'],
         ]);
 
-        Branch::create($validated);
+        unset($validated['logo']);
+        $branch = Branch::create($validated);
+
+        if ($request->hasFile('logo')) {
+            $branch->addMediaFromRequest('logo')->toMediaCollection('logo');
+        }
 
         return redirect()->back()->with('success', 'Точка успешно создана');
     }
@@ -76,9 +83,19 @@ class BranchController extends Controller
             'working_hours.*.is_open' => ['required_with:working_hours', 'boolean'],
             'working_hours.*.open' => ['nullable', 'string'],
             'working_hours.*.close' => ['nullable', 'string'],
+            'logo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:5120'],
+            'remove_logo' => ['nullable', 'boolean'],
         ]);
 
+        $removeLogo = !empty($validated['remove_logo']);
+        unset($validated['logo'], $validated['remove_logo']);
         $branch->update($validated);
+
+        if ($request->hasFile('logo')) {
+            $branch->addMediaFromRequest('logo')->toMediaCollection('logo');
+        } elseif ($removeLogo) {
+            $branch->clearMediaCollection('logo');
+        }
 
         return redirect()->back()->with('success', 'Точка обновлена');
     }
@@ -142,5 +159,26 @@ class BranchController extends Controller
         ExportEntitiesJob::dispatch('branches', $validated['ids'], auth()->id());
 
         return redirect()->back()->with('success', 'Экспорт запущен. Вы получите уведомление, когда файл будет готов.');
+    }
+
+    /**
+     * Логотип отдаётся потоком, а не прямой ссылкой на disk — см. комментарий
+     * у Branch::getLogoUrlAttribute() про несовместимость публичного disk-URL
+     * с tenant-суффиксацией storage-путей. Кэш-заголовки — конверсия
+     * перегенерируется только при повторной загрузке нового файла (singleFile
+     * коллекция), поэтому агрессивное кэширование браузером безопасно.
+     */
+    public function logo(Branch $branch)
+    {
+        $media = $branch->getFirstMedia('logo');
+
+        if (!$media) {
+            abort(404);
+        }
+
+        return response()->file($media->getPath('thumb'), [
+            'Content-Type' => $media->mime_type,
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
     }
 }

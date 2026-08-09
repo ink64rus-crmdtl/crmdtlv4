@@ -572,6 +572,13 @@ const submitDiscount = () => {
     });
 };
 
+const resetDiscountAuto = () => {
+    router.post(route('operations.work-orders.discount.update', props.workOrder.id), { auto: true }, {
+        preserveScroll: true,
+        onSuccess: () => closeDiscountModal(),
+    });
+};
+
 const orderDiscountPercent = computed(() => {
     if (!props.workOrder.total_amount) return 0;
     return Math.round((props.workOrder.discount_amount / props.workOrder.total_amount) * 1000) / 10;
@@ -1823,6 +1830,12 @@ const formatMoney = (amount) => {
                                 <input v-model="discountForm.discount_amount" type="number" step="0.01" min="0" :max="workOrder.total_amount / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
                                 <p class="text-xs text-gray-500 mt-1">Максимальная скидка: {{ formatMoney(workOrder.total_amount) }}</p>
                             </div>
+                            <p v-if="!workOrder.discount_is_manual" class="text-xs text-gray-500 dark:text-gray-400">
+                                <i class="ri-magic-line"></i> Сейчас скидка считается автоматически по грейду клиента. Сохранение здесь зафиксирует её вручную.
+                            </p>
+                            <button v-else type="button" @click="resetDiscountAuto" class="text-xs text-primary hover:underline flex items-center gap-1">
+                                <i class="ri-restart-line"></i> Сбросить и считать автоматически по грейду клиента
+                            </button>
                         </div>
                         <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                             <button type="button" @click="closeDiscountModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>

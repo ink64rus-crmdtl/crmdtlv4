@@ -224,6 +224,7 @@ class AppointmentController extends Controller
         $startAtUtc = Carbon::parse($validated['start_at'], $branchTz)->utc();
         $endAtUtc = Carbon::parse($validated['end_at'], $branchTz)->utc();
 
+        $this->assertEndWithinWorkingDay($validated['branch_id'], $endAtUtc, $branchTz);
         $this->assertNoOverlap($validated['post_id'] ?? null, $startAtUtc, $endAtUtc);
 
         DB::transaction(function () use ($validated, $startAtUtc, $endAtUtc) {
@@ -256,6 +257,7 @@ class AppointmentController extends Controller
         $startAtUtc = Carbon::parse($validated['start_at'], $branchTz)->utc();
         $endAtUtc = Carbon::parse($validated['end_at'], $branchTz)->utc();
 
+        $this->assertEndWithinWorkingDay($validated['branch_id'], $endAtUtc, $branchTz);
         $this->assertNoOverlap($validated['post_id'] ?? null, $startAtUtc, $endAtUtc, $appointment->id);
 
         DB::transaction(function () use ($validated, $appointment, $startAtUtc, $endAtUtc) {
@@ -277,6 +279,40 @@ class AppointmentController extends Controller
         });
 
         return redirect()->back()->with('success', 'Запись обновлена');
+    }
+
+    /**
+     * Окончание записи не может выпадать на нерабочий день точки (например,
+     * воскресенье, если оно закрыто в расписании) — часы работы берутся из
+     * WorkingHoursResolver (точка -> фолбэк на тенант, тот же принцип, что и
+     * у TimezoneResolver). Проверяем только end_at (не start_at) — по
+     * буквальной постановке задачи: начать обслуживание можно вечером
+     * рабочего дня, а вот "закончить" запись в день, когда точка закрыта,
+     * бессмысленно. Расписание не задано нигде (ни у точки, ни у тенанта) —
+     * ограничений нет, WorkingHoursResolver::forBranch() вернёт null.
+     */
+    private function assertEndWithinWorkingDay(int $branchId, Carbon $endAtUtc, string $branchTz): void
+    {
+        $hours = WorkingHoursResolver::forBranch($branchId);
+        if (empty($hours)) {
+            return;
+        }
+
+        $dayLabels = [
+            'mon' => 'понедельник', 'tue' => 'вторник', 'wed' => 'среда',
+            'thu' => 'четверг', 'fri' => 'пятница', 'sat' => 'суббота', 'sun' => 'воскресенье',
+        ];
+        $dayKeys = array_keys($dayLabels);
+        $endLocal = $endAtUtc->copy()->setTimezone($branchTz);
+        $dayKey = $dayKeys[$endLocal->dayOfWeekIso - 1];
+
+        $daySchedule = collect($hours)->firstWhere('day', $dayKey);
+
+        if ($daySchedule && !($daySchedule['is_open'] ?? true)) {
+            throw ValidationException::withMessages([
+                'end_at' => 'Точка не работает в этот день (' . $dayLabels[$dayKey] . ') — окончание записи нельзя ставить на нерабочий день. Выберите другое время.',
+            ]);
+        }
     }
 
     /**

@@ -23,6 +23,7 @@ use App\Http\Controllers\Tenant\ClientController;
 use App\Http\Controllers\Tenant\VehicleController;
 use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
+use App\Http\Controllers\Tenant\LoyaltySettingsController;
 use App\Http\Controllers\Tenant\NotificationController;
 use App\Http\Controllers\Tenant\LookupController;
 use App\Http\Controllers\Tenant\WorkOrderController;
@@ -124,6 +125,7 @@ Route::middleware([
         Route::delete('/settings/branches/{branch}', [BranchController::class, 'destroy'])->name('settings.branches.destroy');
         Route::post('/settings/branches/bulk-delete', [BranchController::class, 'bulkDestroy'])->name('settings.branches.bulk-destroy');
         Route::post('/settings/branches/bulk-export', [BranchController::class, 'bulkExport'])->name('settings.branches.bulk-export');
+        Route::get('/settings/branches/{branch}/logo', [BranchController::class, 'logo'])->name('settings.branches.logo');
 
         // Переключение контекста
         Route::post('/legal-entities/switch/{legalEntity?}', [LegalEntityController::class, 'switch'])->name('legal-entities.switch');
@@ -189,6 +191,9 @@ Route::middleware([
         // Настройки: CRM (Строгая валидация и т.д.)
         Route::get('/settings/crm', [CrmSettingsController::class, 'index'])->name('settings.crm.index');
         Route::post('/settings/crm', [CrmSettingsController::class, 'store'])->name('settings.crm.store');
+
+        Route::get('/settings/loyalty', [LoyaltySettingsController::class, 'index'])->name('settings.loyalty.index');
+        Route::post('/settings/loyalty', [LoyaltySettingsController::class, 'store'])->name('settings.loyalty.store');
 
         // Настройки: Зарплата (Фаза 10.1)
         Route::get('/settings/payroll', [PayrollSettingsController::class, 'index'])->name('settings.payroll.index');
@@ -264,6 +269,7 @@ Route::middleware([
         Route::delete('/crm/client-groups/{clientGroup}', [ClientController::class, 'destroyGroup'])->name('crm.client-groups.destroy');
         Route::get('/crm/clients/{client}', [ClientController::class, 'show'])->name('crm.clients.show');
         Route::put('/crm/clients/{client}', [ClientController::class, 'update'])->name('crm.clients.update');
+        Route::post('/crm/clients/{client}/group/auto', [ClientController::class, 'resetGroupToAuto'])->name('crm.clients.group.auto');
         Route::delete('/crm/clients/{client}', [ClientController::class, 'destroy'])->name('crm.clients.destroy');
         Route::post('/crm/clients/{client}/comment', [ClientController::class, 'addComment'])->name('crm.clients.comment');
         Route::get('/crm/clients/{client}/chats', [ChatController::class, 'forClient'])->name('crm.clients.chats');
