@@ -6,6 +6,7 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
+import Modal from '@/Components/Modal.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -805,9 +806,12 @@ const deleteVehicle = (vehicle) => {
             </div>
         </Offcanvas>
 
-        <!-- Быстрое добавление клиента -->
-        <div v-if="isQuickClientModalOpen" class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+        <!-- Быстрое добавление клиента — обязательно через <Modal> (см. пояснение
+        в CLAUDE.md про пополняемые списки: обычный div с z-index не может лечь
+        поверх формы, открытой через <Modal> — та рендерится нативным
+        <dialog>.showModal() в браузерный top layer). -->
+        <Modal :show="isQuickClientModalOpen" @close="closeQuickClientModal" maxWidth="md">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый клиент</h3>
                     <button @click="closeQuickClientModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
@@ -839,7 +843,7 @@ const deleteVehicle = (vehicle) => {
                     </div>
                 </form>
             </div>
-        </div>
+        </Modal>
 
     </AuthenticatedLayout>
 </template>

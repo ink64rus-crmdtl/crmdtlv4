@@ -1693,123 +1693,126 @@ const formatMoney = (amount) => {
             </div>
         </Teleport>
 
-        <!-- Модальное окно быстрого создания Услуги (Ширина 3xl - увеличено в 1.5 раза) -->
-        <Teleport to="body">
-            <div v-if="isQuickServiceModalOpen" class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-                <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col animate-fade-in">
-                    <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
-                        <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                            Добавить услугу, которой нет в каталоге
-                        </h3>
-                        <button @click="closeQuickServiceModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
-                    </div>
-                    <form @submit.prevent="submitQuickService" class="flex flex-col">
-                        <div class="p-6 space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название услуги <span class="text-danger">*</span></label>
-                                <input v-model="quickServiceForm.name" type="text" required placeholder="Например: разовая работа по просьбе клиента" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цена (₽) <span class="text-danger">*</span></label>
-                                <input v-model="quickServiceForm.price" type="number" step="0.01" min="0" required class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                            </div>
+        <!-- Модальное окно быстрого создания Услуги — через общий <Modal>,
+        открывается поверх формы добавления позиции (тоже нужно перевести
+        на <Modal> — см. ниже) и поверх корзины пакетного добавления. -->
+        <Modal :show="isQuickServiceModalOpen" @close="closeQuickServiceModal" maxWidth="3xl">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Добавить услугу, которой нет в каталоге
+                    </h3>
+                    <button @click="closeQuickServiceModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitQuickService" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название услуги <span class="text-danger">*</span></label>
+                            <input v-model="quickServiceForm.name" type="text" required placeholder="Например: разовая работа по просьбе клиента" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цена (₽) <span class="text-danger">*</span></label>
+                            <input v-model="quickServiceForm.price" type="number" step="0.01" min="0" required class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        </div>
 
-                            <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
-                                <div @click="quickServiceForm.save_to_catalog = !quickServiceForm.save_to_catalog" :class="[quickServiceForm.save_to_catalog ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
-                                    <div :class="[quickServiceForm.save_to_catalog ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
-                                </div>
-                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="quickServiceForm.save_to_catalog = !quickServiceForm.save_to_catalog">
-                                    Сохранить в каталог услуг на будущее
-                                </label>
+                        <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                            <div @click="quickServiceForm.save_to_catalog = !quickServiceForm.save_to_catalog" :class="[quickServiceForm.save_to_catalog ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
+                                <div :class="[quickServiceForm.save_to_catalog ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                             </div>
-                            <p v-if="!quickServiceForm.save_to_catalog" class="text-xs text-gray-500">Позиция добавится только в этот заказ и не появится в общем прайс-листе.</p>
+                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="quickServiceForm.save_to_catalog = !quickServiceForm.save_to_catalog">
+                                Сохранить в каталог услуг на будущее
+                            </label>
+                        </div>
+                        <p v-if="!quickServiceForm.save_to_catalog" class="text-xs text-gray-500">Позиция добавится только в этот заказ и не появится в общем прайс-листе.</p>
 
-                            <div v-if="quickServiceForm.save_to_catalog" class="space-y-4 pt-2">
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
-                                        <select v-model="quickServiceForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                            <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
-                                            <option v-for="cat in serviceCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление</label>
-                                        <select v-model="quickServiceForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                            <option value="" class="bg-white dark:bg-gray-800">Без направления</option>
-                                            <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
-                                        </select>
-                                    </div>
+                        <div v-if="quickServiceForm.save_to_catalog" class="space-y-4 pt-2">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
+                                    <select v-model="quickServiceForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                        <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
+                                        <option v-for="cat in serviceCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                                    </select>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Нормо-время (мин) <span class="text-danger">*</span></label>
-                                    <input v-model="quickServiceForm.duration_minutes" type="number" min="0" :required="quickServiceForm.save_to_catalog" class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление</label>
+                                    <select v-model="quickServiceForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                        <option value="" class="bg-white dark:bg-gray-800">Без направления</option>
+                                        <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                                    </select>
                                 </div>
                             </div>
-                        </div>
-                        <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                            <button type="button" @click="closeQuickServiceModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                            <button type="submit" :disabled="quickServiceForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить в заказ</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </Teleport>
-
-        <!-- Модальное окно быстрого создания Товара (Ширина 3xl - увеличено в 1.5 раза) -->
-        <Teleport to="body">
-            <div v-if="isQuickProductModalOpen" class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-                <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col animate-fade-in">
-                    <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
-                        <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                            Быстрое добавление товара в каталог
-                        </h3>
-                        <button @click="closeQuickProductModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none">
-                            <i class="ri-close-line text-xl"></i>
-                        </button>
-                    </div>
-                    <form @submit.prevent="submitQuickProduct" class="flex flex-col">
-                        <div class="p-6 space-y-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
-                                <select v-model="quickProductForm.product_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
-                                    <option v-for="cat in productCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Нормо-время (мин) <span class="text-danger">*</span></label>
+                                <input v-model="quickServiceForm.duration_minutes" type="number" min="0" :required="quickServiceForm.save_to_catalog" class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeQuickServiceModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="quickServiceForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить в заказ</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
+        <!-- Модальное окно быстрого создания Товара — через общий <Modal> (не
+        голый div с z-index): открывается поверх других модалок этой страницы
+        (например, скидки или оплаты), а те тоже используют <Modal> —
+        нативный <dialog>.showModal() корректно стекуется по порядку
+        открытия только с таким же <dialog>, обычный div тут не поможет
+        независимо от z-index. См. CLAUDE.md про пополняемые списки. -->
+        <Modal :show="isQuickProductModalOpen" @close="closeQuickProductModal" maxWidth="3xl">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Быстрое добавление товара в каталог
+                    </h3>
+                    <button @click="closeQuickProductModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <form @submit.prevent="submitQuickProduct" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
+                            <select v-model="quickProductForm.product_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" class="bg-white dark:bg-gray-800">Без категории</option>
+                                <option v-for="cat in productCategories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название товара <span class="text-danger">*</span></label>
+                            <input v-model="quickProductForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ед. изм. <span class="text-danger">*</span></label>
+                                <select v-model="quickProductForm.unit" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="шт" class="bg-white dark:bg-gray-800">Штуки (шт)</option>
+                                    <option value="мл" class="bg-white dark:bg-gray-800">Миллилитры (мл)</option>
+                                    <option value="л" class="bg-white dark:bg-gray-800">Литры (л)</option>
+                                    <option value="гр" class="bg-white dark:bg-gray-800">Граммы (гр)</option>
+                                    <option value="кг" class="bg-white dark:bg-gray-800">Килограммы (кг)</option>
+                                    <option value="пог.м" class="bg-white dark:bg-gray-800">Погонные метры (пог.м)</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название товара <span class="text-danger">*</span></label>
-                                <input v-model="quickProductForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ед. изм. <span class="text-danger">*</span></label>
-                                    <select v-model="quickProductForm.unit" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                        <option value="шт" class="bg-white dark:bg-gray-800">Штуки (шт)</option>
-                                        <option value="мл" class="bg-white dark:bg-gray-800">Миллилитры (мл)</option>
-                                        <option value="л" class="bg-white dark:bg-gray-800">Литры (л)</option>
-                                        <option value="гр" class="bg-white dark:bg-gray-800">Граммы (гр)</option>
-                                        <option value="кг" class="bg-white dark:bg-gray-800">Килограммы (кг)</option>
-                                        <option value="пог.м" class="bg-white dark:bg-gray-800">Погонные метры (пог.м)</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип учета <span class="text-danger">*</span></label>
-                                    <select v-model="quickProductForm.accounting_type" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                        <option value="average" class="bg-white dark:bg-gray-800">Средневзвешенный</option>
-                                        <option value="batch" class="bg-white dark:bg-gray-800">Партионный (FIFO)</option>
-                                    </select>
-                                </div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип учета <span class="text-danger">*</span></label>
+                                <select v-model="quickProductForm.accounting_type" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="average" class="bg-white dark:bg-gray-800">Средневзвешенный</option>
+                                    <option value="batch" class="bg-white dark:bg-gray-800">Партионный (FIFO)</option>
+                                </select>
                             </div>
                         </div>
-                        <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                            <button type="button" @click="closeQuickProductModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                            <button type="submit" :disabled="quickProductForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
-                        </div>
-                    </form>
-                </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeQuickProductModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="quickProductForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
             </div>
-        </Teleport>
+        </Modal>
 
         <!-- Модальное окно скидки -->
         <Teleport to="body">

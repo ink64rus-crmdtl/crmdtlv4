@@ -8,6 +8,7 @@ import BulkActions from '@/Components/BulkActions.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
+import Modal from '@/Components/Modal.vue';
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -1409,9 +1410,13 @@ const toggleDefaultView = () => {
             @saved="isTooltipFieldsModalOpen = false"
         />
 
-        <!-- Быстрое добавление клиента -->
-        <div v-if="isQuickClientModalOpen" class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+        <!-- Быстрое добавление клиента — обязательно через <Modal>, не голый div
+        с z-index: некоторые родительские формы в системе открыты через
+        <Modal> (нативный <dialog>.showModal(), браузерный top layer — выше
+        любого обычного элемента вне зависимости от z-index), поэтому только
+        второй <dialog> корректно ляжет поверх первого. См. CLAUDE.md. -->
+        <Modal :show="isQuickClientModalOpen" @close="closeQuickClientModal" maxWidth="md">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый клиент</h3>
                     <button @click="closeQuickClientModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
@@ -1443,11 +1448,11 @@ const toggleDefaultView = () => {
                     </div>
                 </form>
             </div>
-        </div>
+        </Modal>
 
-        <!-- Быстрое добавление автомобиля -->
-        <div v-if="isQuickVehicleModalOpen" class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-md my-8 mx-auto flex flex-col">
+        <!-- Быстрое добавление автомобиля (см. пояснение выше про <Modal>) -->
+        <Modal :show="isQuickVehicleModalOpen" @close="closeQuickVehicleModal" maxWidth="md">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый автомобиль</h3>
                     <button @click="closeQuickVehicleModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
@@ -1485,7 +1490,7 @@ const toggleDefaultView = () => {
                     </div>
                 </form>
             </div>
-        </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
 
