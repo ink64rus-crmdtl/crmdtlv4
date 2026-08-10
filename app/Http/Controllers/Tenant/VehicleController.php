@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\Vehicle;
 use App\Models\Client;
+use App\Models\Branch;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
 use App\Models\CustomFieldDefinition;
@@ -57,7 +58,10 @@ class VehicleController extends Controller
         
         // Список клиентов для выпадающего списка при создании авто
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone', 'alias']);
-        
+
+        // Точки — для формы быстрого добавления клиента прямо из формы авто
+        $branches = Branch::forSelect()->get(['id', 'name']);
+
         // Справочники марок и моделей
         $makes = VehicleMake::where('is_active', true)->orderBy('name')->get(['id', 'name']);
         $models = VehicleModel::where('is_active', true)->orderBy('name')->get(['id', 'vehicle_make_id', 'name', 'body_type', 'category']);
@@ -127,6 +131,7 @@ class VehicleController extends Controller
             'vehicles' => $vehicles,
             'filters' => $request->all(),
             'clients' => $clients,
+            'branches' => $branches,
             'makes' => $makes,
             'models' => $models,
             'strictPlateValidation' => $strictPlateValidation,

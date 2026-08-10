@@ -11,6 +11,8 @@ use App\Models\Employee;
 use App\Models\Post;
 use App\Models\Service;
 use App\Models\Product;
+use App\Models\VehicleMake;
+use App\Models\VehicleModel;
 use App\Models\Lookup;
 use App\Models\ListView;
 use App\Models\Setting;
@@ -63,6 +65,8 @@ class AppointmentController extends Controller
         $posts = Post::where('is_active', true)->orderBy('sort_order')->get(['id', 'branch_id', 'name', 'icon']);
         $services = Service::where('is_active', true)->get(['id', 'name', 'price']);
         $products = Product::where('is_active', true)->get(['id', 'name']);
+        $makes = VehicleMake::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        $models = VehicleModel::where('is_active', true)->orderBy('name')->get(['id', 'vehicle_make_id', 'name']);
 
         $availableColumns = [
             ['key' => 'start_at', 'label' => 'Время записи'],
@@ -121,6 +125,8 @@ class AppointmentController extends Controller
             'posts' => $posts,
             'services' => $services,
             'products' => $products,
+            'makes' => $makes,
+            'models' => $models,
             'availableColumns' => $availableColumns,
             'listView' => ['visible_columns' => $visibleColumns],
             'appointmentStatuses' => $this->appointmentStatuses(),

@@ -9,6 +9,8 @@ use App\Models\Appointment;
 use App\Models\Scopes\BranchScope;
 use App\Models\Client;
 use App\Models\Vehicle;
+use App\Models\VehicleMake;
+use App\Models\VehicleModel;
 use App\Models\Branch;
 use App\Models\Service;
 use App\Models\Product;
@@ -69,6 +71,8 @@ class WorkOrderController extends Controller
         $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
+        $makes = VehicleMake::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        $models = VehicleModel::where('is_active', true)->orderBy('name')->get(['id', 'vehicle_make_id', 'name']);
 
         $baseColumns = [
             ['key' => 'id', 'label' => '№ Заказа', 'type' => 'system', 'is_default' => true],
@@ -129,6 +133,8 @@ class WorkOrderController extends Controller
             'branches' => $branches,
             'clients' => $clients,
             'vehicles' => $vehicles,
+            'makes' => $makes,
+            'models' => $models,
             'customFieldDefs' => $customFieldDefs,
             'availableColumns' => $availableColumns,
             'listView' => [
