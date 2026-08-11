@@ -27,6 +27,10 @@ const containerRef = ref(null);
 const buttonRef = ref(null);
 const panelRef = ref(null);
 const panelStyle = ref({});
+// См. SearchableSelect.vue — тот же обход конфликта Teleport to="body" с
+// нативным <dialog> (top layer перекрывает обычный z-index панели, клики
+// по пунктам не доходят), если компонент открыт внутри формы в <Modal>.
+const teleportTarget = ref(typeof document !== 'undefined' ? document.body : null);
 
 const employeeLabel = (emp) => `${emp.last_name || ''} ${(emp.first_name || '').charAt(0)}${emp.first_name ? '.' : ''}`.trim();
 
@@ -49,6 +53,7 @@ const toggle = async () => {
     if (props.disabled) return;
     isOpen.value = !isOpen.value;
     if (isOpen.value) {
+        teleportTarget.value = containerRef.value?.closest('dialog') || document.body;
         await nextTick();
         updatePosition();
     }
@@ -120,7 +125,7 @@ onUnmounted(() => {
             <span v-if="selectedEmployees.length === 0">{{ placeholder }}</span>
         </button>
 
-        <Teleport to="body">
+        <Teleport :to="teleportTarget">
             <Transition
                 enter-active-class="transition ease-out duration-100"
                 enter-from-class="transform opacity-0 scale-95"

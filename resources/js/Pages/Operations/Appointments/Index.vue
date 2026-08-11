@@ -53,10 +53,12 @@ const isTooltipFieldsModalOpen = ref(false);
 
 // --- Быстрое добавление клиента прямо из формы записи (не покидая календарь) ---
 // Тот же приём, что и quick-product в WorkOrders/Show.vue: минимальная форма,
-// обычный Inertia-POST на существующий crm.clients.store (без нового бэкенда),
-// после успеха список clients обновляется вместе со страницей — новый клиент
-// просто появляется в SearchableSelect, выбрать его нужно вручную (как и с
-// товаром) — не гадаем, какая запись только что создана.
+// обычный Inertia-POST на существующий crm.clients.store (без нового бэкенда).
+// preserveState ОБЯЗАТЕЛЕН: без него Inertia полностью пересоздаёт компонент
+// страницы после redirect()->back(), из-за чего родительская модалка записи
+// (открытая через нативный <dialog>) рвётся посреди работы, а её выпадающие
+// списки перестают реагировать на клики. Новый клиент находится диффом
+// props.clients до/после отправки и подставляется в форму автоматически.
 const isQuickClientModalOpen = ref(false);
 const quickClientForm = useForm({
     branch_id: '',
@@ -79,13 +81,30 @@ const closeQuickClientModal = () => {
 };
 
 const submitQuickClient = () => {
+    const existingIds = new Set(props.clients.map((c) => c.id));
     quickClientForm.post(route('crm.clients.store'), {
         preserveScroll: true,
-        onSuccess: () => closeQuickClientModal(),
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.clients.find((c) => !existingIds.has(c.id));
+            if (created) {
+                form.client_id = created.id;
+                // Клиента могли завести "с нуля" прямо из формы автомобиля
+                // (нет клиента → добавляем авто → тут же добавляем владельца) —
+                // подставляем его и туда, чтобы не искать вручную второй раз.
+                if (isQuickVehicleModalOpen.value) {
+                    quickVehicleForm.client_id = created.id;
+                }
+            }
+            closeQuickClientModal();
+        },
     });
 };
 
-// --- Быстрое добавление автомобиля (клиент уже выбран в форме записи) ---
+// --- Быстрое добавление автомобиля. Клиент обычно уже выбран в форме записи
+// (подставляется автоматически), но поле остаётся редактируемым — можно
+// начать и с "нет клиента, нет авто": открыть эту форму и завести клиента
+// прямо отсюда кнопкой "+", не покидая создание автомобиля. ---
 const isQuickVehicleModalOpen = ref(false);
 const quickVehicleForm = useForm({
     client_id: '',
@@ -109,9 +128,18 @@ const closeQuickVehicleModal = () => {
 };
 
 const submitQuickVehicle = () => {
+    const existingIds = new Set(props.vehicles.map((v) => v.id));
     quickVehicleForm.post(route('crm.vehicles.store'), {
         preserveScroll: true,
-        onSuccess: () => closeQuickVehicleModal(),
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.vehicles.find((v) => !existingIds.has(v.id));
+            if (created) {
+                form.vehicle_id = created.id;
+                onVehicleSelected(created.id);
+            }
+            closeQuickVehicleModal();
+        },
     });
 };
 
@@ -1258,8 +1286,8 @@ const toggleDefaultView = () => {
                                         @update:model-value="form.vehicle_id = ''"
                                         class="flex-1"
                                     />
-                                    <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Добавить клиента">
-                                        <i class="ri-add-line text-gray-600 dark:text-gray-300"></i>
+                                    <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента">
+                                        <i class="ri-add-line text-primary"></i>
                                     </button>
                                 </div>
                                 <p v-if="form.errors.client_id" class="mt-1 text-xs text-danger">{{ form.errors.client_id }}</p>
@@ -1276,8 +1304,8 @@ const toggleDefaultView = () => {
                                         class="flex-1"
                                         @update:model-value="onVehicleSelected"
                                     />
-                                    <button type="button" @click="openQuickVehicleModal" :disabled="!form.client_id" class="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Добавить автомобиль">
-                                        <i class="ri-add-line text-gray-600 dark:text-gray-300"></i>
+                                    <button type="button" @click="openQuickVehicleModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить автомобиль">
+                                        <i class="ri-add-line text-primary"></i>
                                     </button>
                                 </div>
                             </div>
@@ -1459,6 +1487,23 @@ const toggleDefaultView = () => {
                 </div>
                 <form @submit.prevent="submitQuickVehicle" class="flex flex-col">
                     <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Клиент <span class="text-danger">*</span></label>
+                            <div class="flex gap-2">
+                                <SearchableSelect
+                                    v-model="quickVehicleForm.client_id"
+                                    :options="clientOptions"
+                                    placeholder="Выберите клиента..."
+                                    searchPlaceholder="Поиск клиента..."
+                                    class="flex-1"
+                                />
+                                <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента">
+                                    <i class="ri-add-line text-primary"></i>
+                                </button>
+                            </div>
+                            <span v-if="quickVehicleForm.errors.client_id" class="text-xs text-danger mt-1">{{ quickVehicleForm.errors.client_id }}</span>
+                            <p class="text-[11px] text-gray-400 mt-1">Нет клиента? Добавьте его кнопкой «+», не закрывая эту форму.</p>
+                        </div>
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Марка <span class="text-danger">*</span></label>

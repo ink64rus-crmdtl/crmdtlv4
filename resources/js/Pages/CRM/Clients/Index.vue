@@ -888,8 +888,8 @@ const formatMoney = (amount) => {
                                         <option value="" class="bg-white dark:bg-gray-800">Без группы</option>
                                         <option v-for="group in clientGroups" :key="group.id" :value="group.id" class="bg-white dark:bg-gray-800">{{ group.name }}</option>
                                     </select>
-                                    <button type="button" @click="openGroupModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Добавить группу">
-                                        <i class="ri-add-line text-gray-600 dark:text-gray-300"></i>
+                                    <button type="button" @click="openGroupModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить группу">
+                                        <i class="ri-add-line text-primary"></i>
                                     </button>
                                 </div>
                                 <p v-if="editingClient?.client_group_locked" class="text-xs text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-1.5">

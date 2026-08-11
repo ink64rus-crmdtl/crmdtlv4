@@ -31,6 +31,16 @@ const buttonRef = ref(null);
 const panelRef = ref(null);
 const panelStyle = ref({});
 const searchInputRef = ref(null);
+// Телепорт по умолчанию — в <body>. НО если компонент открыт внутри формы,
+// которая сама рендерится через <Modal> (нативный <dialog>.showModal(), см.
+// CLAUDE.md про модалки поверх модалок) — простой Teleport to="body" кладёт
+// панель РЯДОМ с диалогом, а не ВНУТРЬ его top layer, и диалог (всегда выше
+// любого обычного элемента независимо от z-index) перекрывает панель:
+// список открывается визуально, но клики по пунктам не доходят. Поэтому
+// перед открытием ищем ближайший <dialog>-предок и телепортируем внутрь
+// него — тогда панель и диалог в одном top layer, и обычный z-index (250
+// против 200 у диалога) снова работает как ожидается.
+const teleportTarget = ref(typeof document !== 'undefined' ? document.body : null);
 
 const current = computed(() => props.options.find(o => o.value === props.modelValue));
 
@@ -61,6 +71,7 @@ const toggle = () => {
     // существует независимо от isOpen, ждать nextTick для этого не нужно.
     // Иначе первый рендер панели проходил с ещё пустым panelStyle (position
     // не 'fixed'), и клик по кнопке в этот момент визуально ничего не менял.
+    teleportTarget.value = containerRef.value?.closest('dialog') || document.body;
     updatePosition();
     search.value = '';
     isOpen.value = true;
@@ -108,7 +119,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="relative" ref="containerRef">
+    <div class="relative min-w-0" ref="containerRef">
         <button
             type="button"
             ref="buttonRef"
@@ -123,7 +134,7 @@ onUnmounted(() => {
             </span>
         </button>
 
-        <Teleport to="body">
+        <Teleport :to="teleportTarget">
             <div
                 v-if="isOpen"
                 ref="panelRef"

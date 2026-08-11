@@ -517,6 +517,8 @@ const submitQuickService = () => {
         duration_minutes: data.duration_minutes,
         quantity: 1,
     })).post(route('operations.work-orders.items.store', props.workOrder.id), {
+        preserveScroll: true,
+        preserveState: true,
         onSuccess: () => closeQuickServiceModal(),
     });
 };
@@ -545,6 +547,8 @@ const closeQuickProductModal = () => {
 
 const submitQuickProduct = () => {
     quickProductForm.post(route('operations.work-orders.quick-product'), {
+        preserveScroll: true,
+        preserveState: true,
         onSuccess: () => closeQuickProductModal(),
     });
 };

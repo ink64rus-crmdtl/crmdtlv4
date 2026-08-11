@@ -2,16 +2,38 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Create",
-        "command": "php vendor/bin/pint $CLAUDE_FILE_PATH"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read -r f; php vendor/bin/pint \"$f\"; } 2>/dev/null || true"
+          }
+        ]
       }
     ]
   },
   "permissions": {
     "allow": [
       "Edit",
-      "Create",
-      "Read"
+      "Write",
+      "Read",
+      "Bash(php -l *)",
+      "Bash(php artisan route:list *)",
+      "Bash(php artisan test *)",
+      "Bash(php artisan list *)",
+      "Bash(php artisan serve *)",
+      "Bash(php artisan tenants:list)",
+      "Bash(php artisan schedule:list)",
+      "Bash(pdftotext *)",
+      "Bash(php -i)",
+      "Bash(curl *)",
+      "Bash(nohup php artisan serve *)",
+      "Bash(pkill -f \"artisan serve\")",
+      "Bash(redis-cli ping)",
+      "Bash(mysqladmin ping)",
+      "Bash(php artisan tinker *)",
+      "Bash(node *)",
+      "Bash(python3 *)"
     ],
     "ask": [
       "Bash(php artisan *)"

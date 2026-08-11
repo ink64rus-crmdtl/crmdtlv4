@@ -194,9 +194,17 @@ const closeQuickClientModal = () => {
 };
 
 const submitQuickClient = () => {
+    const existingIds = new Set(props.clients.map((c) => c.id));
     quickClientForm.post(route('crm.clients.store'), {
         preserveScroll: true,
-        onSuccess: () => closeQuickClientModal(),
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.clients.find((c) => !existingIds.has(c.id));
+            if (created) {
+                form.client_id = created.id;
+            }
+            closeQuickClientModal();
+        },
     });
 };
 
@@ -628,8 +636,8 @@ const deleteVehicle = (vehicle) => {
                                     searchPlaceholder="Поиск клиента..."
                                     class="flex-1"
                                 />
-                                <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Добавить клиента">
-                                    <i class="ri-add-line text-gray-600 dark:text-gray-300"></i>
+                                <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента">
+                                    <i class="ri-add-line text-primary"></i>
                                 </button>
                             </div>
                             <span v-if="form.errors.client_id" class="text-xs text-danger mt-1">{{ form.errors.client_id }}</span>
