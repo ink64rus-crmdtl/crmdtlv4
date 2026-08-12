@@ -45,6 +45,7 @@ const initialFilters = {
     type: props.filters?.filters?.type || '',
     is_lead: props.filters?.filters?.is_lead || '',
     client_group_id: props.filters?.filters?.client_group_id || '',
+    role: props.filters?.filters?.role || '',
     segment: props.filters?.filters?.segment || '',
 };
 props.customFieldDefs.filter(f => f.is_filterable).forEach(def => {
@@ -490,6 +491,10 @@ const formatMoney = (amount) => {
                                             {{ client.group.name }}
                                         </span>
                                         <span v-else class="text-xs text-gray-400">—</span>
+                                    </template>
+
+                                    <template v-else-if="col.key === 'role'">
+                                        {{ client.role || '—' }}
                                     </template>
 
                                     <template v-else-if="col.key === 'segment'">
@@ -1179,10 +1184,17 @@ const formatMoney = (amount) => {
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа лояльности</label>
                         <select v-model="filtersForm.client_group_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
                             <option value="">Все группы</option>
                             <option v-for="group in clientGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
+                        <select v-model="filtersForm.role" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все роли</option>
+                            <option v-for="r in lookups.client_role?.map(l => l.value) || []" :key="r" :value="r">{{ r }}</option>
                         </select>
                     </div>
                     <div>

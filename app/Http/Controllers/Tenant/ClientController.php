@@ -80,7 +80,8 @@ class ClientController extends Controller
         // 1. Формируем базовый список системных колонок
         $baseColumns = [
             ['key' => 'client_name', 'label' => 'Клиент', 'type' => 'system', 'is_default' => true],
-            ['key' => 'client_group', 'label' => 'Роль / Группа', 'type' => 'system', 'is_default' => true],
+            ['key' => 'client_group', 'label' => 'Группа лояльности', 'type' => 'system', 'is_default' => true],
+            ['key' => 'role', 'label' => 'Роль клиента', 'type' => 'system', 'is_default' => false],
             ['key' => 'segment', 'label' => 'Сегмент', 'type' => 'system', 'is_default' => true],
             ['key' => 'phone', 'label' => 'Телефон', 'type' => 'system', 'is_default' => true],
             ['key' => 'phone_2', 'label' => 'Доп. Телефон', 'type' => 'system', 'is_default' => false],

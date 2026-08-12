@@ -5,14 +5,14 @@ namespace App\Models;
 use App\Models\Concerns\HasActivityLog;
 use App\Models\Scopes\BranchScope;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Client extends Model
 {
-    use SoftDeletes, HasActivityLog;
+    use HasActivityLog, SoftDeletes;
 
     protected $fillable = [
         'branch_id',
@@ -20,6 +20,7 @@ class Client extends Model
         'client_group_locked',
         'is_lead',
         'type',
+        'role',
         'name',
         'alias',
         'phone',
@@ -49,7 +50,7 @@ class Client extends Model
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new BranchScope());
+        static::addGlobalScope(new BranchScope);
     }
 
     public function branch(): BelongsTo

@@ -282,7 +282,11 @@ const currentCountrySchema = computed(() => {
                                 </a>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-4 pt-2">
+                        <div class="grid grid-cols-3 gap-4 pt-2">
+                            <div>
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Роль</p>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ client.role || '—' }}</p>
+                            </div>
                             <div>
                                 <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Источник</p>
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ client.source || '—' }}</p>
