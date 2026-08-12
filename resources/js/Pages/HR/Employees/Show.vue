@@ -327,7 +327,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
             </div>
         </template>
 
-        <!-- TRI-STATE 2: Полная карточка (w-[99%] mx-auto для Fluid-дизайна) -->
+        <!-- TRI-STATE 2: Карточка (w-[99%] mx-auto для Fluid-дизайна) -->
         <div class="w-[99%] mx-auto flex flex-col lg:flex-row gap-6 font-sans text-slate-600">
             
             <!-- Левая колонка: About (Свойства сущности) -->

@@ -612,7 +612,7 @@ const deleteOrder = (order) => {
             </div>
         </div>
 
-        <!-- Offcanvas Быстрый просмотр -->
+        <!-- Offcanvas Панель просмотра -->
         <Offcanvas :show="isOffcanvasOpen" @close="closePreview" maxWidth="md">
             <div class="flex flex-col h-full" v-if="previewOrder">
                 <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-start bg-gray-50/50 dark:bg-gray-800/30">
@@ -682,7 +682,7 @@ const deleteOrder = (order) => {
 
                 <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex justify-between gap-3">
                     <button @click="openModal(previewOrder)" class="flex-1 rounded-md px-4 py-2 text-sm font-medium bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">
-                        <i class="ri-pencil-line mr-2"></i> Шапка
+                        <i class="ri-pencil-line mr-2"></i> Форма
                     </button>
                     <Link :href="route('operations.work-orders.show', previewOrder.id)" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600">
                         Открыть заказ <i class="ri-arrow-right-line ml-2"></i>

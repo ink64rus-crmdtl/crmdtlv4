@@ -558,7 +558,7 @@ const formatMoney = (amount) => {
                                     <Link 
                                         :href="route('crm.clients.show', client.id)" 
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
-                                        title="Полная карточка"
+                                        title="Карточка"
                                         @click.stop
                                     >
                                         <i class="ri-eye-line"></i>
@@ -643,7 +643,7 @@ const formatMoney = (amount) => {
             </div>
         </div>
 
-        <!-- TRI-STATE 1: Offcanvas (Быстрый просмотр) -->
+        <!-- TRI-STATE 1: Offcanvas (Панель просмотра) -->
         <Offcanvas :show="isOffcanvasOpen" @close="closePreview" maxWidth="md">
             <div class="flex flex-col h-full" v-if="previewClient">
                 <!-- Offcanvas Header -->
@@ -757,13 +757,13 @@ const formatMoney = (amount) => {
                         :href="route('crm.clients.show', previewClient.id)" 
                         class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm"
                     >
-                        Полная карточка <i class="ri-arrow-right-line ml-2"></i>
+                        Карточка <i class="ri-arrow-right-line ml-2"></i>
                     </Link>
                 </div>
             </div>
         </Offcanvas>
 
-        <!-- TRI-STATE 3: Форма редактирования (Focused Modal) -->
+        <!-- TRI-STATE 3: Форма (Focused Modal) -->
         <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col">
                 
