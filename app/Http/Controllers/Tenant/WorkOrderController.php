@@ -3,58 +3,58 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\WorkOrder;
-use App\Models\WorkOrderItem;
+use App\Jobs\ExportEntitiesJob;
+use App\Models\Account;
 use App\Models\Appointment;
-use App\Models\Scopes\BranchScope;
+use App\Models\Branch;
+use App\Models\BusinessDirection;
 use App\Models\Client;
+use App\Models\CustomFieldDefinition;
+use App\Models\CustomFieldValue;
+use App\Models\DocumentTemplate;
+use App\Models\Employee;
+use App\Models\ListView;
+use App\Models\Lookup;
+use App\Models\MessageTemplate;
+use App\Models\Payroll;
+use App\Models\Product;
+use App\Models\ProductCategory;
+use App\Models\Scopes\BranchScope;
+use App\Models\Service;
+use App\Models\ServiceCategory;
+use App\Models\Setting;
+use App\Models\StockMovement;
 use App\Models\Vehicle;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
-use App\Models\Branch;
-use App\Models\Service;
-use App\Models\Product;
-use App\Models\Account;
-use App\Models\CustomFieldDefinition;
-use App\Models\CustomFieldValue;
-use App\Models\ListView;
-use App\Models\Setting;
-use App\Models\Lookup;
-use App\Models\BusinessDirection;
-use App\Models\ServiceCategory;
-use App\Models\ProductCategory;
-use App\Models\Employee;
-use App\Services\FieldPermissionService;
-use App\Services\QueryFilterService;
-use App\Services\WarehouseResolver;
-use App\Services\StockService;
-use App\Services\FinanceService;
-use App\Services\TimezoneResolver;
+use App\Models\WorkOrder;
+use App\Models\WorkOrderItem;
 use App\Services\ActivityLogger;
-use App\Services\PayrollCalculationService;
+use App\Services\FieldPermissionService;
+use App\Services\FinanceService;
 use App\Services\LoyaltyGradeService;
-use App\Models\Payroll;
-use App\Models\StockMovement;
-use App\Models\MessageTemplate;
-use App\Models\DocumentTemplate;
 use App\Services\Messaging\ChatDispatchService;
 use App\Services\Messaging\MessageTemplateService;
-use App\Jobs\ExportEntitiesJob;
+use App\Services\PayrollCalculationService;
+use App\Services\QueryFilterService;
+use App\Services\StockService;
+use App\Services\TimezoneResolver;
+use App\Services\WarehouseResolver;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Exception;
 
 class WorkOrderController extends Controller
 {
     public function index(Request $request): Response
     {
         $user = auth()->user();
-        
+
         $query = WorkOrder::with(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel']);
-        
+
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
@@ -62,12 +62,12 @@ class WorkOrderController extends Controller
             'work_order'
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         $workOrders = $query->paginate(15)->withQueryString();
-        
+
         $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
@@ -103,19 +103,19 @@ class WorkOrderController extends Controller
         $workOrders->getCollection()->transform(function ($order) use ($cfValues, $customFieldDefs) {
             $orderData = $order->toArray();
             $orderData['custom_fields'] = [];
-            
+
             foreach ($customFieldDefs as $def) {
                 $val = $cfValues->where('entity_id', $order->id)->where('custom_field_definition_id', $def->id)->first();
                 $orderData['custom_fields'][$def->key] = $val ? ($val->value_text ?? $val->value_number ?? $val->value_date ?? $val->value) : null;
             }
-            
+
             return $orderData;
         });
 
         $allFieldKeys = array_column($baseColumns, 'key');
         $visibleKeys = FieldPermissionService::visibleFields($user, 'work_order', $allFieldKeys);
 
-        $availableColumns = array_values(array_filter($baseColumns, function($col) use ($visibleKeys) {
+        $availableColumns = array_values(array_filter($baseColumns, function ($col) use ($visibleKeys) {
             return in_array($col['key'], $visibleKeys);
         }));
 
@@ -123,9 +123,9 @@ class WorkOrderController extends Controller
             ->where('user_id', $user->id)
             ->first();
 
-        $visibleColumns = $listView 
-            ? $listView->visible_columns 
-            : array_values(array_map(fn($c) => $c['key'], array_filter($availableColumns, fn($c) => $c['is_default'])));
+        $visibleColumns = $listView
+            ? $listView->visible_columns
+            : array_values(array_map(fn ($c) => $c['key'], array_filter($availableColumns, fn ($c) => $c['is_default'])));
 
         return Inertia::render('Operations/WorkOrders/Index', [
             'workOrders' => $workOrders,
@@ -146,12 +146,12 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.adminEmployee', 'transactions.account', 'defaultAdminEmployee', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
+        $workOrder->load(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.admins', 'transactions.account', 'admins', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $workOrder->documents->each->append('is_stale');
-        
+
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'work_order')->where('entity_id', $workOrder->id)->get();
-        
+
         $customFieldsData = [];
         foreach ($customFieldDefs as $def) {
             $val = $cfValues->where('custom_field_definition_id', $def->id)->first();
@@ -164,10 +164,10 @@ class WorkOrderController extends Controller
         $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
-        
+
         $services = Service::where('is_active', true)->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
         $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id']);
-        
+
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']);
 
         $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
@@ -194,7 +194,7 @@ class WorkOrderController extends Controller
         ['activities' => $activities, 'comments' => $comments] = ActivityLogger::present(ActivityLogger::feedFor($workOrder));
 
         $candidateAppointment = null;
-        if (!$linkedAppointment) {
+        if (! $linkedAppointment) {
             $now = now();
             $candidateAppointment = Appointment::where('client_id', $workOrder->client_id)
                 ->whereIn('status', ['scheduled', 'confirmed'])
@@ -243,13 +243,13 @@ class WorkOrderController extends Controller
     private function legalEntityBelongsToBranchRule(Request $request): \Closure
     {
         return function (string $attribute, $value, \Closure $fail) use ($request) {
-            if (!$value) {
+            if (! $value) {
                 return;
             }
 
             $branch = Branch::find($request->input('branch_id'));
 
-            if ($branch && !$branch->legalEntities()->where('legal_entities.id', $value)->exists()) {
+            if ($branch && ! $branch->legalEntities()->where('legal_entities.id', $value)->exists()) {
                 $fail('Выбранное юрлицо не привязано к этой локации.');
             }
         };
@@ -270,10 +270,11 @@ class WorkOrderController extends Controller
         DB::transaction(function () use ($validated) {
             // Автоназначение администратора заказа: если создатель — сотрудник
             // на должности с ролью "администратор" (payroll_role), он сразу
-            // становится default_admin_employee_id (ЗП по каждой позиции
-            // считается от него). Менеджер может переопределить вручную в
-            // любой момент — тогда admin_assignment_mode переключится на
-            // 'manual' и автоматика больше не будет перезаписывать выбор.
+            // прикрепляется единственным админом заказа (work_order_admins) —
+            // ЗП по каждой позиции считается от него. Менеджер может добавить
+            // ещё админов или переопределить вручную в любой момент — тогда
+            // admin_assignment_mode переключится на 'manual' и автоматика
+            // больше не будет перезаписывать выбор.
             $creatorEmployee = Employee::where('user_id', auth()->id())->with('position')->first();
             $defaultAdminEmployeeId = ($creatorEmployee && $creatorEmployee->position?->payroll_role === 'admin')
                 ? $creatorEmployee->id
@@ -291,11 +292,14 @@ class WorkOrderController extends Controller
                 'discount_amount' => 0,
                 'final_amount' => 0,
                 'created_by' => auth()->id(),
-                'default_admin_employee_id' => $defaultAdminEmployeeId,
                 'admin_assignment_mode' => 'auto',
             ]);
 
-            if (!empty($validated['custom_fields'])) {
+            if ($defaultAdminEmployeeId) {
+                $workOrder->admins()->attach($defaultAdminEmployeeId);
+            }
+
+            if (! empty($validated['custom_fields'])) {
                 $this->saveCustomFields($workOrder, $validated['custom_fields']);
             }
 
@@ -354,6 +358,7 @@ class WorkOrderController extends Controller
 
         $this->unlinkAppointments([$workOrder->id]);
         $workOrder->delete();
+
         return redirect()->back()->with('success', 'Заказ-наряд удален');
     }
 
@@ -388,12 +393,12 @@ class WorkOrderController extends Controller
     private function notifyClientByTrigger(WorkOrder $workOrder, string $trigger, \Closure $renderBody): void
     {
         $template = MessageTemplate::where('event_trigger', $trigger)->where('is_active', true)->first();
-        if (!$template || !$workOrder->client) {
+        if (! $template || ! $workOrder->client) {
             return;
         }
 
         $channel = ChatDispatchService::defaultChannelFor($workOrder->branch_id);
-        if (!$channel) {
+        if (! $channel) {
             return;
         }
 
@@ -412,38 +417,47 @@ class WorkOrderController extends Controller
     }
 
     /**
-     * Ручное назначение/снятие администратора заказа (Фаза 10.1). После ручного
+     * Ручное назначение/снятие администраторов заказа (Фаза 10.1, многие-ко-многим,
+     * work_order_admins) — у части клиентов на заказе реально работает несколько
+     * администраторов сразу, делят начисление между собой поровну (доли тонко
+     * настраиваются уже на уровне позиции, см. updateItemPayout). После ручного
      * выбора admin_assignment_mode переключается на 'manual' — автоназначение
      * по создателю заказа больше не должно перезаписывать выбор менеджера.
      */
     public function updateAdmin(Request $request, WorkOrder $workOrder)
     {
         $validated = $request->validate([
-            'employee_id' => ['nullable', 'exists:employees,id'],
+            'employee_ids' => ['array'],
+            'employee_ids.*' => ['integer', 'exists:employees,id'],
         ]);
 
-        $workOrder->update([
-            'default_admin_employee_id' => $validated['employee_id'] ?? null,
-            'admin_assignment_mode' => 'manual',
-        ]);
+        $employeeIds = $validated['employee_ids'] ?? [];
 
-        $adminEmployee = $validated['employee_id'] ? Employee::find($validated['employee_id']) : null;
-        $label = $adminEmployee ? trim($adminEmployee->first_name . ' ' . $adminEmployee->last_name) : null;
+        $workOrder->admins()->sync($employeeIds);
+        $workOrder->update(['admin_assignment_mode' => 'manual']);
 
-        $adminChangeText = $label
-            ? "Администратор заказа №{$workOrder->id} изменён на «{$label}»"
-            : "Администратор заказа №{$workOrder->id} снят";
+        $labels = Employee::whereIn('id', $employeeIds)->get()->map(fn ($e) => trim($e->first_name.' '.$e->last_name));
+
+        $adminChangeText = $labels->isNotEmpty()
+            ? "Администраторы заказа №{$workOrder->id} изменены на «".$labels->implode('», «').'»'
+            : "Администраторы заказа №{$workOrder->id} сняты";
         ActivityLogger::log($workOrder, $adminChangeText, $this->workOrderLink($workOrder), 'admin_changed');
 
-        return redirect()->back()->with('success', 'Администратор заказа обновлён');
+        return redirect()->back()->with('success', 'Администраторы заказа обновлены');
     }
 
     /**
      * Распределение выплат по конкретной позиции-услуге (Фаза 10.1): кто на
-     * ней администратор (наследует от заказа / свой / отсутствует) и ручные
+     * ней администратор(-ы) (наследуют от заказа / свои / отсутствуют) и ручные
      * переопределения ставки/доли для каждого уже прикреплённого исполнителя.
      * Список самих исполнителей (кто прикреплён) правится отдельно, через
      * updateItem() — здесь только метаданные расчёта ЗП для уже прикреплённых.
+     * Список администраторов позиции (work_order_item_admins), в отличие от
+     * исполнителей, полностью управляется отсюда же (sync) — у него нет
+     * отдельного мультиселекта в основной таблице позиций, только в этой форме.
+     * Пивот НЕ очищается, если admin_override не 'custom' — предыдущий custom-
+     * набор остаётся в БД про запас: при обратном переключении на 'custom'
+     * форма подставит его снова, а не заставит выбирать заново.
      */
     public function updateItemPayout(Request $request, WorkOrder $workOrder, WorkOrderItem $item)
     {
@@ -453,7 +467,11 @@ class WorkOrderController extends Controller
 
         $validated = $request->validate([
             'admin_override' => ['required', 'string', 'in:inherit,custom,none'],
-            'admin_employee_id' => ['nullable', 'required_if:admin_override,custom', 'exists:employees,id'],
+            'admin_assignments' => ['array'],
+            'admin_assignments.*.employee_id' => ['required', 'integer', 'exists:employees,id'],
+            'admin_assignments.*.share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'admin_assignments.*.manual_amount_override' => ['nullable', 'numeric', 'min:0'],
+            'admin_assignments.*.manual_percent_override' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'assignments' => ['array'],
             'assignments.*.employee_id' => ['required', 'integer', 'exists:employees,id'],
             'assignments.*.share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -461,17 +479,36 @@ class WorkOrderController extends Controller
             'assignments.*.manual_percent_override' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
+        $adminAssignments = $validated['admin_assignments'] ?? [];
+        if ($validated['admin_override'] === 'custom' && empty($adminAssignments)) {
+            return redirect()->back()->withErrors(['admin_assignments' => 'Выберите хотя бы одного администратора или смените режим.']);
+        }
+
+        $totalAdminShare = collect($adminAssignments)->sum(fn ($a) => $a['share_percent'] ?? 0);
+        if ($totalAdminShare > 100.001) {
+            return redirect()->back()->withErrors(['admin_assignments' => 'Суммарная доля администраторов позиции превышает 100%.']);
+        }
+
         $assignments = $validated['assignments'] ?? [];
         $totalShare = collect($assignments)->sum(fn ($a) => $a['share_percent'] ?? 0);
         if ($totalShare > 100.001) {
             return redirect()->back()->withErrors(['assignments' => 'Суммарный объём работ бригады превышает 100%.']);
         }
 
-        DB::transaction(function () use ($item, $validated, $assignments) {
-            $item->update([
-                'admin_override' => $validated['admin_override'],
-                'admin_employee_id' => $validated['admin_override'] === 'custom' ? $validated['admin_employee_id'] : null,
-            ]);
+        DB::transaction(function () use ($item, $validated, $assignments, $adminAssignments) {
+            $item->update(['admin_override' => $validated['admin_override']]);
+
+            if ($validated['admin_override'] === 'custom') {
+                $adminSyncData = [];
+                foreach ($adminAssignments as $assignment) {
+                    $adminSyncData[$assignment['employee_id']] = [
+                        'share_percent' => $assignment['share_percent'] ?? null,
+                        'manual_amount_override' => isset($assignment['manual_amount_override']) ? (int) round($assignment['manual_amount_override'] * 100) : null,
+                        'manual_percent_override' => $assignment['manual_percent_override'] ?? null,
+                    ];
+                }
+                $item->admins()->sync($adminSyncData);
+            }
 
             foreach ($assignments as $assignment) {
                 $item->employees()->updateExistingPivot($assignment['employee_id'], [
@@ -506,7 +543,7 @@ class WorkOrderController extends Controller
 
         $employeeInfo = fn (int $id) => [
             'employee_id' => $id,
-            'name' => $employees->has($id) ? trim($employees[$id]->first_name . ' ' . $employees[$id]->last_name) : '—',
+            'name' => $employees->has($id) ? trim($employees[$id]->first_name.' '.$employees[$id]->last_name) : '—',
             'type' => $employees[$id]->type ?? null,
         ];
 
@@ -598,7 +635,7 @@ class WorkOrderController extends Controller
             return redirect()->back()->withErrors(['itemable_type' => 'Свою позицию без карточки можно добавить только как услугу.']);
         }
 
-        if (!$isCustom && empty($validated['itemable_id'])) {
+        if (! $isCustom && empty($validated['itemable_id'])) {
             return redirect()->back()->withErrors(['itemable_id' => 'Выберите позицию из каталога.']);
         }
 
@@ -609,7 +646,7 @@ class WorkOrderController extends Controller
         DB::transaction(function () use ($validated, $workOrder, $isCustom, $priceCents, $discountCents, $totalCents) {
             $itemableId = $validated['itemable_id'] ?? null;
 
-            if ($isCustom && !empty($validated['save_to_catalog'])) {
+            if ($isCustom && ! empty($validated['save_to_catalog'])) {
                 $service = Service::create([
                     'service_category_id' => $validated['service_category_id'] ?? null,
                     'business_direction_id' => $validated['business_direction_id'] ?? null,
@@ -634,7 +671,7 @@ class WorkOrderController extends Controller
                 'sort_order' => $nextSortOrder,
             ]);
 
-            if (!empty($validated['employee_ids'])) {
+            if (! empty($validated['employee_ids'])) {
                 $item->employees()->sync($validated['employee_ids']);
             }
 
@@ -676,7 +713,7 @@ class WorkOrderController extends Controller
             $data['total'] = max(0, (int) round($qty * $price) - $discount);
         }
 
-        if (!empty($data)) {
+        if (! empty($data)) {
             $item->update($data);
         }
 
@@ -745,7 +782,7 @@ class WorkOrderController extends Controller
             'auto' => ['nullable', 'boolean'],
         ]);
 
-        $auto = !empty($validated['auto']);
+        $auto = ! empty($validated['auto']);
 
         if ($auto) {
             // Возврат к автоматической скидке по грейду клиента — сама сумма
@@ -760,7 +797,7 @@ class WorkOrderController extends Controller
         $this->recalculateTotals($workOrder);
         $message = $auto
             ? "Скидка по заказу №{$workOrder->id} возвращена на автоматическую (по грейду клиента)"
-            : "Скидка по заказу №{$workOrder->id} изменена на " . $this->formatMoney($workOrder->discount_amount);
+            : "Скидка по заказу №{$workOrder->id} изменена на ".$this->formatMoney($workOrder->discount_amount);
         ActivityLogger::log($workOrder, $message, $this->workOrderLink($workOrder), 'discount_updated');
 
         return redirect()->back()->with('success', 'Скидка обновлена');
@@ -788,7 +825,7 @@ class WorkOrderController extends Controller
         $remainingCents = max(0, $workOrder->final_amount - $paidSoFar);
 
         if ($amountCents > $remainingCents) {
-            return redirect()->back()->withErrors(['amount' => 'Сумма оплаты (' . $this->formatMoney($amountCents) . ') превышает остаток долга по заказу (' . $this->formatMoney($remainingCents) . ').']);
+            return redirect()->back()->withErrors(['amount' => 'Сумма оплаты ('.$this->formatMoney($amountCents).') превышает остаток долга по заказу ('.$this->formatMoney($remainingCents).').']);
         }
 
         // Оплата бонусами дополнительно не может превышать бонусный баланс клиента
@@ -811,7 +848,7 @@ class WorkOrderController extends Controller
                     'branch_id' => $workOrder->branch_id,
                     'type' => 'income',
                     'amount' => $amountCents,
-                    'comment' => 'Оплата по заказ-наряду #' . $workOrder->id,
+                    'comment' => 'Оплата по заказ-наряду #'.$workOrder->id,
                     'payable_type' => WorkOrder::class,
                     'payable_id' => $workOrder->id,
                 ], auth()->id());
@@ -856,7 +893,7 @@ class WorkOrderController extends Controller
                             'branch_id' => $workOrder->branch_id,
                             'type' => 'expense',
                             'amount' => $commissionCents,
-                            'comment' => 'Комиссия эквайринга по заказ-наряду #' . $workOrder->id,
+                            'comment' => 'Комиссия эквайринга по заказ-наряду #'.$workOrder->id,
                             'payable_type' => WorkOrder::class,
                             'payable_id' => $workOrder->id,
                         ], auth()->id());
@@ -864,7 +901,7 @@ class WorkOrderController extends Controller
                 }
 
                 $workOrder->syncPaymentStatus();
-                $paymentMessage = 'Принята оплата ' . $this->formatMoney($amountCents) . " по заказу №{$workOrder->id} ({$account->name})";
+                $paymentMessage = 'Принята оплата '.$this->formatMoney($amountCents)." по заказу №{$workOrder->id} ({$account->name})";
                 if ($pointsEarned > 0) {
                     $paymentMessage .= ", начислено {$pointsEarned} бонусных баллов";
                 }
@@ -877,7 +914,7 @@ class WorkOrderController extends Controller
 
             return redirect()->back()->with('success', 'Оплата успешно принята');
         } catch (Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Ошибка при оплате: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Ошибка при оплате: '.$e->getMessage()]);
         }
     }
 
@@ -890,25 +927,27 @@ class WorkOrderController extends Controller
         try {
             DB::transaction(function () use ($workOrder) {
                 $branch = $workOrder->branch;
-                
+
                 foreach ($workOrder->items as $item) {
                     if ($item->itemable_type === Product::class) {
                         $product = $item->itemable;
-                        if (!$product) continue;
+                        if (! $product) {
+                            continue;
+                        }
 
                         $warehouse = WarehouseResolver::resolveFor($product, $branch);
-                        
-                        if (!$warehouse) {
+
+                        if (! $warehouse) {
                             $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
                             throw new Exception("Не удалось определить склад для списания товара: {$productName}");
                         }
 
                         StockService::deduct(
-                            $product, 
-                            $warehouse, 
-                            $branch->id, 
-                            $item->quantity, 
-                            $workOrder->id, 
+                            $product,
+                            $warehouse,
+                            $branch->id,
+                            $item->quantity,
+                            $workOrder->id,
                             auth()->id()
                         );
                     }
@@ -938,12 +977,12 @@ class WorkOrderController extends Controller
                     ]);
                 }
 
-                if (!empty($payroll['rows'])) {
-                    ActivityLogger::log($workOrder, "По заказу №{$workOrder->id} начислена зарплата по " . count($payroll['rows']) . ' позициям', $this->workOrderLink($workOrder), 'payroll_accrued');
+                if (! empty($payroll['rows'])) {
+                    ActivityLogger::log($workOrder, "По заказу №{$workOrder->id} начислена зарплата по ".count($payroll['rows']).' позициям', $this->workOrderLink($workOrder), 'payroll_accrued');
                 }
 
-                if (!empty($payroll['skipped'])) {
-                    ActivityLogger::log($workOrder, "По заказу №{$workOrder->id} не начислена ЗП для части исполнителей — не настроена ставка:\n" . implode("\n", $payroll['skipped']), $this->workOrderLink($workOrder), 'payroll_skipped');
+                if (! empty($payroll['skipped'])) {
+                    ActivityLogger::log($workOrder, "По заказу №{$workOrder->id} не начислена ЗП для части исполнителей — не настроена ставка:\n".implode("\n", $payroll['skipped']), $this->workOrderLink($workOrder), 'payroll_skipped');
                 }
             });
 
@@ -997,7 +1036,7 @@ class WorkOrderController extends Controller
 
     private function formatMoney(int $cents): string
     {
-        return number_format($cents / 100, 2, ',', ' ') . ' ₽';
+        return number_format($cents / 100, 2, ',', ' ').' ₽';
     }
 
     /**
@@ -1048,10 +1087,10 @@ class WorkOrderController extends Controller
     {
         foreach ($customFieldsData as $key => $value) {
             $def = CustomFieldDefinition::where('entity_type', 'work_order')->where('key', $key)->first();
-            
+
             if ($def) {
                 $valData = ['value' => null, 'value_text' => null, 'value_number' => null, 'value_date' => null];
-                
+
                 if ($def->type === 'number') {
                     $valData['value_number'] = $value;
                 } elseif ($def->type === 'date') {

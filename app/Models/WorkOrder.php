@@ -5,14 +5,15 @@ namespace App\Models;
 use App\Models\Concerns\HasActivityLog;
 use App\Models\Scopes\BranchScope;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class WorkOrder extends Model
 {
-    use SoftDeletes, HasActivityLog;
+    use HasActivityLog, SoftDeletes;
 
     protected $fillable = [
         'branch_id',
@@ -28,7 +29,6 @@ class WorkOrder extends Model
         'final_amount',
         'currency_id',
         'created_by',
-        'default_admin_employee_id',
         'admin_assignment_mode',
     ];
 
@@ -46,7 +46,7 @@ class WorkOrder extends Model
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new BranchScope());
+        static::addGlobalScope(new BranchScope);
     }
 
     public function branch(): BelongsTo
@@ -80,9 +80,17 @@ class WorkOrder extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function defaultAdminEmployee(): BelongsTo
+    /**
+     * Администраторы заказа по умолчанию (для расчёта ЗП по каждой позиции,
+     * если не переопределены на уровне позиции) — многие-ко-многим
+     * (work_order_admins), у клиента может работать несколько администраторов
+     * одновременно и делить начисление между собой (share_percent на пивоте).
+     */
+    public function admins(): BelongsToMany
     {
-        return $this->belongsTo(Employee::class, 'default_admin_employee_id');
+        return $this->belongsToMany(Employee::class, 'work_order_admins')
+            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override'])
+            ->withTimestamps();
     }
 
     public function items(): HasMany

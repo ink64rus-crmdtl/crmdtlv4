@@ -117,9 +117,9 @@ const refreshPayrollPreviewIfLoaded = () => {
     }
 };
 
-const updateOrderAdmin = (employeeId) => {
+const updateOrderAdmins = (employeeIds) => {
     router.patch(route('operations.work-orders.admin.update', props.workOrder.id), {
-        employee_id: employeeId || null,
+        employee_ids: employeeIds,
     }, {
         preserveScroll: true,
         onSuccess: refreshPayrollPreviewIfLoaded,
@@ -900,7 +900,7 @@ const formatMoney = (amount) => {
                             <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Позиции заказа</h3>
                             <div class="flex gap-2">
                                 <button v-if="workOrder.status !== 'completed'" @click="isBatchDrawerOpen = true" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm">
-                                    <i class="ri-add-line"></i> Добавить позицию
+                                    <i class="ri-add-line"></i> Добавить / Редактировать
                                 </button>
                                 <button v-if="workOrder.status !== 'completed'" @click="openItemModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5">
                                     <i class="ri-search-line"></i> Быстрый поиск
@@ -923,17 +923,17 @@ const formatMoney = (amount) => {
                                         <th class="py-3 px-2 border-b border-gray-200 dark:border-gray-700 w-8"></th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Наименование</th>
                                         <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Исполнитель</th>
-                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Кол-во</th>
-                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Цена</th>
-                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Скидка</th>
-                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Сумма</th>
-                                        <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right w-16"></th>
+                                        <th class="py-3 px-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Кол-во</th>
+                                        <th class="py-3 px-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Цена</th>
+                                        <th class="py-3 px-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Скидка</th>
+                                        <th class="py-3 px-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Сумма</th>
+                                        <th class="py-3 px-3 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right w-16"></th>
                                     </tr>
                                 </thead>
                                 <tbody v-if="!workOrder.items || workOrder.items.length === 0" class="divide-y divide-gray-200 dark:divide-gray-700">
                                     <tr>
                                         <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                            В заказ-наряд еще не добавлены услуги или товары. Нажмите "Добавить позицию" или "Быстрый поиск".
+                                            В заказ-наряд еще не добавлены услуги или товары. Нажмите "Добавить / Редактировать" или "Быстрый поиск".
                                         </td>
                                     </tr>
                                 </tbody>
@@ -952,18 +952,18 @@ const formatMoney = (amount) => {
                                             <td class="py-3 px-2 text-center">
                                                 <i v-if="workOrder.status !== 'completed'" class="ri-draggable item-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
                                             </td>
-                                            <td class="py-3 px-6 text-sm font-medium text-gray-800 dark:text-gray-200">
+                                            <td class="py-3 px-3 text-sm font-medium text-gray-800 dark:text-gray-200">
                                                 <div>{{ item.name }}</div>
                                                 <div class="mt-1">
                                                     <span v-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 uppercase tracking-wider"><i class="ri-tools-line"></i> Услуга</span>
                                                     <span v-else class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 uppercase tracking-wider"><i class="ri-box-3-line"></i> Товар</span>
                                                 </div>
                                             </td>
-                                            <td class="py-3 px-6 text-sm">
+                                            <td class="py-3 px-3 text-sm">
                                                 <!-- Выбор Исполнителей на позицию, можно нескольких (Только для услуг) -->
                                                 <EmployeeMultiSelect
                                                     v-if="item.itemable_type.includes('Service')"
-                                                    class="max-w-[240px]"
+                                                    class="max-w-[160px]"
                                                     :model-value="(item.employees || []).map(e => e.id)"
                                                     :options="employees"
                                                     :disabled="workOrder.status === 'completed'"
@@ -971,14 +971,14 @@ const formatMoney = (amount) => {
                                                 />
                                                 <span v-else class="text-xs text-gray-400 font-medium">Складское списание</span>
                                             </td>
-                                            <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }}</td>
-                                            <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.price) }}</td>
-                                            <td class="py-3 px-6 text-sm text-right">
+                                            <td class="py-3 px-3 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }}</td>
+                                            <td class="py-3 px-3 text-sm text-gray-800 dark:text-gray-200 text-right whitespace-nowrap">{{ formatMoney(item.price) }}</td>
+                                            <td class="py-3 px-3 text-sm text-right whitespace-nowrap">
                                                 <span v-if="item.discount_amount > 0" class="text-danger font-medium">- {{ formatMoney(item.discount_amount) }} <span class="text-gray-400 font-normal">({{ itemDiscountPercent(item) }}%)</span></span>
                                                 <span v-else class="text-gray-400">—</span>
                                             </td>
-                                            <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.total) }}</td>
-                                            <td class="py-3 px-6 text-sm text-right whitespace-nowrap">
+                                            <td class="py-3 px-3 text-sm font-bold text-gray-800 dark:text-gray-200 text-right whitespace-nowrap">{{ formatMoney(item.total) }}</td>
+                                            <td class="py-3 px-3 text-sm text-right whitespace-nowrap">
                                                 <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-team-line text-lg"></i></button>
                                                 <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                             </td>
@@ -1028,7 +1028,7 @@ const formatMoney = (amount) => {
                             </button>
                             <p v-else class="text-sm text-gray-400">Нет активных шаблонов документов для заказов — настройте их в Настройках → Шаблоны документов.</p>
                         </div>
-                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                        <div class="flex-1 overflow-auto custom-scrollbar">
                             <table v-if="workOrder.documents && workOrder.documents.length > 0" class="min-w-full text-left">
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                                     <tr v-for="doc in workOrder.documents" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
@@ -1039,7 +1039,7 @@ const formatMoney = (amount) => {
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
                                         <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
-                                        <td class="py-3 px-6 text-sm text-right space-x-1">
+                                        <td class="py-3 px-6 text-sm text-right space-x-1 whitespace-nowrap">
                                             <template v-if="doc.is_stale && !doc.superseded_by_document_id">
                                                 <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)"><i class="ri-file-add-line"></i></button>
                                                 <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)"><i class="ri-refresh-line"></i></button>
@@ -1147,17 +1147,18 @@ const formatMoney = (amount) => {
                 <!-- Администратор заказа (Фаза 10.1): по умолчанию — для расчёта ЗП по каждой позиции; переопределяется на уровне отдельной услуги через модалку выплат -->
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
-                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Администратор заказа</h3>
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Администраторы заказа</h3>
                         <span :class="[workOrder.admin_assignment_mode === 'auto' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' : 'bg-primary/10 text-primary', 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase']">
                             {{ workOrder.admin_assignment_mode === 'auto' ? 'Авто' : 'Вручную' }}
                         </span>
                     </div>
                     <div class="p-6 space-y-3">
-                        <select :value="workOrder.default_admin_employee_id || ''" @change="updateOrderAdmin($event.target.value)" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                            <option value="">Не назначен</option>
-                            <option v-for="e in adminEligibleEmployees" :key="e.id" :value="e.id">{{ e.last_name }} {{ e.first_name }}</option>
-                        </select>
-                        <p class="text-xs text-gray-400">ЗП администратора считается по каждой услуге заказа. Для отдельной услуги можно назначить другого администратора или убрать его — клик на позицию в таблице услуг.</p>
+                        <EmployeeMultiSelect
+                            :model-value="(workOrder.admins || []).map(e => e.id)"
+                            :options="adminEligibleEmployees"
+                            @update:model-value="updateOrderAdmins"
+                        />
+                        <p class="text-xs text-gray-400">Может быть несколько — по умолчанию делят ЗП поровну на каждой услуге заказа. ЗП считается по каждой услуге заказа. Для отдельной услуги можно назначить других администраторов, настроить доли или убрать их — клик на позицию в таблице услуг.</p>
                     </div>
                 </div>
 

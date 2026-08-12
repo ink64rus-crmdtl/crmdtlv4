@@ -1,6 +1,7 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
+import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
 
 const props = defineProps({
     show: Boolean,
@@ -13,21 +14,27 @@ const emit = defineEmits(['close']);
 
 const form = useForm({
     admin_override: 'inherit',
-    admin_employee_id: '',
+    admin_assignments: [],
     assignments: [],
 });
 
 const adminEligibleEmployees = computed(() => props.employees.filter(e => e.position?.payroll_role === 'admin'));
 
-const inheritedAdminName = computed(() => {
-    const admin = props.workOrder?.default_admin_employee;
-    return admin ? `${admin.last_name} ${admin.first_name}` : 'не назначен на заказе';
+const inheritedAdminNames = computed(() => {
+    const admins = props.workOrder?.admins || [];
+    return admins.length ? admins.map(a => `${a.last_name} ${a.first_name}`).join(', ') : 'не назначены на заказе';
 });
 
 watch(() => props.show, (isOpen) => {
     if (isOpen && props.item) {
         form.admin_override = props.item.admin_override || 'inherit';
-        form.admin_employee_id = props.item.admin_employee_id || '';
+        form.admin_assignments = (props.item.admins || []).map(e => ({
+            employee_id: e.id,
+            name: `${e.last_name} ${e.first_name}`,
+            share_percent: e.pivot?.share_percent !== null && e.pivot?.share_percent !== undefined ? Number(e.pivot.share_percent) : null,
+            manual_amount_override: e.pivot?.manual_amount_override !== null && e.pivot?.manual_amount_override !== undefined ? e.pivot.manual_amount_override / 100 : null,
+            manual_percent_override: e.pivot?.manual_percent_override !== null && e.pivot?.manual_percent_override !== undefined ? Number(e.pivot.manual_percent_override) : null,
+        }));
         form.assignments = (props.item.employees || []).map(e => ({
             employee_id: e.id,
             name: `${e.last_name} ${e.first_name}`,
@@ -57,8 +64,47 @@ const totalShare = computed(() => {
 
 const shareIsValid = computed(() => totalShare.value <= 100.001);
 
+// Та же схема долевого распределения, что и у бригады исполнителей (equalShare/
+// totalShare/shareIsValid выше), но для администраторов позиции — своя копия
+// вместо параметризации: у админов нет типа "outsource" и своего списка на
+// главной таблице позиций (список правится прямо здесь через EmployeeMultiSelect,
+// см. updateAdminAssignments), так что фильтрация была бы лишней веткой.
+const adminEqualShare = computed(() => {
+    const count = form.admin_assignments.length;
+    return count > 0 ? Math.round((100 / count) * 100) / 100 : 0;
+});
+
+const adminDisplayShare = (assignment) => assignment.share_percent === null || assignment.share_percent === undefined
+    ? adminEqualShare.value
+    : assignment.share_percent;
+
+const adminTotalShare = computed(() => {
+    return form.admin_assignments.reduce((sum, a) => sum + (Number(adminDisplayShare(a)) || 0), 0);
+});
+
+const adminShareIsValid = computed(() => adminTotalShare.value <= 100.001);
+
+const adminAssignmentIds = computed(() => form.admin_assignments.map(a => a.employee_id));
+
+const updateAdminAssignments = (ids) => {
+    ids.forEach(id => {
+        if (!form.admin_assignments.some(a => a.employee_id === id)) {
+            const emp = props.employees.find(e => e.id === id);
+            form.admin_assignments.push({
+                employee_id: id,
+                name: emp ? `${emp.last_name} ${emp.first_name}` : '',
+                share_percent: null,
+                manual_amount_override: null,
+                manual_percent_override: null,
+            });
+        }
+    });
+    form.admin_assignments = form.admin_assignments.filter(a => ids.includes(a.employee_id));
+};
+
 // "Сумма к оплате" и "% от услуги" взаимоисключающие — как в исходной системе:
-// ввод одного поля сбрасывает другое.
+// ввод одного поля сбрасывает другое. Общая для бригады исполнителей и
+// администраторов позиции — оперирует только переданным объектом.
 const onAmountInput = (assignment) => {
     if (assignment.manual_amount_override !== null && assignment.manual_amount_override !== '') {
         assignment.manual_percent_override = null;
@@ -80,7 +126,7 @@ const resetAssignment = (assignment) => {
 const close = () => emit('close');
 
 const submit = () => {
-    if (!shareIsValid.value) return;
+    if (!shareIsValid.value || !adminShareIsValid.value) return;
 
     form.put(route('operations.work-orders.items.payout', [props.workOrder.id, props.item.id]), {
         preserveScroll: true,
@@ -111,28 +157,88 @@ const submit = () => {
                         </div>
                     </div>
 
-                    <!-- Администратор позиции -->
+                    <!-- Администраторы позиции -->
                     <div>
-                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Администратор этой услуги</label>
+                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Администраторы этой услуги</label>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <label :class="[form.admin_override === 'inherit' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex flex-col cursor-pointer rounded-md border p-2.5 text-xs']">
                                 <input type="radio" v-model="form.admin_override" value="inherit" class="sr-only" />
                                 <span class="font-medium">Как на заказе</span>
-                                <span class="text-gray-400 mt-0.5">{{ inheritedAdminName }}</span>
+                                <span class="text-gray-400 mt-0.5">{{ inheritedAdminNames }}</span>
                             </label>
                             <label :class="[form.admin_override === 'custom' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex flex-col cursor-pointer rounded-md border p-2.5 text-xs']">
                                 <input type="radio" v-model="form.admin_override" value="custom" class="sr-only" />
-                                <span class="font-medium">Другой администратор</span>
+                                <span class="font-medium">Другие администраторы</span>
                             </label>
                             <label :class="[form.admin_override === 'none' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex flex-col cursor-pointer rounded-md border p-2.5 text-xs']">
                                 <input type="radio" v-model="form.admin_override" value="none" class="sr-only" />
                                 <span class="font-medium">Без администратора</span>
                             </label>
                         </div>
-                        <select v-if="form.admin_override === 'custom'" v-model="form.admin_employee_id" class="mt-2 block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                            <option value="" disabled>Выберите администратора</option>
-                            <option v-for="e in adminEligibleEmployees" :key="e.id" :value="e.id">{{ e.last_name }} {{ e.first_name }}</option>
-                        </select>
+
+                        <div v-if="form.admin_override === 'custom'" class="mt-3 space-y-3">
+                            <EmployeeMultiSelect
+                                :model-value="adminAssignmentIds"
+                                :options="adminEligibleEmployees"
+                                placeholder="Выберите администраторов"
+                                @update:model-value="updateAdminAssignments"
+                            />
+
+                            <div v-if="form.admin_assignments.length > 0" class="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+                                <table class="min-w-full text-left">
+                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                                        <tr>
+                                            <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Администратор</th>
+                                            <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase w-24">Доля, %</th>
+                                            <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase w-28">Сумма, ₽</th>
+                                            <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase w-24">% от услуги</th>
+                                            <th class="py-2 px-3 w-8"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                        <tr v-for="assignment in form.admin_assignments" :key="assignment.employee_id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40">
+                                            <td class="py-2 px-3 text-sm text-gray-800 dark:text-gray-200">{{ assignment.name }}</td>
+                                            <td class="py-2 px-3">
+                                                <input
+                                                    v-model.number="assignment.share_percent"
+                                                    type="number" min="0" max="100" step="0.01"
+                                                    :placeholder="String(adminEqualShare)"
+                                                    class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                                />
+                                            </td>
+                                            <td class="py-2 px-3">
+                                                <input
+                                                    v-model.number="assignment.manual_amount_override"
+                                                    @input="onAmountInput(assignment)"
+                                                    type="number" min="0" step="0.01"
+                                                    placeholder="По ставке"
+                                                    class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                                />
+                                            </td>
+                                            <td class="py-2 px-3">
+                                                <input
+                                                    v-model.number="assignment.manual_percent_override"
+                                                    @input="onPercentInput(assignment)"
+                                                    type="number" min="0" max="100" step="0.01"
+                                                    placeholder="По ставке"
+                                                    class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                                />
+                                            </td>
+                                            <td class="py-2 px-3 text-right">
+                                                <button type="button" @click="resetAssignment(assignment)" title="Сбросить" class="text-gray-400 hover:text-danger transition-colors"><i class="ri-refresh-line"></i></button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p v-if="!adminShareIsValid" class="text-xs text-danger flex items-center gap-1">
+                                <i class="ri-error-warning-line"></i> Суммарная доля администраторов ({{ adminTotalShare.toFixed(2) }}%) превышает 100%.
+                            </p>
+                            <p v-else-if="form.admin_assignments.length > 0" class="text-xs text-success flex items-center gap-1">
+                                <i class="ri-check-line"></i> Распределение доли корректно ({{ adminTotalShare.toFixed(2) }}%). Пустые поля считаются поровну.
+                            </p>
+                            <p v-else class="text-xs text-gray-400">Выберите хотя бы одного администратора выше.</p>
+                        </div>
                     </div>
 
                     <!-- Бригада исполнителей -->
@@ -206,7 +312,7 @@ const submit = () => {
 
                 <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                     <button type="button" @click="close" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                    <button type="submit" :disabled="form.processing || !shareIsValid" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    <button type="submit" :disabled="form.processing || !shareIsValid || !adminShareIsValid" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
                 </div>
             </form>
         </div>

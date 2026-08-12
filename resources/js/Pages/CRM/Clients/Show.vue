@@ -461,7 +461,7 @@ const currentCountrySchema = computed(() => {
                             </button>
                             <p v-else class="text-sm text-gray-400">Нет активных шаблонов документов для клиентов — настройте их в Настройках → Шаблоны документов.</p>
                         </div>
-                        <div class="flex-1 overflow-y-auto custom-scrollbar">
+                        <div class="flex-1 overflow-auto custom-scrollbar">
                             <table v-if="client.documents && client.documents.length > 0" class="min-w-full text-left">
                                 <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                                     <tr v-for="doc in client.documents" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
@@ -472,7 +472,7 @@ const currentCountrySchema = computed(() => {
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
                                         <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
-                                        <td class="py-3 px-6 text-sm text-right space-x-1">
+                                        <td class="py-3 px-6 text-sm text-right space-x-1 whitespace-nowrap">
                                             <template v-if="doc.is_stale && !doc.superseded_by_document_id">
                                                 <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)"><i class="ri-file-add-line"></i></button>
                                                 <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)"><i class="ri-refresh-line"></i></button>

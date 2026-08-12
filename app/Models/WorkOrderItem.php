@@ -23,7 +23,6 @@ class WorkOrderItem extends Model
         'currency_id',
         'sort_order',
         'admin_override',
-        'admin_employee_id',
         'linked_item_id',
     ];
 
@@ -62,9 +61,17 @@ class WorkOrderItem extends Model
             ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override']);
     }
 
-    public function adminEmployee(): BelongsTo
+    /**
+     * Администраторы этой конкретной позиции — используется только при
+     * admin_override=custom (иначе резолвится через WorkOrder::admins(),
+     * см. PayrollCalculationService::resolveAdmins()). Многие-ко-многим
+     * (work_order_item_admins), та же тройка share/override, что у employees().
+     */
+    public function admins(): BelongsToMany
     {
-        return $this->belongsTo(Employee::class, 'admin_employee_id');
+        return $this->belongsToMany(Employee::class, 'work_order_item_admins')
+            ->withTimestamps()
+            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override']);
     }
 
     /**

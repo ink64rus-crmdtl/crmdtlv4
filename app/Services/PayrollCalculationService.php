@@ -9,6 +9,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Расчёт начислений ЗП по завершённому заказ-наряду (Фаза 10.2). Вызывается
@@ -28,11 +29,16 @@ use App\Models\WorkOrderItem;
  *   6. Ставка должности по умолчанию
  * На каждом уровне ставка точки (branch_id) приоритетнее общей (branch_id=null).
  *
- * Администратор позиции резолвится независимо от бригады исполнителей — один
+ * Администраторы позиции резолвятся независимо от бригады исполнителей — один
  * и тот же сотрудник может одновременно быть админом позиции (начисление по
  * его основной должности) и физически состоять в бригаде исполнителей
  * (начисление по совмещаемой должности, если она задана, иначе по основной) —
  * это два отдельных начисления с разной ролью (admin/worker).
+ *
+ * Администраторов на позиции может быть несколько (work_order_admins /
+ * work_order_item_admins, многие-ко-многим) — делят начисление между собой
+ * по той же схеме share_percent/manual_amount_override/manual_percent_override,
+ * что и бригада исполнителей: пустая доля = поровну между всеми админами.
  */
 class PayrollCalculationService
 {
@@ -45,7 +51,8 @@ class PayrollCalculationService
         $rows = [];
         $skipped = [];
 
-        $items = $workOrder->items()->with(['employees', 'materials', 'itemable'])->get();
+        $workOrder->loadMissing('admins');
+        $items = $workOrder->items()->with(['employees', 'admins', 'materials', 'itemable'])->get();
 
         foreach ($items as $item) {
             if ($item->itemable_type !== Service::class) {
@@ -56,21 +63,42 @@ class PayrollCalculationService
                 ? max(0, $item->total)
                 : max(0, (int) round((float) $item->quantity * $item->price));
 
-            $adminEmployee = self::resolveAdmin($workOrder, $item);
+            $admins = self::resolveAdmins($workOrder, $item);
             $adminAccrual = 0;
 
-            if ($adminEmployee) {
-                $rate = self::resolveRate($adminEmployee, $adminEmployee->position, $item, $workOrder->branch_id);
+            $adminShareableCount = $admins->count();
+            $adminAnyShareSet = $admins->contains(fn (Employee $e) => $e->pivot->share_percent !== null);
 
-                if (!$rate) {
-                    $skipped[] = self::skipNote($adminEmployee, $item, 'не настроена ставка администратора');
-                } elseif ($rate['type'] === 'fixed') {
-                    $skipped[] = self::skipNote($adminEmployee, $item, 'администратору нельзя назначить фиксированную ставку — нужен процент');
+            foreach ($admins as $adminEmployee) {
+                $adminShare = $adminAnyShareSet
+                    ? (float) ($adminEmployee->pivot->share_percent ?? 0)
+                    : ($adminShareableCount > 0 ? 100 / $adminShareableCount : 0);
+
+                if ($adminEmployee->pivot->manual_amount_override !== null) {
+                    $amount = (int) $adminEmployee->pivot->manual_amount_override;
+                } elseif ($adminEmployee->pivot->manual_percent_override !== null) {
+                    $amount = (int) round($base * $adminShare / 100 * (float) $adminEmployee->pivot->manual_percent_override / 100);
                 } else {
-                    $adminAccrual = (int) round($base * (float) $rate['percentage_value'] / 100);
-                    $adminAccrual = self::applySelfEmployedCompensation($adminEmployee, $adminAccrual, $settings);
-                    $rows[] = self::row($adminEmployee, 'admin', $adminAccrual, $item);
+                    $rate = self::resolveRate($adminEmployee, $adminEmployee->position, $item, $workOrder->branch_id);
+
+                    if (! $rate) {
+                        $skipped[] = self::skipNote($adminEmployee, $item, 'не настроена ставка администратора');
+
+                        continue;
+                    }
+
+                    if ($rate['type'] === 'fixed') {
+                        $skipped[] = self::skipNote($adminEmployee, $item, 'администратору нельзя назначить фиксированную ставку — нужен процент');
+
+                        continue;
+                    }
+
+                    $amount = (int) round($base * $adminShare / 100 * (float) $rate['percentage_value'] / 100);
                 }
+
+                $amount = self::applySelfEmployedCompensation($adminEmployee, $amount, $settings);
+                $adminAccrual += $amount;
+                $rows[] = self::row($adminEmployee, 'admin', $amount, $item);
             }
 
             $materialsCost = $settings['worker_base_excludes_materials']
@@ -101,10 +129,12 @@ class PayrollCalculationService
 
                     if ($amount === null) {
                         $skipped[] = self::skipNote($employee, $item, 'не указана сумма выплаты подрядчику');
+
                         continue;
                     }
 
                     $rows[] = self::row($employee, 'worker', $amount, $item);
+
                     continue;
                 }
 
@@ -116,8 +146,9 @@ class PayrollCalculationService
                     $position = $employee->secondary_position_id ? $employee->secondaryPosition : $employee->position;
                     $rate = self::resolveRate($employee, $position, $item, $workOrder->branch_id);
 
-                    if (!$rate) {
+                    if (! $rate) {
                         $skipped[] = self::skipNote($employee, $item, 'не настроена ставка исполнителя');
+
                         continue;
                     }
 
@@ -136,17 +167,18 @@ class PayrollCalculationService
         return ['rows' => $rows, 'skipped' => $skipped];
     }
 
-    private static function resolveAdmin(WorkOrder $workOrder, WorkOrderItem $item): ?Employee
+    /**
+     * @return Collection<int, Employee>
+     */
+    private static function resolveAdmins(WorkOrder $workOrder, WorkOrderItem $item): Collection
     {
         if ($item->admin_override === 'none') {
-            return null;
+            return new Collection;
         }
 
-        $employeeId = $item->admin_override === 'custom'
-            ? $item->admin_employee_id
-            : $workOrder->default_admin_employee_id;
-
-        return $employeeId ? Employee::find($employeeId) : null;
+        return $item->admin_override === 'custom'
+            ? $item->admins
+            : $workOrder->admins;
     }
 
     /**
@@ -243,7 +275,7 @@ class PayrollCalculationService
 
     private static function skipNote(Employee $employee, WorkOrderItem $item, string $reason): string
     {
-        $name = trim($employee->first_name . ' ' . $employee->last_name);
+        $name = trim($employee->first_name.' '.$employee->last_name);
 
         return "{$name} — «{$item->name}»: {$reason}";
     }
