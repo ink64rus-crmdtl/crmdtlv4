@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
-use App\Models\Employee;
 use App\Models\PayrollRule;
 use App\Models\Position;
 use App\Models\Service;
@@ -66,15 +65,94 @@ class PayrollSettingsController extends Controller
      * Зарплата, position_id) и для персональных ставок сотрудника (карточка
      * сотрудника, вкладка Зарплата, employee_id) — правило одно и то же,
      * различается только тем, к чему оно привязано.
+     *
+     * Массовое создание (Фаза 10.1+): PayrollRule по-прежнему хранит ровно
+     * одну категорию/услугу/локацию на строку (это не меняем — резолвинг
+     * ставки в PayrollCalculationService::resolveRate() завязан на точное
+     * совпадение одного значения, переводить его на пивоты — риск сломать
+     * уже отлаженный каскад приоритетов). Вместо этого форма может прислать
+     * МАССИВ *_ids — тогда здесь создаётся отдельная строка на каждую
+     * комбинацию (цель × локация), чтобы не заставлять пользователя вручную
+     * плодить однотипные записи для "5 категорий по одному и тому же %".
+     * Старый одиночный формат (service_id/service_category_id/branch_id) —
+     * это именно то, что шлёт форма персональных ставок сотрудника — тоже
+     * поддерживается: нормализуется в массив из одного элемента.
      */
     public function storeRule(Request $request)
     {
-        $validated = $this->validateRule($request);
-        $this->assertNoDuplicate($validated);
+        $validated = $request->validate([
+            'position_id' => ['nullable', 'required_without:employee_id', 'exists:positions,id'],
+            'employee_id' => ['nullable', 'required_without:position_id', 'exists:employees,id'],
+            'target' => ['required', 'string', 'in:service,category,default'],
+            'service_id' => ['nullable', 'exists:services,id'],
+            'service_ids' => ['array'],
+            'service_ids.*' => ['integer', 'exists:services,id'],
+            'service_category_id' => ['nullable', 'exists:service_categories,id'],
+            'service_category_ids' => ['array'],
+            'service_category_ids.*' => ['integer', 'exists:service_categories,id'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'branch_ids' => ['array'],
+            'branch_ids.*' => ['integer', 'exists:branches,id'],
+            'type' => ['required', 'string', 'in:fixed,percentage'],
+            'fixed_amount' => ['nullable', 'required_if:type,fixed', 'numeric', 'min:0'],
+            'percentage_value' => ['nullable', 'required_if:type,percentage', 'numeric', 'min:0', 'max:100'],
+        ]);
 
-        PayrollRule::create($validated);
+        $targetIds = match ($validated['target']) {
+            'category' => ! empty($validated['service_category_ids']) ? $validated['service_category_ids'] : array_filter([$validated['service_category_id'] ?? null]),
+            'service' => ! empty($validated['service_ids']) ? $validated['service_ids'] : array_filter([$validated['service_id'] ?? null]),
+            'default' => [null],
+        };
+        $branchIds = ! empty($validated['branch_ids']) ? $validated['branch_ids'] : array_filter([$validated['branch_id'] ?? null]);
+        if (empty($branchIds)) {
+            $branchIds = [null];
+        }
 
-        return redirect()->back()->with('success', 'Ставка добавлена');
+        if ($validated['target'] !== 'default' && empty($targetIds)) {
+            throw ValidationException::withMessages([
+                'target' => $validated['target'] === 'category' ? 'Выберите хотя бы одну группу услуг.' : 'Выберите хотя бы одну услугу.',
+            ]);
+        }
+
+        $this->assertPercentageOnlyForAdmin($validated['position_id'] ?? null, $validated['type']);
+
+        $created = 0;
+        $skipped = 0;
+
+        foreach ($targetIds as $targetId) {
+            foreach ($branchIds as $branchId) {
+                $data = [
+                    'position_id' => $validated['position_id'] ?? null,
+                    'employee_id' => $validated['employee_id'] ?? null,
+                    'service_id' => $validated['target'] === 'service' ? $targetId : null,
+                    'service_category_id' => $validated['target'] === 'category' ? $targetId : null,
+                    'is_default_for_unlisted' => $validated['target'] === 'default',
+                    'branch_id' => $branchId,
+                    'type' => $validated['type'],
+                    'fixed_amount' => $validated['type'] === 'fixed' ? (int) round($validated['fixed_amount'] * 100) : 0,
+                    'percentage_value' => $validated['type'] === 'percentage' ? $validated['percentage_value'] : 0,
+                    'is_active' => true,
+                ];
+
+                // Дубль этой ОДНОЙ комбинации пропускаем, а не блокируем весь батч —
+                // иначе одна уже настроенная категория из пяти выбранных заставляла бы
+                // отменять всё добавление и убирать её вручную из мультивыбора.
+                if ($this->duplicateExists($data)) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                PayrollRule::create($data);
+                $created++;
+            }
+        }
+
+        $message = $created === 1 && $skipped === 0
+            ? 'Ставка добавлена'
+            : "Добавлено ставок: {$created}.".($skipped > 0 ? " Уже были настроены (пропущено): {$skipped}." : '');
+
+        return redirect()->back()->with('success', $message);
     }
 
     public function updateRule(Request $request, PayrollRule $rule)
@@ -108,14 +186,7 @@ class PayrollSettingsController extends Controller
             'percentage_value' => ['nullable', 'required_if:type,percentage', 'numeric', 'min:0', 'max:100'],
         ]);
 
-        if ($validated['position_id'] ?? null) {
-            $position = Position::findOrFail($validated['position_id']);
-            if ($position->payroll_role === 'admin' && $validated['type'] === 'fixed') {
-                throw ValidationException::withMessages([
-                    'type' => 'Для должности с ролью "Администратор" нельзя назначить фиксированную ставку — только процент.',
-                ]);
-            }
-        }
+        $this->assertPercentageOnlyForAdmin($validated['position_id'] ?? null, $validated['type']);
 
         return [
             'position_id' => $validated['position_id'] ?? null,
@@ -131,6 +202,20 @@ class PayrollSettingsController extends Controller
         ];
     }
 
+    private function assertPercentageOnlyForAdmin(?int $positionId, string $type): void
+    {
+        if (! $positionId) {
+            return;
+        }
+
+        $position = Position::findOrFail($positionId);
+        if ($position->payroll_role === 'admin' && $type === 'fixed') {
+            throw ValidationException::withMessages([
+                'type' => 'Для должности с ролью "Администратор" нельзя назначить фиксированную ставку — только процент.',
+            ]);
+        }
+    }
+
     /**
      * Каскад в PayrollCalculationService::resolveRate() берёт ПЕРВОЕ найденное
      * правило для точной комбинации (должность/сотрудник + услуга/категория/
@@ -138,7 +223,7 @@ class PayrollSettingsController extends Controller
      * какое из них применится, непредсказуемо. Поэтому одна и та же комбинация
      * не может быть занята дважды среди активных правил.
      */
-    private function assertNoDuplicate(array $data, ?int $excludeRuleId = null): void
+    private function duplicateExists(array $data, ?int $excludeRuleId = null): bool
     {
         $query = PayrollRule::where('is_active', true);
 
@@ -151,7 +236,12 @@ class PayrollSettingsController extends Controller
             $query->where('id', '!=', $excludeRuleId);
         }
 
-        if ($query->exists()) {
+        return $query->exists();
+    }
+
+    private function assertNoDuplicate(array $data, ?int $excludeRuleId = null): void
+    {
+        if ($this->duplicateExists($data, $excludeRuleId)) {
             throw ValidationException::withMessages([
                 'target' => 'Такая ставка уже настроена для этой должности/сотрудника на эту услугу (группу/по умолчанию) и локацию. Отредактируйте существующую запись вместо создания дубликата.',
             ]);

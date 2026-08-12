@@ -4,8 +4,9 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import HRNav from '@/Components/HRNav.vue';
+import Offcanvas from '@/Components/Offcanvas.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
 
@@ -26,13 +27,27 @@ const form = useForm({
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
 
+const filtersForm = reactive({
+    payroll_role: props.filters?.filters?.payroll_role || '',
+    is_active: props.filters?.filters?.is_active ?? '',
+});
+
+const isFiltersOpen = ref(false);
+
 const fetchFiltered = useDebounceFn(() => {
     router.get(route('hr.positions.index'), {
         search: search.value,
+        filters: filtersForm,
     }, { preserveState: true, preserveScroll: true });
 }, 300);
 
 watch(search, () => fetchFiltered());
+watch(filtersForm, () => fetchFiltered(), { deep: true });
+
+const resetFilters = () => {
+    filtersForm.payroll_role = '';
+    filtersForm.is_active = '';
+};
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
@@ -162,7 +177,8 @@ const deletePosition = (position) => {
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <DataTableToolbar
                     v-model="search"
-                    :has-filters="false"
+                    :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
+                    @open-filters="isFiltersOpen = true"
                     placeholder="Поиск по названию..."
                 >
                     <template #actions>
@@ -247,6 +263,44 @@ const deletePosition = (position) => {
                 <Pagination :meta="positions" />
             </div>
         </div>
+
+        <!-- Offcanvas Фильтры -->
+        <Offcanvas :show="isFiltersOpen" @close="isFiltersOpen = false" maxWidth="sm">
+            <div class="flex flex-col h-full">
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Фильтры</h3>
+                    <button @click="isFiltersOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль в расчёте ЗП</label>
+                        <select v-model="filtersForm.payroll_role" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все роли</option>
+                            <option value="admin">Администратор</option>
+                            <option value="worker">Исполнитель</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статус</label>
+                        <select v-model="filtersForm.is_active" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Все</option>
+                            <option value="1">Активные</option>
+                            <option value="0">Неактивные</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">
+                    <button @click="resetFilters" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        Сбросить
+                    </button>
+                    <button @click="isFiltersOpen = false" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">
+                        Применить
+                    </button>
+                </div>
+            </div>
+        </Offcanvas>
 
         <!-- Модальное окно (Attex Standard: 50% width) -->
         <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">

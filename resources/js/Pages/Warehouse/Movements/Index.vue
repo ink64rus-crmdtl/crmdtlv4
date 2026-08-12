@@ -82,6 +82,25 @@ const filtersForm = reactive({
 
 const isFiltersOpen = ref(false);
 
+// StockMovement защищён глобальным BranchScope (см. app/Models/Scopes/BranchScope.php) —
+// пока в шапке выбрана КОНКРЕТНАЯ точка, он и так молча добавляет
+// WHERE branch_id = <текущая точка> к любому запросу. Если при этом фильтр
+// "Локация" здесь выбрать на ДРУГУЮ точку — получится WHERE branch_id = А
+// AND branch_id = Б, то есть 0 строк всегда, а фильтр выглядит "сломанным".
+// Поэтому сам выбор локации в фильтре имеет смысл только при "Все локации"
+// в шапке — иначе прячем его и объясняем причину, а не оставляем как
+// неработающую ловушку.
+const hasSpecificBranchContext = computed(() => !!page.props.current_branch_id);
+
+// Если локация в шапке переключилась на конкретную ПОСЛЕ того, как уже был
+// выбран фильтр по другой локации — сбрасываем его. Иначе получится тот же
+// 0-строк-навсегда эффект, просто без видимого select'а, который бы это объяснил.
+watch(hasSpecificBranchContext, (isSpecific) => {
+    if (isSpecific) {
+        filtersForm.branch_id = '';
+    }
+});
+
 const fetchFiltered = useDebounceFn(() => {
     router.get(route('warehouse.movements.index'), {
         search: search.value,
@@ -379,10 +398,11 @@ const movementTypes = {
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
-                        <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                        <select v-if="!hasSpecificBranchContext" v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
                             <option value="">Все локации</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                         </select>
+                        <p v-else class="text-xs text-gray-400">В шапке выбрана конкретная локация — движения и так показаны только по ней. Переключите шапку на «Все локации», чтобы фильтровать по другой.</p>
                     </div>
                 </div>
                 <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">

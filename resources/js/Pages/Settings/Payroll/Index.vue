@@ -4,6 +4,7 @@ import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import SearchableMultiSelect from '@/Components/SearchableMultiSelect.vue';
 
 const props = defineProps({
     generalSettings: Object,
@@ -43,9 +44,18 @@ const editingRule = ref(null);
 const ruleForm = useForm({
     position_id: '',
     target: 'category',
+    // Одиночные поля — используются при РЕДАКТИРОВАНИИ существующей ставки
+    // (та всегда ровно одна строка) и как фильтр по группе при выборе услуг.
     service_id: '',
     service_category_id: '',
     branch_id: '',
+    // Множественные — используются при СОЗДАНИИ: одна ставка на каждую
+    // выбранную комбинацию (категория/услуга × локация), чтобы не заводить
+    // вручную кучу однотипных записей с одним и тем же %. См. комментарий
+    // к PayrollSettingsController::storeRule().
+    service_ids: [],
+    service_category_ids: [],
+    branch_ids: [],
     type: 'percentage',
     fixed_amount: 0,
     percentage_value: 0,
@@ -67,6 +77,9 @@ const openRuleModal = (rule = null) => {
         ruleForm.service_id = rule.service_id ?? '';
         ruleForm.service_category_id = rule.service_category_id ?? '';
         ruleForm.branch_id = rule.branch_id ?? '';
+        ruleForm.service_ids = [];
+        ruleForm.service_category_ids = [];
+        ruleForm.branch_ids = [];
         ruleForm.type = rule.type;
         ruleForm.fixed_amount = (rule.fixed_amount || 0) / 100;
         ruleForm.percentage_value = rule.percentage_value || 0;
@@ -100,6 +113,41 @@ const deleteRule = (rule) => {
         useForm({}).delete(route('settings.payroll.rules.destroy', rule.id), { preserveScroll: true });
     }
 };
+
+// --- ФИЛЬТРЫ ТАБЛИЦЫ СТАВОК (клиентские — список и так весь загружен, без
+// пагинации, отдельного запроса на сервер не требуется) ---
+const filterPositionIds = ref([]);
+const filterBranchIds = ref([]);
+const filterCategoryIds = ref([]);
+
+const hasActiveFilters = computed(() => filterPositionIds.value.length > 0 || filterBranchIds.value.length > 0 || filterCategoryIds.value.length > 0);
+
+const resetTableFilters = () => {
+    filterPositionIds.value = [];
+    filterBranchIds.value = [];
+    filterCategoryIds.value = [];
+};
+
+const filteredPositionRules = computed(() => {
+    return props.positionRules.filter(rule => {
+        if (filterPositionIds.value.length && !filterPositionIds.value.includes(rule.position_id)) {
+            return false;
+        }
+        // branch_id=null у правила значит "действует на все локации" — такое
+        // правило реально применяется и на выбранной в фильтре локации тоже,
+        // поэтому не скрываем его, а не наоборот "показываем только точное совпадение".
+        if (filterBranchIds.value.length && rule.branch_id !== null && !filterBranchIds.value.includes(rule.branch_id)) {
+            return false;
+        }
+        if (filterCategoryIds.value.length) {
+            const categoryId = rule.service_category_id ?? rule.service?.service_category_id ?? null;
+            if (!categoryId || !filterCategoryIds.value.includes(categoryId)) {
+                return false;
+            }
+        }
+        return true;
+    });
+});
 
 const ruleTargetLabel = (rule) => {
     if (rule.is_default_for_unlisted) return 'По умолчанию (вне справочника)';
@@ -148,55 +196,59 @@ const ruleValueLabel = (rule) => {
                 <form @submit.prevent="submitGeneral" class="space-y-4">
                     <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Общие правила расчёта базы</h2>
 
-                    <div class="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
-                        <div @click="generalForm.apply_discount_to_base = !generalForm.apply_discount_to_base" :class="[generalForm.apply_discount_to_base ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-6 w-11 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
-                            <div :class="[generalForm.apply_discount_to_base ? 'translate-x-6' : 'translate-x-1', 'h-4 w-4 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div class="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                            <div @click="generalForm.apply_discount_to_base = !generalForm.apply_discount_to_base" :class="[generalForm.apply_discount_to_base ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-6 w-11 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                <div :class="[generalForm.apply_discount_to_base ? 'translate-x-6' : 'translate-x-1', 'h-4 w-4 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <div class="ml-4">
+                                <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="generalForm.apply_discount_to_base = !generalForm.apply_discount_to_base">
+                                    Учитывать скидку позиции при расчёте ЗП
+                                </label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Если выключено, база берётся из полной цены услуги без учёта предоставленной клиенту скидки.</p>
+                            </div>
                         </div>
-                        <div class="ml-4">
-                            <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="generalForm.apply_discount_to_base = !generalForm.apply_discount_to_base">
-                                Учитывать скидку позиции при расчёте ЗП
-                            </label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Если выключено, база берётся из полной цены услуги без учёта предоставленной клиенту скидки.</p>
+
+                        <div class="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                            <div @click="generalForm.worker_base_excludes_materials = !generalForm.worker_base_excludes_materials" :class="[generalForm.worker_base_excludes_materials ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-6 w-11 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                <div :class="[generalForm.worker_base_excludes_materials ? 'translate-x-6' : 'translate-x-1', 'h-4 w-4 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <div class="ml-4">
+                                <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="generalForm.worker_base_excludes_materials = !generalForm.worker_base_excludes_materials">
+                                    Вычитать стоимость материалов из базы исполнителей
+                                </label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Материалы, привязанные к услуге прямо в заказе, уменьшают базу расчёта ЗП исполнителей этой услуги.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                            <div @click="generalForm.worker_base_excludes_admin_share = !generalForm.worker_base_excludes_admin_share" :class="[generalForm.worker_base_excludes_admin_share ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-6 w-11 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                <div :class="[generalForm.worker_base_excludes_admin_share ? 'translate-x-6' : 'translate-x-1', 'h-4 w-4 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <div class="ml-4">
+                                <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="generalForm.worker_base_excludes_admin_share = !generalForm.worker_base_excludes_admin_share">
+                                    Вычитать ЗП администратора из базы исполнителей
+                                </label>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Сумма, начисленная администратору по услуге, дополнительно уменьшает базу для расчёта ЗП бригады исполнителей.</p>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
-                        <div @click="generalForm.worker_base_excludes_materials = !generalForm.worker_base_excludes_materials" :class="[generalForm.worker_base_excludes_materials ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-6 w-11 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
-                            <div :class="[generalForm.worker_base_excludes_materials ? 'translate-x-6' : 'translate-x-1', 'h-4 w-4 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                            <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Компенсация налога самозанятым по умолчанию</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">К начисленной сумме сотрудника с типом «Самозанятый» добавляется этот процент — компенсация налога, который он платит государству. Можно переопределить лично для сотрудника в его карточке.</p>
+                            <div class="flex items-center gap-2 max-w-xs">
+                                <input v-model="generalForm.default_self_employed_tax_percent" type="number" step="0.01" min="0" max="100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">%</span>
+                            </div>
                         </div>
-                        <div class="ml-4">
-                            <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="generalForm.worker_base_excludes_materials = !generalForm.worker_base_excludes_materials">
-                                Вычитать стоимость материалов из базы исполнителей
-                            </label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Материалы, привязанные к услуге прямо в заказе, уменьшают базу расчёта ЗП исполнителей этой услуги.</p>
-                        </div>
-                    </div>
 
-                    <div class="flex items-center p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
-                        <div @click="generalForm.worker_base_excludes_admin_share = !generalForm.worker_base_excludes_admin_share" :class="[generalForm.worker_base_excludes_admin_share ? 'bg-success' : 'bg-gray-300 dark:bg-gray-600', 'flex items-center h-6 w-11 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
-                            <div :class="[generalForm.worker_base_excludes_admin_share ? 'translate-x-6' : 'translate-x-1', 'h-4 w-4 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                        <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
+                            <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">День начисления оклада</label>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Число месяца, в которое системa автоматически создаёт черновик начисления оклада (ожидает выплаты в карточке сотрудника) для всех активных сотрудников с заданным окладом. Учитывается часовой пояс локации.</p>
+                            <input v-model="generalForm.salary_accrual_day" type="number" step="1" min="1" max="28" required class="block w-full max-w-[100px] rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                         </div>
-                        <div class="ml-4">
-                            <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer" @click="generalForm.worker_base_excludes_admin_share = !generalForm.worker_base_excludes_admin_share">
-                                Вычитать ЗП администратора из базы исполнителей
-                            </label>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Сумма, начисленная администратору по услуге, дополнительно уменьшает базу для расчёта ЗП бригады исполнителей.</p>
-                        </div>
-                    </div>
-
-                    <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
-                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Компенсация налога самозанятым по умолчанию</label>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">К начисленной сумме сотрудника с типом «Самозанятый» добавляется этот процент — компенсация налога, который он платит государству. Можно переопределить лично для сотрудника в его карточке.</p>
-                        <div class="flex items-center gap-2 max-w-xs">
-                            <input v-model="generalForm.default_self_employed_tax_percent" type="number" step="0.01" min="0" max="100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                            <span class="text-sm text-gray-600 dark:text-gray-400 shrink-0">%</span>
-                        </div>
-                    </div>
-
-                    <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
-                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">День начисления оклада</label>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Число месяца, в которое системa автоматически создаёт черновик начисления оклада (ожидает выплаты в карточке сотрудника) для всех активных сотрудников с заданным окладом. Учитывается часовой пояс локации.</p>
-                        <input v-model="generalForm.salary_accrual_day" type="number" step="1" min="1" max="28" required class="block w-full max-w-[100px] rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                     </div>
 
                     <div class="flex justify-end pt-2">
@@ -212,12 +264,49 @@ const ruleValueLabel = (rule) => {
                 <div class="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                     <div>
                         <h2 class="text-sm font-bold text-gray-800 dark:text-gray-200">Ставки по должностям</h2>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Действуют на всех сотрудников должности, если у конкретного человека не задана личная ставка.</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Действуют на всех сотрудников должности, если у конкретного человека не задана личная ставка.
+                            Список должностей и их роль (администратор/исполнитель) — в <Link :href="route('hr.positions.index')" class="text-primary hover:underline">Справочнике должностей</Link>.
+                        </p>
                     </div>
                     <button @click="openRuleModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm">
                         <i class="ri-add-line text-base"></i> Добавить ставку
                     </button>
                 </div>
+
+                <!-- Фильтры (клиентские) — на больших списках должностей/локаций/групп искать нужную ставку в общем списке неудобно -->
+                <div class="p-6 border-b border-gray-200 dark:border-gray-700 bg-primary/5 dark:bg-primary/10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Должность</label>
+                        <SearchableMultiSelect
+                            v-model="filterPositionIds"
+                            :options="positions.map(p => ({ id: p.id, label: getLocalizedLabel(p.name) }))"
+                            placeholder="Все должности"
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Локация</label>
+                        <SearchableMultiSelect
+                            v-model="filterBranchIds"
+                            :options="branches.map(b => ({ id: b.id, label: b.name }))"
+                            placeholder="Все локации"
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Группа услуг</label>
+                        <SearchableMultiSelect
+                            v-model="filterCategoryIds"
+                            :options="serviceCategories.map(c => ({ id: c.id, label: getLocalizedLabel(c.name) }))"
+                            placeholder="Все группы"
+                        />
+                    </div>
+                    <div class="flex items-end">
+                        <button v-if="hasActiveFilters" @click="resetTableFilters" class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-danger transition-colors py-2">
+                            <i class="ri-close-circle-line"></i> Сбросить фильтры
+                        </button>
+                    </div>
+                </div>
+
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -230,7 +319,7 @@ const ruleValueLabel = (rule) => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="rule in positionRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                            <tr v-for="rule in filteredPositionRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.position ? getLocalizedLabel(rule.position.name) : '—' }}</div>
                                     <span v-if="rule.position" :class="[rule.position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', 'inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium']">
@@ -248,6 +337,11 @@ const ruleValueLabel = (rule) => {
                             <tr v-if="positionRules.length === 0">
                                 <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     Ставки ещё не настроены. Нажмите "Добавить ставку".
+                                </td>
+                            </tr>
+                            <tr v-else-if="filteredPositionRules.length === 0">
+                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    Ничего не найдено по выбранным фильтрам. <button @click="resetTableFilters" class="text-primary hover:underline">Сбросить фильтры</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -296,8 +390,19 @@ const ruleValueLabel = (rule) => {
                         </div>
 
                         <div v-if="ruleForm.target === 'category'">
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа услуг <span class="text-danger">*</span></label>
-                            <select v-model="ruleForm.service_category_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Группа услуг <span class="text-danger">*</span>
+                                <span v-if="!editingRule" class="text-gray-400 font-normal">— можно выбрать несколько, на каждую создастся своя ставка</span>
+                            </label>
+                            <template v-if="!editingRule">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-3 border border-gray-200 dark:border-gray-700 rounded-md">
+                                    <label v-for="c in serviceCategories" :key="c.id" class="flex items-center cursor-pointer group">
+                                        <input type="checkbox" :value="c.id" v-model="ruleForm.service_category_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ getLocalizedLabel(c.name) }}</span>
+                                    </label>
+                                </div>
+                            </template>
+                            <select v-else v-model="ruleForm.service_category_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="" disabled>Выберите группу</option>
                                 <option v-for="c in serviceCategories" :key="c.id" :value="c.id">{{ getLocalizedLabel(c.name) }}</option>
                             </select>
@@ -312,8 +417,17 @@ const ruleValueLabel = (rule) => {
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Услуга <span class="text-danger">*</span></label>
-                                <select v-model="ruleForm.service_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    Услуга <span class="text-danger">*</span>
+                                    <span v-if="!editingRule" class="text-gray-400 font-normal">— можно выбрать несколько</span>
+                                </label>
+                                <SearchableMultiSelect
+                                    v-if="!editingRule"
+                                    v-model="ruleForm.service_ids"
+                                    :options="filteredServices.map(s => ({ id: s.id, label: getLocalizedLabel(s.name) }))"
+                                    placeholder="Выберите услуги..."
+                                />
+                                <select v-else v-model="ruleForm.service_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option value="" disabled>Выберите услугу</option>
                                     <option v-for="s in filteredServices" :key="s.id" :value="s.id">{{ getLocalizedLabel(s.name) }}</option>
                                 </select>
@@ -321,8 +435,19 @@ const ruleValueLabel = (rule) => {
                         </template>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
-                            <select v-model="ruleForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Локация
+                                <span v-if="!editingRule" class="text-gray-400 font-normal">— можно выбрать несколько, пусто = все локации</span>
+                            </label>
+                            <template v-if="!editingRule">
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-3 border border-gray-200 dark:border-gray-700 rounded-md">
+                                    <label v-for="b in branches" :key="b.id" class="flex items-center cursor-pointer group">
+                                        <input type="checkbox" :value="b.id" v-model="ruleForm.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ b.name }}</span>
+                                    </label>
+                                </div>
+                            </template>
+                            <select v-else v-model="ruleForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="">Все локации</option>
                                 <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                             </select>

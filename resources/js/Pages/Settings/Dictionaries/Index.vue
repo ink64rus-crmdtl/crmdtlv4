@@ -386,6 +386,15 @@ const getLocalizedLabel = (label) => {
                                 </span>
                                 <i class="ri-external-link-line text-xs"></i>
                             </Link>
+                            <!-- Должности — не Lookup-справочник, а полноценная сущность с
+                                 payroll_role/правами (раздел HR), поэтому не отдельная вкладка
+                                 activeTab, а прямой переход, как к прайс-листам выше. -->
+                            <Link :href="route('hr.positions.index')" class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-md transition-all">
+                                <span class="flex items-center gap-2 text-primary">
+                                    <i class="ri-briefcase-4-line"></i> Должности
+                                </span>
+                                <i class="ri-external-link-line text-xs"></i>
+                            </Link>
                         </div>
                     </div>
                 </div>
