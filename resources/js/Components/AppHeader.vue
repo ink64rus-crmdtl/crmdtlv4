@@ -22,26 +22,26 @@ const currentLEName = computed(() => {
 });
 
 const currentBranchName = computed(() => {
-    if (!currentBranchId.value) return 'Все точки';
+    if (!currentBranchId.value) return 'Все локации';
     const branch = branches.value.find(b => b.id === currentBranchId.value);
-    return branch ? branch.name : 'Все точки';
+    return branch ? branch.name : 'Все локации';
 });
 
-// Фильтруем список точек в дропдауне по выбранному юрлицу (точка теперь может
+// Фильтруем список локаций в дропдауне по выбранному юрлицу (локация теперь может
 // иметь НЕСКОЛЬКО юрлиц — b.legal_entities, массив {id} — см. branch_legal_entity).
-// Точки вовсе без юрлица показываются всегда (могут работать без реквизитов).
+// Локации вовсе без юрлица показываются всегда (могут работать без реквизитов).
 const filteredBranches = computed(() => {
     if (!currentLEId.value) return branches.value;
     return branches.value.filter(b => !b.legal_entities?.length || b.legal_entities.some(le => le.id === currentLEId.value));
 });
 
-// Точка теперь первична — переключатель юрлица показывает и скрывает себя
+// Локация теперь первична — переключатель юрлица показывает и скрывает себя
 // не по общему числу юрлиц в тенанте (page.props.legal_entities — это ВСЕ
 // доступные пользователю юрлица, вне зависимости от того, видна ли ему хоть
-// одна их точка), а по тому, есть ли реальный выбор юрлица СРЕДИ ВИДИМЫХ
-// точек — иначе в списке могло появиться юрлицо, не привязанное ни к одной
-// видимой точке, выбор которого ничего осмысленного не отфильтрует. Если
-// точка всего одна и юрлицо у неё одно (или нет вовсе) — оба переключателя
+// одна их локация), а по тому, есть ли реальный выбор юрлица СРЕДИ ВИДИМЫХ
+// локаций — иначе в списке могло появиться юрлицо, не привязанное ни к одной
+// видимой локации, выбор которого ничего осмысленного не отфильтрует. Если
+// локация всего одна и юрлицо у неё одно (или нет вовсе) — оба переключателя
 // пропадают сами по себе (visibleLegalEntities.length <= 1 в этом случае).
 const visibleLegalEntities = computed(() => {
     const map = new Map();
@@ -106,7 +106,7 @@ onUnmounted(() => {
 
             <div class="flex items-center gap-5">
                 
-                <!-- Переключатель Точек — первичная единица, слева. Показываем только если их больше 1. -->
+                <!-- Переключатель Локаций — первичная единица, слева. Показываем только если их больше 1. -->
                 <Dropdown align="right" width="48" v-if="filteredBranches.length > 1">
                     <template #trigger>
                         <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">
@@ -118,17 +118,17 @@ onUnmounted(() => {
 
                     <template #content>
                         <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50 dark:bg-gray-800/50 border-b border-gray-100 dark:border-gray-700/50">
-                            Доступные точки
+                            Доступные локации
                         </div>
 
-                        <!-- Пункт "Все точки" -->
+                        <!-- Пункт "Все локации" -->
                         <DropdownLink
                             :href="route('branches.switch')"
                             method="post"
                             as="button"
                         >
                             <div class="flex items-center gap-2" :class="{'text-primary font-semibold': currentBranchId === null}">
-                                <i class="ri-layout-grid-line"></i> Все точки
+                                <i class="ri-layout-grid-line"></i> Все локации
                                 <i v-if="currentBranchId === null" class="ri-check-line ml-auto"></i>
                             </div>
                         </DropdownLink>
@@ -148,7 +148,7 @@ onUnmounted(() => {
                     </template>
                 </Dropdown>
 
-                <!-- Переключатель Юрлиц — справа. Показываем только если среди видимых точек есть реальный выбор юрлица. -->
+                <!-- Переключатель Юрлиц — справа. Показываем только если среди видимых локаций есть реальный выбор юрлица. -->
                 <Dropdown align="right" width="48" v-if="visibleLegalEntities.length > 1">
                     <template #trigger>
                         <button class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-primary transition-colors focus:outline-none bg-light dark:bg-gray-800/50 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700/50">

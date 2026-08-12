@@ -284,8 +284,8 @@ const deleteAccount = (account) => {
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Как устроена структура компании?">
-                <p>В нашей системе <strong>Юридическое лицо</strong> — это исключительно финансовый профиль: реквизиты, банковские счета и подписанты для печатных документов (Акты, Счета, Заказ-наряды). Вся реальная работа (записи клиентов, склады, сотрудники, заказы) привязывается к <strong>Точке</strong> — она первична, юрлицо только "подключается" к ней.</p>
-                <p>Одна точка может выставлять документы сразу от нескольких юрлиц (например, часть заказов — от ИП, часть — от ООО), и одно юрлицо может обслуживать несколько точек — привязка настраивается прямо здесь, при создании/редактировании юрлица.</p>
+                <p>В нашей системе <strong>Юридическое лицо</strong> — это исключительно финансовый профиль: реквизиты, банковские счета и подписанты для печатных документов (Акты, Счета, Заказ-наряды). Вся реальная работа (записи клиентов, склады, сотрудники, заказы) привязывается к <strong>Локации</strong> — она первична, юрлицо только "подключается" к ней.</p>
+                <p>Одна локация может выставлять документы сразу от нескольких юрлиц (например, часть заказов — от ИП, часть — от ООО), и одно юрлицо может обслуживать несколько локаций — привязка настраивается прямо здесь, при создании/редактировании юрлица.</p>
                 <p class="text-xs mt-2 opacity-80"><i class="ri-error-warning-line align-middle"></i> Примечание: Если у вас несколько юрлиц с абсолютно разными базами клиентов, разными складами и независимыми сотрудниками, мы настоятельно рекомендуем создать для них отдельные аккаунты (Тенанты) во избежание путаницы.</p>
             </PageHelper>
 
@@ -335,7 +335,7 @@ const deleteAccount = (account) => {
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрисдикция</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Налоговый номер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точки</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локации</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Расчетные счета</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
@@ -487,14 +487,14 @@ const deleteAccount = (account) => {
                                 />
                             </div>
 
-                            <!-- Привязка к точкам: юрлицо без точки существовать не может (кроме
-                                 самой первой точки в системе — та создастся автоматически). Одна
-                                 точка может иметь несколько юрлиц и наоборот — многие-ко-многим. -->
+                            <!-- Привязка к локациям: юрлицо без локации существовать не может (кроме
+                                 самой первой локации в системе — та создастся автоматически). Одна
+                                 локация может иметь несколько юрлиц и наоборот — многие-ко-многим. -->
                             <div v-if="branches.length > 0" class="border-t border-gray-200 dark:border-gray-700 pt-4">
                                 <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
-                                    От каких точек это юрлицо может выставлять документы? <span class="text-danger">*</span>
+                                    От каких локаций это юрлицо может выставлять документы? <span class="text-danger">*</span>
                                 </h4>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Выберите хотя бы одну. Точка может быть отмечена сразу у нескольких юрлиц.</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Выберите хотя бы одну. Локация может быть отмечена сразу у нескольких юрлиц.</p>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     <label v-for="branch in branches" :key="branch.id" class="flex items-center cursor-pointer group">
                                         <input type="checkbox" :value="branch.id" v-model="form.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
@@ -505,7 +505,7 @@ const deleteAccount = (account) => {
                             </div>
                             <div v-else class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
                                 <i class="ri-information-line text-info mr-1"></i>
-                                В системе пока нет ни одной точки — она будет создана автоматически («Основная») и сразу привязана к этому юрлицу.
+                                В системе пока нет ни одной локации — она будет создана автоматически («Основная») и сразу привязана к этому юрлицу.
                             </div>
 
                             <!-- Динамические реквизиты под юрисдикцию тенанта -->

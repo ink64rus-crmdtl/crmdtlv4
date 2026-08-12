@@ -61,6 +61,17 @@ const paymentStatuses = {
     'paid': { label: 'Оплачен', class: 'bg-success/10 text-success' },
 };
 
+// Подпись "Локация" в панели быстрого просмотра рисуем, только если под ней
+// реально что-то покажет PointBadge — иначе получится подпись без бейджа.
+// Условие зеркалит его собственную логику видимости (branches/legal_entities).
+const previewHasLocationBadge = computed(() => {
+    const order = previewOrder.value;
+    if (!order) return false;
+    const showBranch = (page.props.branches || []).length > 1 && !!order.branch;
+    const showLegalEntity = (page.props.legal_entities || []).length > 1 && !!order.legal_entity;
+    return showBranch || showLegalEntity;
+});
+
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
 
@@ -302,7 +313,7 @@ const submitQuickVehicle = () => {
     });
 };
 
-// --- Юрлицо заказа (точка теперь может иметь несколько) ---
+// --- Юрлицо заказа (локация теперь может иметь несколько) ---
 // Если в сайдбаре выбрано конкретное юрлицо — поле блокируется на нём:
 // сменить юрлицо для НОВЫХ заказов можно только переключив сайдбар, чтобы
 // не путаться, от какого юрлица реально выставляются документы.
@@ -318,10 +329,10 @@ const isLegalEntityLocked = computed(() => {
         && legalEntitiesForSelectedBranch.value.some(le => le.id === currentSidebarLegalEntityId.value);
 });
 
-// Пересчёт дефолта юрлица под выбранную точку — либо фиксируем на том, что
-// выбрано в сайдбаре (если оно доступно у этой точки), либо, если у точки
+// Пересчёт дефолта юрлица под выбранную локацию — либо фиксируем на том, что
+// выбрано в сайдбаре (если оно доступно у этой локации), либо, если у локации
 // ровно одно юрлицо, подставляем его, иначе оставляем на выбор пользователя.
-// НЕ watch() — вызывается явно (при открытии формы и при ручной смене точки
+// НЕ watch() — вызывается явно (при открытии формы и при ручной смене локации
 // самим пользователем внутри формы), иначе при редактировании существующего
 // заказа реактивный watch перезаписал бы уже сохранённое order.legal_entity_id
 // сразу же после того, как openModal() его туда положил.
@@ -622,14 +633,23 @@ const deleteOrder = (order) => {
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-6 space-y-6">
-                    <div class="flex flex-wrap gap-2">
-                        <span :class="[statuses[previewOrder.status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase']">
-                            {{ statuses[previewOrder.status]?.label || previewOrder.status }}
-                        </span>
-                        <span :class="[paymentStatuses[previewOrder.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase']">
-                            {{ paymentStatuses[previewOrder.payment_status]?.label || previewOrder.payment_status }}
-                        </span>
-                        <PointBadge :branch="previewOrder.branch" :legal-entity="previewOrder.legal_entity" />
+                    <div class="flex flex-wrap gap-4">
+                        <div>
+                            <p class="text-[11px] text-gray-400 uppercase tracking-wider mb-1">Статус заказа</p>
+                            <span :class="[statuses[previewOrder.status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase']">
+                                {{ statuses[previewOrder.status]?.label || previewOrder.status }}
+                            </span>
+                        </div>
+                        <div>
+                            <p class="text-[11px] text-gray-400 uppercase tracking-wider mb-1">Статус оплаты</p>
+                            <span :class="[paymentStatuses[previewOrder.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase']">
+                                {{ paymentStatuses[previewOrder.payment_status]?.label || previewOrder.payment_status }}
+                            </span>
+                        </div>
+                        <div v-if="previewHasLocationBadge">
+                            <p class="text-[11px] text-gray-400 uppercase tracking-wider mb-1">Локация</p>
+                            <PointBadge :branch="previewOrder.branch" :legal-entity="previewOrder.legal_entity" />
+                        </div>
                     </div>
 
                     <div class="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-100 dark:border-gray-700/50 space-y-4">
@@ -696,9 +716,9 @@ const deleteOrder = (order) => {
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
                         <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                            <option value="">Все точки</option>
+                            <option value="">Все локации</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                         </select>
                     </div>
@@ -809,9 +829,9 @@ const deleteOrder = (order) => {
                     <div class="p-6 space-y-4">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div v-if="branches.length > 1">
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                                 <select v-model="form.branch_id" @change="onBranchChangedInForm" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                     <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                 </select>
                             </div>
@@ -902,9 +922,9 @@ const deleteOrder = (order) => {
                 <form @submit.prevent="submitQuickClient" class="flex flex-col">
                     <div class="p-6 space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                             <select v-model="quickClientForm.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                             <span v-if="quickClientForm.errors.branch_id" class="text-xs text-danger mt-1">{{ quickClientForm.errors.branch_id }}</span>

@@ -177,7 +177,7 @@ onBeforeUnmount(() => {
             <SettingsNav />
 
             <PageHelper title="Как это устроено">
-                <p>Каждый канал — одно подключение (один номер WhatsApp/Telegram/MAX или один SMS-аккаунт). Можно подключить несколько номеров одновременно — например, по одному на точку.</p>
+                <p>Каждый канал — одно подключение (один номер WhatsApp/Telegram/MAX или один SMS-аккаунт). Можно подключить несколько номеров одновременно — например, по одному на локацию.</p>
                 <p>Подключение WhatsApp/Telegram/MAX идёт через QR-код (как в самом мессенджере на телефоне) — после сканирования канал становится «Подключён» и может принимать/отправлять сообщения. Профиль у провайдера система создаёт сама, вводить Profile ID или токен не нужно.</p>
                 <p class="text-xs text-gray-400 mt-2">Реализация не завязана намертво на Wappi.Pro — при необходимости переезда на другого провайдера меняется только код внутри системы, каналы и переписки не теряются.</p>
             </PageHelper>
@@ -200,7 +200,7 @@ onBeforeUnmount(() => {
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Провайдер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точка</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локация</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ messengerTypeLabels[channel.messenger_type] || channel.messenger_type }}</td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ providerLabels[channel.provider] || channel.provider }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ channel.branch ? channel.branch.name : 'Все точки' }}</td>
+                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ channel.branch ? channel.branch.name : 'Все локации' }}</td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <span v-if="isMessenger(channel.provider) && !channel.external_profile_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger" title="Не удалось создать профиль у провайдера">Ошибка настройки</span>
                                     <span v-else :class="[statusClasses[channel.status] || 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ statusLabels[channel.status] || channel.status }}</span>
@@ -275,9 +275,9 @@ onBeforeUnmount(() => {
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
                             <select v-model="form.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                <option value="">Все точки</option>
+                                <option value="">Все локации</option>
                                 <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                             </select>
                         </div>

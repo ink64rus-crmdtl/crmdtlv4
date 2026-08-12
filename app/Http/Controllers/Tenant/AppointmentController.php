@@ -72,7 +72,7 @@ class AppointmentController extends Controller
             ['key' => 'start_at', 'label' => 'Время записи'],
             ['key' => 'client', 'label' => 'Клиент'],
             ['key' => 'vehicle', 'label' => 'Автомобиль'],
-            ['key' => 'branch', 'label' => 'Точка'],
+            ['key' => 'branch', 'label' => 'Локация'],
             ['key' => 'employee', 'label' => 'Мастер'],
             ['key' => 'status', 'label' => 'Статус'],
             ['key' => 'comment', 'label' => 'Комментарий'],
@@ -91,7 +91,7 @@ class AppointmentController extends Controller
             ['key' => 'client', 'label' => 'Клиент'],
             ['key' => 'vehicle', 'label' => 'Автомобиль'],
             ['key' => 'phone', 'label' => 'Телефон'],
-            ['key' => 'branch', 'label' => 'Точка'],
+            ['key' => 'branch', 'label' => 'Локация'],
             ['key' => 'employee', 'label' => 'Мастер'],
             ['key' => 'post', 'label' => 'Пост'],
             ['key' => 'status', 'label' => 'Статус'],
@@ -316,7 +316,7 @@ class AppointmentController extends Controller
 
         if ($daySchedule && !($daySchedule['is_open'] ?? true)) {
             throw ValidationException::withMessages([
-                'end_at' => 'Точка не работает в этот день (' . $dayLabels[$dayKey] . ') — окончание записи нельзя ставить на нерабочий день. Выберите другое время.',
+                'end_at' => 'Локация не работает в этот день (' . $dayLabels[$dayKey] . ') — окончание записи нельзя ставить на нерабочий день. Выберите другое время.',
             ]);
         }
     }

@@ -132,9 +132,9 @@ const deleteDirection = (direction) => {
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Для чего нужны Направления бизнеса?">
-                <p><strong>Направления</strong> — это не про «где» (точка) и не про «от чьего имени» (юрлицо), а про «какая это работа»: логические блоки услуг (например: «Детейлинг», «Мойка», «Оклейка», «Шиномонтаж»). Направление — тег на самой услуге, независимый от точки и юрлица.</p>
-                <p>Вы можете указать, в каких именно точках доступно каждое направление — это поможет отсечь лишние услуги при создании заказ-нарядов в конкретной точке и сделает интерфейс удобнее для администраторов.</p>
-                <p class="text-xs mt-2 opacity-80"><i class="ri-lightbulb-line align-middle"></i> Примечание: направление можно использовать и как способ объединить разные точки и разные юрлица по общему для вас признаку — например, «Автосалоны» или «Работа на выезде». Сами точки и организации при этом остаются полностью независимыми (у каждой свои реквизиты, склад, сотрудники), а направление просто даёт возможность увидеть их вместе там, где это удобно.</p>
+                <p><strong>Направления</strong> — это не про «где» (локация) и не про «от чьего имени» (юрлицо), а про «какая это работа»: логические блоки услуг (например: «Детейлинг», «Мойка», «Оклейка», «Шиномонтаж»). Направление — тег на самой услуге, независимый от локации и юрлица.</p>
+                <p>Вы можете указать, в каких именно локациях доступно каждое направление — это поможет отсечь лишние услуги при создании заказ-нарядов в конкретной локации и сделает интерфейс удобнее для администраторов.</p>
+                <p class="text-xs mt-2 opacity-80"><i class="ri-lightbulb-line align-middle"></i> Примечание: направление можно использовать и как способ объединить разные локации и разные юрлица по общему для вас признаку — например, «Автосалоны» или «Работа на выезде». Сами локации и организации при этом остаются полностью независимыми (у каждой свои реквизиты, склад, сотрудники), а направление просто даёт возможность увидеть их вместе там, где это удобно.</p>
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
@@ -181,7 +181,7 @@ const deleteDirection = (direction) => {
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точки</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локации</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
@@ -203,7 +203,7 @@ const deleteDirection = (direction) => {
                                             <i class="ri-store-2-line"></i> {{ b.name }}
                                         </span>
                                     </div>
-                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех точках</span>
+                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех локациях</span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span
@@ -270,10 +270,10 @@ const deleteDirection = (direction) => {
                             />
                         </div>
 
-                        <!-- Привязка к точкам -->
+                        <!-- Привязка к локациям -->
                         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">В каких точках доступно это направление?</h4>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Если не выбрать ни одной, направление будет доступно во всех точках по умолчанию.</p>
+                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">В каких локациях доступно это направление?</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Если не выбрать ни одной, направление будет доступно во всех локациях по умолчанию.</p>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <label v-for="branch in branches" :key="branch.id" class="flex items-center cursor-pointer group">
                                     <input type="checkbox" :value="branch.id" v-model="form.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />

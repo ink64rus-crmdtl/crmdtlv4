@@ -104,7 +104,7 @@ class LegalEntityController extends Controller
             ]);
             $legalEntity->branches()->attach($branch->id);
 
-            return redirect()->back()->with('success', 'Юридическое лицо создано. Также автоматически создана точка «Основная» — это первая точка в системе, при необходимости переименуйте её в Настройках → Точки.');
+            return redirect()->back()->with('success', 'Юридическое лицо создано. Также автоматически создана локация «Основная» — это первая локация в системе, при необходимости переименуйте её в Настройках → Локации.');
         }
 
         $legalEntity->branches()->sync($validated['branch_ids']);

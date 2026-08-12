@@ -49,7 +49,7 @@ class TransactionController extends Controller
         $availableColumns = [
             ['key' => 'date', 'label' => 'Дата'],
             ['key' => 'type', 'label' => 'Тип'],
-            ['key' => 'branch', 'label' => 'Точка'],
+            ['key' => 'branch', 'label' => 'Локация'],
             ['key' => 'account', 'label' => 'Счет / Касса'],
             ['key' => 'category', 'label' => 'Статья'],
             ['key' => 'amount', 'label' => 'Сумма'],

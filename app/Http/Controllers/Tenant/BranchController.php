@@ -66,7 +66,7 @@ class BranchController extends Controller
             $branch->addMediaFromRequest('logo')->toMediaCollection('logo');
         }
 
-        return redirect()->back()->with('success', 'Точка успешно создана');
+        return redirect()->back()->with('success', 'Локация успешно создана');
     }
 
     public function update(Request $request, Branch $branch)
@@ -97,7 +97,7 @@ class BranchController extends Controller
             $branch->clearMediaCollection('logo');
         }
 
-        return redirect()->back()->with('success', 'Точка обновлена');
+        return redirect()->back()->with('success', 'Локация обновлена');
     }
 
     public function destroy(Branch $branch)
@@ -109,7 +109,7 @@ class BranchController extends Controller
             session(['current_branch_id' => 'all']);
         }
 
-        return redirect()->back()->with('success', 'Точка удалена');
+        return redirect()->back()->with('success', 'Локация удалена');
     }
 
     public function switch(Request $request, ?Branch $branch = null)
@@ -146,7 +146,7 @@ class BranchController extends Controller
             session(['current_branch_id' => 'all']);
         }
 
-        return redirect()->back()->with('success', 'Выбранные точки удалены');
+        return redirect()->back()->with('success', 'Выбранные локации удалены');
     }
 
     public function bulkExport(Request $request)

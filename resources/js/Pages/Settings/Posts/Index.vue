@@ -136,15 +136,15 @@ const deletePost = (post) => {
 
             <PageHelper title="Для чего нужны Посты?">
                 <p><strong>Посты</strong> — это физические места оказания услуги (боксы, подъёмники, зоны мойки). Они используются для визуального распределения загрузки в календаре записей (вид «по постам»).</p>
-                <p v-if="hasBranches">У вас уже добавлены точки — каждый пост обязательно привязывается к конкретной точке.</p>
-                <p v-else>Точки пока не добавлены — посты можно создавать без привязки, как общие посты детейлинг-центра. Как только вы добавите первую точку, новые посты нужно будет привязывать к ней.</p>
+                <p v-if="hasBranches">У вас уже добавлены локации — каждый пост обязательно привязывается к конкретной локации.</p>
+                <p v-else>Локации пока не добавлены — посты можно создавать без привязки, как общие посты детейлинг-центра. Как только вы добавите первую локацию, новые посты нужно будет привязывать к ней.</p>
             </PageHelper>
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
                     <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Посты</h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Управление постами/боксами {{ hasBranches ? 'по точкам' : 'детейлинг-центра' }}
+                        Управление постами/боксами {{ hasBranches ? 'по локациям' : 'детейлинг-центра' }}
                     </p>
                 </div>
             </div>
@@ -181,7 +181,7 @@ const deletePost = (post) => {
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точка</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локация</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Направления</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
@@ -220,7 +220,7 @@ const deletePost = (post) => {
                                         <span v-if="post.branch" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
                                             <i class="ri-store-2-line"></i> {{ post.branch.name }}
                                         </span>
-                                        <span v-else class="text-xs text-gray-400 dark:text-gray-500">Общий (без точки)</span>
+                                        <span v-else class="text-xs text-gray-400 dark:text-gray-500">Общий (без локации)</span>
                                     </td>
                                     <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                         <div class="flex flex-wrap gap-1.5" v-if="post.business_directions && post.business_directions.length > 0">
@@ -279,14 +279,14 @@ const deletePost = (post) => {
                         </div>
 
                         <div v-if="hasBranches">
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                             <select v-model="form.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                             <p v-if="form.errors.branch_id" class="mt-1 text-xs text-danger">{{ form.errors.branch_id }}</p>
                         </div>
-                        <p v-else class="text-xs text-gray-500 dark:text-gray-400">Точки не добавлены — пост будет общим для всего детейлинг-центра.</p>
+                        <p v-else class="text-xs text-gray-500 dark:text-gray-400">Локации не добавлены — пост будет общим для всего детейлинг-центра.</p>
 
                         <!-- Направления деятельности -->
                         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">

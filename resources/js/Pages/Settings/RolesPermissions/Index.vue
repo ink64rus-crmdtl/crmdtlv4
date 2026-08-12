@@ -194,8 +194,8 @@ const handleEditChange = (entityType, fieldKey, roleId) => {
 
             <!-- Page Helper (Система подсказок) -->
             <PageHelper title="Как работает система прав доступа?">
-                <p>Здесь настраиваются <strong>Глобальные политики</strong> для должностей (Ролей). Например, вы можете указать, что все «Менеджеры» видят раздел CRM и имеют доступ к Центральной точке.</p>
-                <p>Если конкретному сотруднику нужно дать <strong>Индивидуальное исключение</strong> (например, временно дать доступ к дополнительной точке), это делается не здесь, а напрямую в его карточке в разделе <strong>Сотрудники и HR</strong>. Индивидуальные права всегда перекрывают права Роли.</p>
+                <p>Здесь настраиваются <strong>Глобальные политики</strong> для должностей (Ролей). Например, вы можете указать, что все «Менеджеры» видят раздел CRM и имеют доступ к Центральной локации.</p>
+                <p>Если конкретному сотруднику нужно дать <strong>Индивидуальное исключение</strong> (например, временно дать доступ к дополнительной локации), это делается не здесь, а напрямую в его карточке в разделе <strong>Сотрудники и HR</strong>. Индивидуальные права всегда перекрывают права Роли.</p>
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
@@ -381,7 +381,7 @@ const handleEditChange = (entityType, fieldKey, roleId) => {
                             @click="activeScopeTab = 'branches'"
                             :class="[activeScopeTab === 'branches' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3 px-2 text-sm transition-colors focus:outline-none']"
                         >
-                            Точки
+                            Локации
                         </button>
                         <button
                             @click="activeScopeTab = 'legalEntities'"

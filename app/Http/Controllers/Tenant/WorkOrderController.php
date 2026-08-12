@@ -82,7 +82,7 @@ class WorkOrderController extends Controller
             ['key' => 'status', 'label' => 'Статус', 'type' => 'system', 'is_default' => true],
             ['key' => 'payment_status', 'label' => 'Оплата', 'type' => 'system', 'is_default' => true],
             ['key' => 'final_amount', 'label' => 'Сумма', 'type' => 'system', 'is_default' => true],
-            ['key' => 'branch', 'label' => 'Точка', 'type' => 'system', 'is_default' => false],
+            ['key' => 'branch', 'label' => 'Локация', 'type' => 'system', 'is_default' => false],
             ['key' => 'mileage', 'label' => 'Пробег', 'type' => 'system', 'is_default' => false],
         ];
 
@@ -250,7 +250,7 @@ class WorkOrderController extends Controller
             $branch = Branch::find($request->input('branch_id'));
 
             if ($branch && !$branch->legalEntities()->where('legal_entities.id', $value)->exists()) {
-                $fail('Выбранное юрлицо не привязано к этой точке.');
+                $fail('Выбранное юрлицо не привязано к этой локации.');
             }
         };
     }

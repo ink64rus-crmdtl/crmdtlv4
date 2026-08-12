@@ -85,7 +85,7 @@ const closeModal = () => {
 const submit = () => {
     if (editingTransaction.value) {
         // Бэкенд сам валидирует и берет только редактируемые поля (amount, transaction_date, comment,
-        // transaction_category_id) — счет/тип/точка в форме нужны только для отображения и игнорируются.
+        // transaction_category_id) — счет/тип/локация в форме нужны только для отображения и игнорируются.
         form.put(route('finance.transactions.update', editingTransaction.value.id), {
             onSuccess: () => closeModal(),
         });
@@ -244,7 +244,7 @@ const totalBalance = computed(() => {
             <FinanceNav />
 
             <PageHelper title="Как устроено редактирование операций">
-                <p>После проведения операции можно менять сумму, дату, статью и комментарий — баланс счета пересчитывается на разницу. Тип операции, счет и точку менять нельзя (для этого отмените операцию и проведите новую).</p>
+                <p>После проведения операции можно менять сумму, дату, статью и комментарий — баланс счета пересчитывается на разницу. Тип операции, счет и локацию менять нельзя (для этого отмените операцию и проведите новую).</p>
                 <p class="mt-2"><strong>Сверка с банком:</strong> отметьте операцию как сверенную после сопоставления с банковской выпиской — сумму и дату сверенной операции нельзя изменить, пока отметка не снята.</p>
                 <p class="mt-2"><strong>Закрытие периода:</strong>
                     <template v-if="closedThroughDate">период закрыт по {{ closedThroughDate }} — операции с такой или более ранней датой создавать/менять/отменять нельзя.</template>
@@ -337,7 +337,7 @@ const totalBalance = computed(() => {
                                         </span>
                                     </template>
                                     <template v-else-if="col.key === 'branch'">
-                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300" :title="tx.branch && tx.branch.deleted_at ? 'Точка удалена из системы' : ''">
+                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300" :title="tx.branch && tx.branch.deleted_at ? 'Локация удалена из системы' : ''">
                                             <i class="ri-store-2-line"></i> {{ tx.branch ? tx.branch.name : '—' }}<span v-if="tx.branch && tx.branch.deleted_at" class="opacity-70">(удалена)</span>
                                         </span>
                                     </template>
@@ -408,7 +408,7 @@ const totalBalance = computed(() => {
 
                         <div v-if="editingTransaction" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
                             <i class="ri-information-line text-info mr-1"></i>
-                            Тип, счет и точку операции менять нельзя — доступны сумма, дата, статья и комментарий. Если нужно перенести операцию на другой счет — отмените её и проведите заново.
+                            Тип, счет и локацию операции менять нельзя — доступны сумма, дата, статья и комментарий. Если нужно перенести операцию на другой счет — отмените её и проведите заново.
                         </div>
 
                         <!-- Выбор типа операции -->
@@ -500,7 +500,7 @@ const totalBalance = computed(() => {
                         </div>
 
                         <div v-if="branches.length > 1">
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка (Центр затрат) <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация (Центр затрат) <span class="text-danger">*</span></label>
                             <select v-model="form.branch_id" required :disabled="!!editingTransaction" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-60">
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
@@ -554,9 +554,9 @@ const totalBalance = computed(() => {
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
                         <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                            <option value="">Все точки</option>
+                            <option value="">Все локации</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                         </select>
                     </div>

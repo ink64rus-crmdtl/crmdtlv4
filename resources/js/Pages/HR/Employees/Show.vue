@@ -377,7 +377,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                     </div>
                     <div class="p-6 space-y-4">
                         <div>
-                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Основная точка</p>
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Основная локация</p>
                             <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
                                 <i class="ri-store-2-line text-primary mr-1"></i> {{ employee.branch ? employee.branch.name : '—' }}
                             </p>
@@ -546,7 +546,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                             <div class="space-y-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
                                 
                                 <div v-if="resolvedScopes.branches && resolvedScopes.branches.length > 0">
-                                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Доступ к точкам</p>
+                                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Доступ к локациям</p>
                                     <div class="flex flex-wrap gap-2">
                                         <span v-for="b in resolvedScopes.branches" :key="b.id" class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs">
                                             {{ b.name }}
@@ -720,13 +720,13 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                     <div v-show="activeTab === 'work'" class="p-6 space-y-5">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основная точка <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основная локация <span class="text-danger">*</span></label>
                                 <select
                                     v-model="form.branch_id"
                                     required
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                 >
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                     <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                 </select>
                                 <span v-if="form.errors.branch_id" class="text-xs text-danger mt-1">{{ form.errors.branch_id }}</span>
@@ -853,13 +853,13 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                         <div class="bg-warning/10 border border-warning/20 rounded-md p-4 mb-2">
                             <p class="text-sm text-warning font-medium">
                                 <i class="ri-information-line mr-1"></i>
-                                Внимание: Галочки, установленные здесь, перекрывают (дополняют) базовые права выбранной Роли. Используйте это для выдачи индивидуальных исключений (например, доступ к дополнительной точке).
+                                Внимание: Галочки, установленные здесь, перекрывают (дополняют) базовые права выбранной Роли. Используйте это для выдачи индивидуальных исключений (например, доступ к дополнительной локации).
                             </p>
                         </div>
 
-                        <!-- Точки -->
+                        <!-- Локации -->
                         <div>
-                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Точки</h4>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Локации</h4>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <label v-for="branch in scopes.branches" :key="branch.id" class="flex items-center cursor-pointer group">
                                     <input type="checkbox" :value="branch.id" v-model="form.scopes.branches" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
@@ -1029,7 +1029,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                                     <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                                         <tr>
                                             <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Применяется к</th>
-                                            <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Точка</th>
+                                            <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Локация</th>
                                             <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Ставка</th>
                                             <th class="py-2.5 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Действия</th>
                                         </tr>
@@ -1037,7 +1037,7 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                                     <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
                                         <tr v-for="rule in personalPayrollRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40">
                                             <td class="py-2.5 px-4 text-sm text-gray-700 dark:text-gray-300">{{ ruleTargetLabel(rule) }}</td>
-                                            <td class="py-2.5 px-4 text-sm text-gray-500 dark:text-gray-400">{{ rule.branch ? rule.branch.name : 'Все точки' }}</td>
+                                            <td class="py-2.5 px-4 text-sm text-gray-500 dark:text-gray-400">{{ rule.branch ? rule.branch.name : 'Все локации' }}</td>
                                             <td class="py-2.5 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ ruleValueLabel(rule) }}</td>
                                             <td class="py-2.5 px-4 text-right space-x-1.5">
                                                 <button type="button" @click="openRuleModal(rule)" class="inline-flex items-center justify-center rounded px-2 py-1 text-xs bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"><i class="ri-pencil-line"></i></button>
@@ -1120,9 +1120,9 @@ const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('
                         </template>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
                             <select v-model="ruleForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                <option value="">Все точки</option>
+                                <option value="">Все локации</option>
                                 <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                             </select>
                         </div>

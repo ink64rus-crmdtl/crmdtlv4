@@ -56,9 +56,9 @@ class DocumentTemplateController extends Controller
         'account.bik' => 'БИК банка',
         'account.account_number' => 'Расчётный счёт',
         'account.corr_account' => 'Корреспондентский счёт',
-        'branch.name' => 'Название точки',
-        'branch.address' => 'Адрес точки',
-        'branch.phone' => 'Телефон точки',
+        'branch.name' => 'Название локации',
+        'branch.address' => 'Адрес локации',
+        'branch.phone' => 'Телефон локации',
     ];
 
     public const ENTITY_PLACEHOLDERS = [

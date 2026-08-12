@@ -1493,14 +1493,14 @@ const formatMoney = (amount) => {
                             
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div v-if="branches.length > 1">
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                                     <select
                                         v-model="form.branch_id"
                                         @change="onBranchChangedInForm"
                                         required
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                     >
-                                        <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                        <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                         <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                     </select>
                                     <span v-if="form.errors.branch_id" class="text-xs text-danger mt-1">{{ form.errors.branch_id }}</span>

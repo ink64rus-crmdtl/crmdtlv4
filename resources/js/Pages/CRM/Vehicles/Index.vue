@@ -335,7 +335,7 @@ const deleteVehicle = (vehicle) => {
             </div>
 
             <PageHelper title="База автомобилей">
-                <p>Здесь отображаются все автомобили, привязанные к вашим клиентам. Автомобили фильтруются автоматически: вы видите только те машины, владельцы которых обслуживаются в доступных вам точках.</p>
+                <p>Здесь отображаются все автомобили, привязанные к вашим клиентам. Автомобили фильтруются автоматически: вы видите только те машины, владельцы которых обслуживаются в доступных вам локациях.</p>
                 <p v-if="strictPlateValidation" class="text-xs mt-2 opacity-80"><i class="ri-shield-check-fill text-success"></i> Включена строгая проверка госномеров (маска {{ tenantCountry }}).</p>
             </PageHelper>
 
@@ -828,9 +828,9 @@ const deleteVehicle = (vehicle) => {
                 <form @submit.prevent="submitQuickClient" class="flex flex-col">
                     <div class="p-6 space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                             <select v-model="quickClientForm.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                             <span v-if="quickClientForm.errors.branch_id" class="text-xs text-danger mt-1">{{ quickClientForm.errors.branch_id }}</span>

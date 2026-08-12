@@ -271,7 +271,7 @@ const openModal = (employee = null) => {
         }
     } else {
         form.reset();
-        // Предзаполняем точку из текущей сессии для избежания "пропажи" сотрудника
+        // Предзаполняем локацию из текущей сессии для избежания "пропажи" сотрудника
         form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
         form.type = 'staff';
         form.is_active = true;
@@ -556,9 +556,9 @@ const employeeTypes = {
                 </div>
                 <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
                         <select v-model="filtersForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                            <option value="">Все точки</option>
+                            <option value="">Все локации</option>
                             <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                         </select>
                     </div>
@@ -647,7 +647,7 @@ const employeeTypes = {
                 <!-- Offcanvas Body -->
                 <div class="flex-1 overflow-y-auto p-6 space-y-6">
                     
-                    <!-- Статус и Точка -->
+                    <!-- Статус и Локация -->
                     <div class="flex items-center gap-3">
                         <span :class="[previewEmployee.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-xs font-bold tracking-wide uppercase']">
                             {{ previewEmployee.is_active ? 'Активен' : 'Уволен' }}
@@ -855,13 +855,13 @@ const employeeTypes = {
                     <div v-show="activeTab === 'work'" class="p-6 space-y-5">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основная точка <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основная локация <span class="text-danger">*</span></label>
                                 <select
                                     v-model="form.branch_id"
                                     required
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                                 >
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                     <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                                 </select>
                                 <span v-if="form.errors.branch_id" class="text-xs text-danger mt-1">{{ form.errors.branch_id }}</span>
@@ -988,13 +988,13 @@ const employeeTypes = {
                         <div class="bg-warning/10 border border-warning/20 rounded-md p-4 mb-2">
                             <p class="text-sm text-warning font-medium">
                                 <i class="ri-information-line mr-1"></i>
-                                Внимание: Галочки, установленные здесь, перекрывают (дополняют) базовые права выбранной Роли. Используйте это для выдачи индивидуальных исключений (например, доступ к дополнительной точке).
+                                Внимание: Галочки, установленные здесь, перекрывают (дополняют) базовые права выбранной Роли. Используйте это для выдачи индивидуальных исключений (например, доступ к дополнительной локации).
                             </p>
                         </div>
 
-                        <!-- Точки -->
+                        <!-- Локации -->
                         <div>
-                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Точки</h4>
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 border-b border-gray-200 dark:border-gray-700 pb-1">Доступные Локации</h4>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <label v-for="branch in scopes.branches" :key="branch.id" class="flex items-center cursor-pointer group">
                                     <input type="checkbox" :value="branch.id" v-model="form.scopes.branches" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />

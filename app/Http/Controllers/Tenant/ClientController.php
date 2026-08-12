@@ -90,7 +90,7 @@ class ClientController extends Controller
             ['key' => 'balance', 'label' => 'Баланс', 'type' => 'system', 'is_default' => true],
             ['key' => 'bonus_points', 'label' => 'Бонусы', 'type' => 'system', 'is_default' => false],
             ['key' => 'discount_percent', 'label' => 'Скидка (%)', 'type' => 'system', 'is_default' => false],
-            ['key' => 'branch', 'label' => 'Точка', 'type' => 'system', 'is_default' => true],
+            ['key' => 'branch', 'label' => 'Локация', 'type' => 'system', 'is_default' => true],
         ];
 
         // 2. Подмешиваем кастомные поля для  Клиентов

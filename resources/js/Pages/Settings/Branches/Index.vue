@@ -31,7 +31,7 @@ const form = useForm({
     remove_logo: false,
 });
 
-// --- Логотип точки (jpg/png, автоматически обрезается сервером до 300×300) ---
+// --- Логотип локации (jpg/png, автоматически обрезается сервером до 300×300) ---
 const logoInput = ref(null);
 const logoPreviewUrl = ref(null);
 
@@ -59,7 +59,7 @@ const removeLogo = () => {
     if (logoInput.value) logoInput.value.value = '';
 };
 
-// Свои часы работы для точки (иначе действует расписание по умолчанию всего детейлинг-центра)
+// Свои часы работы для локации (иначе действует расписание по умолчанию всего детейлинг-центра)
 const useCustomHours = ref(false);
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
@@ -89,7 +89,7 @@ const selectAll = computed({
 });
 
 const bulkDelete = () => {
-    if (confirm(`Удалить выбранные точки (${selectedIds.value.length})?`)) {
+    if (confirm(`Удалить выбранные локации (${selectedIds.value.length})?`)) {
         router.post(route('settings.branches.bulk-destroy'), { ids: selectedIds.value }, {
             onSuccess: () => {
                 selectedIds.value = [];
@@ -146,7 +146,7 @@ const closeModal = () => {
     form.clearErrors();
     // Сбрасываем transform, который submit() навешивает на PUT (_method-spoofing
     // для загрузки файла) — иначе он молча "прилипает" и следующее создание
-    // новой точки (POST) уедет с чужим _method=put.
+    // новой локации (POST) уедет с чужим _method=put.
     form.transform(data => data);
     useCustomHours.value = false;
     logoPreviewUrl.value = null;
@@ -183,14 +183,14 @@ const submit = () => {
 };
 
 const deleteBranch = (branch) => {
-    if (confirm(`Удалить точку "${branch.name}"?`)) {
+    if (confirm(`Удалить локацию "${branch.name}"?`)) {
         form.delete(route('settings.branches.destroy', branch.id));
     }
 };
 </script>
 
 <template>
-    <Head title="Точки" />
+    <Head title="Локации" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -203,17 +203,17 @@ const deleteBranch = (branch) => {
             <SettingsNav />
 
             <!-- Page Helper (Система подсказок) -->
-            <PageHelper title="Что такое Точка?">
-                <p><strong>Точка</strong> — это физический адрес или подразделение, оказывающее услуги: главная, основная единица системы. Именно к точке привязываются сотрудники, локальные склады, расписание записей, заказы и автомобили в работе.</p>
-                <p>Юридические лица (реквизиты для документов) привязываются к точке, а не наоборот: одна точка может выставлять документы от нескольких юрлиц сразу (например, часть заказов — от ИП, часть — от ООО). Привязка настраивается со стороны юрлица — см. Настройки → Юридические лица.</p>
+            <PageHelper title="Что такое Локация?">
+                <p><strong>Локация</strong> — это физический адрес или подразделение, оказывающее услуги: главная, основная единица системы. Именно к локации привязываются сотрудники, локальные склады, расписание записей, заказы и автомобили в работе.</p>
+                <p>Юридические лица (реквизиты для документов) привязываются к локации, а не наоборот: одна локация может выставлять документы от нескольких юрлиц сразу (например, часть заказов — от ИП, часть — от ООО). Привязка настраивается со стороны юрлица — см. Настройки → Юридические лица.</p>
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
-                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Точки</h1>
+                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Локации</h1>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Управление физическими точками обслуживания клиентов
+                        Управление физическими локациями обслуживания клиентов
                     </p>
                 </div>
             </div>
@@ -222,7 +222,7 @@ const deleteBranch = (branch) => {
             <BulkActions
                 v-if="selectedIds.length > 0"
                 :selectedCount="selectedIds.length"
-                noun="точек"
+                noun="локаций"
                 @export="bulkExport"
                 @delete="bulkDelete"
             />
@@ -240,7 +240,7 @@ const deleteBranch = (branch) => {
                             class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
                         >
                             <i class="ri-add-line text-base"></i>
-                            Добавить точку
+                            Добавить локацию
                         </button>
                     </template>
                 </DataTableToolbar>
@@ -312,7 +312,7 @@ const deleteBranch = (branch) => {
                             </tr>
                             <tr v-if="branchesList.data.length === 0">
                                 <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Точки не найдены.
+                                    Локации не найдены.
                                 </td>
                             </tr>
                         </tbody>
@@ -328,7 +328,7 @@ const deleteBranch = (branch) => {
                 
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        {{ editingBranch ? 'Редактирование точки' : 'Новая точка' }}
+                        {{ editingBranch ? 'Редактирование локации' : 'Новая локация' }}
                     </h3>
                     <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none">
                         <i class="ri-close-line text-xl"></i>
@@ -339,7 +339,7 @@ const deleteBranch = (branch) => {
                     <div class="p-6 space-y-4">
                         <div v-if="editingBranch" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
                             <i class="ri-information-line text-info mr-1"></i>
-                            Юрлица этой точки:
+                            Юрлица этой локации:
                             <span v-if="editingBranch.legal_entities?.length">{{ editingBranch.legal_entities.map(le => le.name).join(', ') }}</span>
                             <span v-else>ни одного</span>
                             — настраивается со стороны юрлица, см. Настройки → Юридические лица.
@@ -347,11 +347,11 @@ const deleteBranch = (branch) => {
 
                         <div class="flex items-center gap-4">
                             <div class="w-20 h-20 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center overflow-hidden shrink-0">
-                                <img v-if="logoPreviewUrl" :src="logoPreviewUrl" alt="Логотип точки" class="w-full h-full object-cover" />
+                                <img v-if="logoPreviewUrl" :src="logoPreviewUrl" alt="Логотип локации" class="w-full h-full object-cover" />
                                 <i v-else class="ri-store-2-line text-3xl text-gray-300 dark:text-gray-600"></i>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Логотип точки</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Логотип локации</label>
                                 <input ref="logoInput" type="file" accept="image/jpeg,image/png" class="hidden" @change="onLogoSelected" />
                                 <div class="flex gap-2">
                                     <button type="button" @click="pickLogo" class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
@@ -368,7 +368,7 @@ const deleteBranch = (branch) => {
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название точки <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название локации <span class="text-danger">*</span></label>
                                 <input
                                     v-model="form.name"
                                     type="text"
@@ -400,7 +400,7 @@ const deleteBranch = (branch) => {
                                 />
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон точки</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон локации</label>
                                 <input
                                     v-model="form.phone"
                                     type="text"
@@ -429,7 +429,7 @@ const deleteBranch = (branch) => {
                                     <div :class="[useCustomHours ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                                 </div>
                                 <label class="ml-2.5 block text-sm font-semibold text-gray-800 dark:text-gray-200 cursor-pointer" @click="useCustomHours = !useCustomHours">
-                                    Свои часы работы для этой точки
+                                    Свои часы работы для этой локации
                                 </label>
                             </div>
                             <p v-if="!useCustomHours" class="text-xs text-gray-500 dark:text-gray-400 mb-2">Действует расписание по умолчанию всего детейлинг-центра (Настройки → Клиенты и Авто).</p>
@@ -442,7 +442,7 @@ const deleteBranch = (branch) => {
                                 <div :class="[form.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
                             </div>
                             <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
-                                Точка активна
+                                Локация активна
                             </label>
                         </div>
                     </div>

@@ -44,7 +44,7 @@ class ExportReadyNotification extends Notification
             'clients' => 'клиентов',
             'vehicles' => 'автомобилей',
             'employees' => 'сотрудников',
-            'branches' => 'точек',
+            'branches' => 'локаций',
             'legal_entities' => 'юрлиц',
             'business_directions' => 'направлений',
             'custom_fields' => 'кастомных полей',

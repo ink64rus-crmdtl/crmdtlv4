@@ -185,7 +185,7 @@ const form = useForm({
     items: [],
 });
 
-// Посты общие для всего центра (branch_id === null) видны при любой выбранной точке.
+// Посты общие для всего центра (branch_id === null) видны при любой выбранной локации.
 const filteredPosts = computed(() => {
     if (!form.branch_id) return props.posts;
     return props.posts.filter(p => !p.branch_id || p.branch_id === form.branch_id);
@@ -231,7 +231,7 @@ const JS_DOW_TO_KEY = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const FALLBACK_HOURS = { open: '07:00', close: '22:00' };
 const TIME_SLOT_STEP_MINUTES = 30;
 
-// Часы работы точки (если задано своё расписание), иначе — расписание центра по умолчанию.
+// Часы работы локации (если задано своё расписание), иначе — расписание центра по умолчанию.
 const effectiveWorkingHours = computed(() => {
     const branch = props.branches.find(b => b.id === form.branch_id);
     return (branch && branch.working_hours) || props.defaultWorkingHours || null;
@@ -297,7 +297,7 @@ const endTime = computed({
 });
 
 // Текущее значение всегда включаем в список слотов, даже если оно не попадает
-// в шаг сетки или выходит за пределы графика (правка старой записи, смена точки) —
+// в шаг сетки или выходит за пределы графика (правка старой записи, смена локации) —
 // иначе выбранное время пропадёт из выпадающего списка незаметно для пользователя.
 const withCurrentValue = (slots, current) => (current && !slots.includes(current) ? [...slots, current].sort() : slots);
 
@@ -509,7 +509,7 @@ const toLocalDateTimeInput = (date) => {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-// Бэкенд отдаёт время уже в поясе точки записи, поэтому виджет настроен на
+// Бэкенд отдаёт время уже в поясе локации записи, поэтому виджет настроен на
 // timeZone:'local' — просто показывает переданные строки как есть, без
 // повторной конвертации под часовой пояс браузера.
 const fetchCalendarEvents = (fetchInfo, successCallback, failureCallback) => {
@@ -1243,12 +1243,12 @@ const toggleDefaultView = () => {
 
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                                 <SearchableSelect
                                     v-model="form.branch_id"
                                     :options="branchOptions"
-                                    placeholder="Выберите точку..."
-                                    searchPlaceholder="Поиск точки..."
+                                    placeholder="Выберите локацию..."
+                                    searchPlaceholder="Поиск локации..."
                                     @update:model-value="form.post_id = ''"
                                 />
                                 <p v-if="form.errors.branch_id" class="mt-1 text-xs text-danger">{{ form.errors.branch_id }}</p>
@@ -1335,7 +1335,7 @@ const toggleDefaultView = () => {
                                     </select>
                                 </div>
                                 <p v-if="endDate && endDayClosed" class="mt-1 text-xs text-danger">
-                                    <i class="ri-error-warning-line"></i> Точка не работает в этот день — окончание записи нельзя ставить на нерабочий день.
+                                    <i class="ri-error-warning-line"></i> Локация не работает в этот день — окончание записи нельзя ставить на нерабочий день.
                                 </p>
                                 <p v-if="form.errors.end_at" class="mt-1 text-xs text-danger">{{ form.errors.end_at }}</p>
                             </div>
@@ -1405,7 +1405,7 @@ const toggleDefaultView = () => {
                         <span v-else></span>
                         <div class="flex gap-3">
                             <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                            <button type="submit" :disabled="form.processing || (endDate && endDayClosed)" :title="endDate && endDayClosed ? 'Окончание записи выпадает на нерабочий день точки' : ''" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                            <button type="submit" :disabled="form.processing || (endDate && endDayClosed)" :title="endDate && endDayClosed ? 'Окончание записи выпадает на нерабочий день локации' : ''" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
                         </div>
                     </div>
                 </form>
@@ -1453,9 +1453,9 @@ const toggleDefaultView = () => {
                 <form @submit.prevent="submitQuickClient" class="flex flex-col">
                     <div class="p-6 space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
                             <select v-model="quickClientForm.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                             <span v-if="quickClientForm.errors.branch_id" class="text-xs text-danger mt-1">{{ quickClientForm.errors.branch_id }}</span>

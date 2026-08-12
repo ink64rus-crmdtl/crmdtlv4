@@ -195,7 +195,7 @@ const ruleValueLabel = (rule) => {
 
                     <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
                         <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">День начисления оклада</label>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Число месяца, в которое системa автоматически создаёт черновик начисления оклада (ожидает выплаты в карточке сотрудника) для всех активных сотрудников с заданным окладом. Учитывается часовой пояс точки.</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Число месяца, в которое системa автоматически создаёт черновик начисления оклада (ожидает выплаты в карточке сотрудника) для всех активных сотрудников с заданным окладом. Учитывается часовой пояс локации.</p>
                         <input v-model="generalForm.salary_accrual_day" type="number" step="1" min="1" max="28" required class="block w-full max-w-[100px] rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                     </div>
 
@@ -224,7 +224,7 @@ const ruleValueLabel = (rule) => {
                             <tr>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Применяется к</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Точка</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локация</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Ставка</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
@@ -238,7 +238,7 @@ const ruleValueLabel = (rule) => {
                                     </span>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ ruleTargetLabel(rule) }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ rule.branch ? rule.branch.name : 'Все точки' }}</td>
+                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ rule.branch ? rule.branch.name : 'Все локации' }}</td>
                                 <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ ruleValueLabel(rule) }}</td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
                                     <button @click="openRuleModal(rule)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
@@ -321,9 +321,9 @@ const ruleValueLabel = (rule) => {
                         </template>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация</label>
                             <select v-model="ruleForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                <option value="">Все точки</option>
+                                <option value="">Все локации</option>
                                 <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                             </select>
                         </div>

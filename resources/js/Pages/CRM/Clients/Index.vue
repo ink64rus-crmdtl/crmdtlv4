@@ -729,7 +729,7 @@ const formatMoney = (amount) => {
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ previewClient.source || '—' }}</p>
                             </div>
                             <div>
-                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Точка</p>
+                                <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Локация</p>
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
                                     <i class="ri-store-2-line text-gray-400"></i> {{ previewClient.branch ? previewClient.branch.name : '—' }}
                                 </p>
@@ -959,13 +959,13 @@ const formatMoney = (amount) => {
                         </div>
 
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка регистрации <span class="text-danger">*</span></label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация регистрации <span class="text-danger">*</span></label>
                             <select
                                 v-model="form.branch_id"
                                 required
                                 class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
                             >
-                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите точку...</option>
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
                                 <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
                             </select>
                         </div>
