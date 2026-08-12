@@ -1476,13 +1476,13 @@ const formatMoney = (amount) => {
             </div>
         </Offcanvas>
 
-        <!-- Модальное окно редактирования шапки (Ширина 3xl - увеличено в 1.5 раза) -->
+        <!-- Модальное окно (Форма) (Ширина 3xl - увеличено в 1.5 раза) -->
         <Teleport to="body">
             <div v-if="isModalOpen" class="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-3xl my-8 mx-auto flex flex-col">
                     <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                         <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                            Редактирование шапки заказа
+                            Редактирование формы заказа
                         </h3>
                         <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                             <i class="ri-close-line text-xl"></i>

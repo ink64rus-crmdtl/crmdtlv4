@@ -816,12 +816,12 @@ const deleteOrder = (order) => {
             </div>
         </div>
 
-        <!-- Модальное окно редактирования шапки -->
+        <!-- Модальное окно (Форма) -->
         <Modal :show="isModalOpen" @close="closeModal" maxWidth="3xl">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        {{ editingOrder ? 'Редактирование шапки заказа' : 'Создание заказ-наряда' }}
+                        {{ editingOrder ? 'Редактирование формы заказа' : 'Создание заказ-наряда' }}
                     </h3>
                     <button @click="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
                 </div>
