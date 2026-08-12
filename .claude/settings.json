@@ -33,10 +33,9 @@
       "Bash(mysqladmin ping)",
       "Bash(php artisan tinker *)",
       "Bash(node *)",
-      "Bash(python3 *)"
-    ],
-    "ask": [
-      "Bash(php artisan *)"
+      "Bash(python3 *)",
+      "Bash(php artisan *)",
+      "Bash(npm run *)"
     ]
   }
 }
