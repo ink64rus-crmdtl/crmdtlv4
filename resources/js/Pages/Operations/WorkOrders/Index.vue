@@ -227,6 +227,7 @@ const quickClientForm = useForm({
     type: 'b2c',
     name: '',
     phone: '',
+    phone_required: true,
 });
 
 const openQuickClientModal = () => {
@@ -914,8 +915,32 @@ const deleteOrder = (order) => {
                             <span v-if="quickClientForm.errors.name" class="text-xs text-danger mt-1">{{ quickClientForm.errors.name }}</span>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон</label>
-                            <input v-model="quickClientForm.phone" type="text" placeholder="+7 (999) 000-00-00" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Телефон <span v-if="quickClientForm.phone_required" class="text-danger">*</span>
+                                </label>
+                                <label class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        :checked="!quickClientForm.phone_required"
+                                        @change="quickClientForm.phone_required = !$event.target.checked"
+                                        class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary focus:ring-offset-0"
+                                    />
+                                    Без номера
+                                </label>
+                            </div>
+                            <input
+                                v-model="quickClientForm.phone"
+                                type="text"
+                                :required="quickClientForm.phone_required"
+                                placeholder="+7 (999) 000-00-00"
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                            />
+                            <span v-if="quickClientForm.errors.phone" class="text-xs text-danger mt-1 block">{{ quickClientForm.errors.phone }}</span>
+                            <p v-if="!quickClientForm.phone_required" class="text-[11px] text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 mt-2 flex items-start gap-1.5">
+                                <i class="ri-error-warning-line mt-0.5"></i>
+                                <span>Без номера высок риск случайно создать дубль клиента — указывайте это только если контакта действительно нет.</span>
+                            </p>
                         </div>
                         <p class="text-xs text-gray-400">Остальные данные клиента можно заполнить позже, в карточке клиента.</p>
                     </div>

@@ -235,6 +235,7 @@ const form = useForm({
     name: '',
     alias: '',
     phone: '',
+    phone_required: true,
     phone_2: '',
     email: '',
     source: '',
@@ -294,6 +295,10 @@ const openModal = (client = null) => {
         form.name = client.name;
         form.alias = client.alias || '';
         form.phone = client.phone || '';
+        // У уже существующего клиента без телефона не форсируем требование
+        // сразу при открытии формы — иначе сохранение без единой правки
+        // упрётся в валидацию, хотя раньше это же значение приняли.
+        form.phone_required = Boolean(client.phone);
         form.phone_2 = client.phone_2 || '';
         form.email = client.email || '';
         form.source = client.source || '';
@@ -904,24 +909,44 @@ const formatMoney = (amount) => {
                     <div v-show="activeTab === 'contacts'" class="p-6 space-y-5">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основной телефон</label>
-                                <input 
-                                    v-model="form.phone" 
-                                    type="text" 
-                                    placeholder="+7 (999) 000-00-00" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Основной телефон <span v-if="form.phone_required" class="text-danger">*</span>
+                                    </label>
+                                    <label class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            :checked="!form.phone_required"
+                                            @change="form.phone_required = !$event.target.checked"
+                                            class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary focus:ring-offset-0"
+                                        />
+                                        Без номера
+                                    </label>
+                                </div>
+                                <input
+                                    v-model="form.phone"
+                                    type="text"
+                                    :required="form.phone_required"
+                                    placeholder="+7 (999) 000-00-00"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
+                                <span v-if="form.errors.phone" class="text-xs text-danger mt-1 block">{{ form.errors.phone }}</span>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дополнительный телефон</label>
-                                <input 
-                                    v-model="form.phone_2" 
-                                    type="text" 
-                                    placeholder="+7 (999) 111-11-11" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                <input
+                                    v-model="form.phone_2"
+                                    type="text"
+                                    placeholder="+7 (999) 111-11-11"
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
                             </div>
                         </div>
+
+                        <p v-if="!form.phone_required" class="text-[11px] text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 flex items-start gap-1.5">
+                            <i class="ri-error-warning-line mt-0.5"></i>
+                            <span>Без номера телефона высок риск случайно создать дубль клиента — именно по телефону система обычно определяет, что клиент уже есть в базе. Указывайте это только если контакта действительно нет.</span>
+                        </p>
 
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Email</label>

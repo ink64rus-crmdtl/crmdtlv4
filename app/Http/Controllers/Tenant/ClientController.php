@@ -3,23 +3,23 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
+use App\Models\Branch;
+use App\Models\Channel;
 use App\Models\Client;
 use App\Models\ClientGroup;
-use App\Models\Branch;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
+use App\Models\DocumentTemplate;
 use App\Models\ListView;
 use App\Models\Lookup;
 use App\Models\WorkOrder;
-use App\Models\Channel;
-use App\Models\DocumentTemplate;
-use App\Services\FieldPermissionService;
-use App\Services\CountryConfigService;
-use App\Services\QueryFilterService;
 use App\Services\ActivityLogger;
 use App\Services\ClientSegmentService;
+use App\Services\CountryConfigService;
+use App\Services\FieldPermissionService;
 use App\Services\LoyaltyGradeService;
-use App\Jobs\ExportEntitiesJob;
+use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -30,7 +30,7 @@ class ClientController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        
+
         // Базовый запрос с подгрузкой связей
         $query = Client::with(['branch' => fn ($q) => $q->withTrashed(), 'group']);
         ClientSegmentService::withAggregates($query);
@@ -56,18 +56,18 @@ class ClientController extends Controller
             ClientSegmentService::applyFilter($query, $segmentFilter);
         }
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
-        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+        if (($request->wantsJson() || $request->ajax()) && ! $request->hasHeader('X-Inertia')) {
             return response()->json($query->paginate(15));
         }
 
         // Пагинация вместо ->get()
         $clients = $query->paginate(15)->withQueryString();
-        
+
         $branches = Branch::forSelect()->get(['id', 'name']);
         $clientGroups = ClientGroup::orderBy('name')->get();
         $lookups = Lookup::whereIn('type', ['client_source', 'client_role'])->where('is_active', true)->get()->groupBy('type');
@@ -76,7 +76,7 @@ class ClientController extends Controller
         $countryConfig = CountryConfigService::getForCountry($tenantCountry);
 
         // --- ДИНАМИЧЕСКИЕ ТАБЛИЦЫ И КАСТОМНЫЕ ПОЛЯ ---
-        
+
         // 1. Формируем базовый список системных колонок
         $baseColumns = [
             ['key' => 'client_name', 'label' => 'Клиент', 'type' => 'system', 'is_default' => true],
@@ -130,7 +130,7 @@ class ClientController extends Controller
         $allFieldKeys = array_column($baseColumns, 'key');
         $visibleKeys = FieldPermissionService::visibleFields($user, 'client', $allFieldKeys);
 
-        $availableColumns = array_values(array_filter($baseColumns, function($col) use ($visibleKeys) {
+        $availableColumns = array_values(array_filter($baseColumns, function ($col) use ($visibleKeys) {
             return in_array($col['key'], $visibleKeys);
         }));
 
@@ -140,9 +140,9 @@ class ClientController extends Controller
             ->first();
 
         // Если вида нет, берем дефолтные колонки из доступных
-        $visibleColumns = $listView 
-            ? $listView->visible_columns 
-            : array_values(array_map(fn($c) => $c['key'], array_filter($availableColumns, fn($c) => $c['is_default'])));
+        $visibleColumns = $listView
+            ? $listView->visible_columns
+            : array_values(array_map(fn ($c) => $c['key'], array_filter($availableColumns, fn ($c) => $c['is_default'])));
 
         return Inertia::render('CRM/Clients/Index', [
             'clients' => $clients,
@@ -165,10 +165,10 @@ class ClientController extends Controller
         // Загружаем автомобили вместе с марками и моделями
         $client->load(['branch' => fn ($q) => $q->withTrashed(), 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $client->documents->each->append('is_stale');
-        
+
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'client')->where('entity_id', $client->id)->get();
-        
+
         $customFieldsData = [];
         foreach ($customFieldDefs as $def) {
             $val = $cfValues->where('custom_field_definition_id', $def->id)->first();
@@ -228,6 +228,13 @@ class ClientController extends Controller
 
     public function store(Request $request)
     {
+        // Телефон обязателен по умолчанию (иначе непонятно, как узнать,
+        // что клиент уже есть в системе) — но менеджер может явно снять
+        // требование тумблером на форме (phone_required=false), например
+        // для лида без номера; фронт в этом случае обязан показать
+        // предупреждение о риске задвоить клиента (не проверяется здесь).
+        $phoneRequired = $request->boolean('phone_required', true);
+
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'client_group_id' => ['nullable', 'exists:client_groups,id'],
@@ -236,7 +243,7 @@ class ClientController extends Controller
             'role' => ['nullable', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:255'],
+            'phone' => [$phoneRequired ? 'required' : 'nullable', 'string', 'max:255'],
             'phone_2' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'source' => ['nullable', 'string', 'max:255'],
@@ -255,7 +262,7 @@ class ClientController extends Controller
                 // решением (LoyaltyGradeService её больше не тронет). Оставили
                 // пустой ("Без группы") — можно, автоподбор начнёт работать
                 // с первой же оплаты, если клиент наберёт нужный оборот/заказы.
-                'client_group_locked' => !empty($validated['client_group_id']),
+                'client_group_locked' => ! empty($validated['client_group_id']),
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
                 'role' => $validated['role'] ?? null,
@@ -271,7 +278,7 @@ class ClientController extends Controller
                 'requisites' => $validated['requisites'] ?? null,
             ]);
 
-            if (!empty($validated['custom_fields'])) {
+            if (! empty($validated['custom_fields'])) {
                 $this->saveCustomFields($client, $validated['custom_fields']);
             }
 
@@ -283,6 +290,8 @@ class ClientController extends Controller
 
     public function update(Request $request, Client $client)
     {
+        $phoneRequired = $request->boolean('phone_required', true);
+
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'client_group_id' => ['nullable', 'exists:client_groups,id'],
@@ -291,7 +300,7 @@ class ClientController extends Controller
             'role' => ['nullable', 'string', 'max:255'],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:255'],
+            'phone' => [$phoneRequired ? 'required' : 'nullable', 'string', 'max:255'],
             'phone_2' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'source' => ['nullable', 'string', 'max:255'],
@@ -365,6 +374,7 @@ class ClientController extends Controller
     public function destroy(Client $client)
     {
         $client->delete();
+
         return redirect()->back()->with('success', 'Клиент удален');
     }
 
@@ -461,10 +471,10 @@ class ClientController extends Controller
     {
         foreach ($customFieldsData as $key => $value) {
             $def = CustomFieldDefinition::where('entity_type', 'client')->where('key', $key)->first();
-            
+
             if ($def) {
                 $valData = ['value' => null, 'value_text' => null, 'value_number' => null, 'value_date' => null];
-                
+
                 if ($def->type === 'number') {
                     $valData['value_number'] = $value;
                 } elseif ($def->type === 'date') {
