@@ -7,7 +7,7 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
-import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
+import { Head, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
@@ -16,7 +16,6 @@ const props = defineProps({
     movements: Object,
     warehouses: Array,
     branches: Array,
-    products: Array,
     filters: Object,
     availableColumns: { type: Array, default: () => [] },
     listView: { type: Object, default: () => ({ visible_columns: [] }) },
@@ -24,7 +23,6 @@ const props = defineProps({
 
 const page = usePage();
 
-const isModalOpen = ref(false);
 const isColumnsModalOpen = ref(false);
 
 const activeColumns = computed(() => {
@@ -32,44 +30,6 @@ const activeColumns = computed(() => {
         .map(key => props.availableColumns.find(c => c.key === key))
         .filter(Boolean);
 });
-
-// Форма оприходования (Receipt)
-const form = useForm({
-    warehouse_id: '',
-    branch_id: page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : ''),
-    items: [
-        { product_id: '', quantity: 1, cost_price: 0 }
-    ],
-});
-
-const addItem = () => {
-    form.items.push({ product_id: '', quantity: 1, cost_price: 0 });
-};
-
-const removeItem = (index) => {
-    if (form.items.length > 1) {
-        form.items.splice(index, 1);
-    }
-};
-
-const openModal = () => {
-    form.reset();
-    form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
-    form.items = [{ product_id: '', quantity: 1, cost_price: 0 }];
-    isModalOpen.value = true;
-};
-
-const closeModal = () => {
-    isModalOpen.value = false;
-    form.reset();
-    form.clearErrors();
-};
-
-const submit = () => {
-    form.post(route('warehouse.movements.receipt'), {
-        onSuccess: () => closeModal(),
-    });
-};
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -186,9 +146,9 @@ const movementTypes = {
             
             <WarehouseNav />
 
-            <PageHelper title="Движения и Оприходование">
-                <p>Здесь фиксируется вся история изменения остатков на складах: приходы (закупки), расходы (списания в заказ-наряды) и перемещения.</p>
-                <p>Чтобы добавить товар на склад, нажмите кнопку <strong>«Оприходовать товар»</strong>. Система автоматически пересчитает среднюю себестоимость или создаст новую партию в зависимости от настроек товара.</p>
+            <PageHelper title="Движения товаров">
+                <p>Здесь фиксируется вся история изменения остатков на складах: приходы (по накладным от поставщиков), расходы (списания в заказ-наряды) и перемещения.</p>
+                <p>Чтобы добавить товар на склад, оформите <Link :href="route('warehouse.goods-receipts.index')" class="text-primary hover:underline font-medium">приходную накладную</Link> — вкладка выше. Система автоматически пересчитает среднюю себестоимость или создаст новую партию в зависимости от настроек товара.</p>
             </PageHelper>
 
             <!-- Блок ошибок -->
@@ -217,17 +177,7 @@ const movementTypes = {
                     @open-filters="isFiltersOpen = true"
                     @open-columns="isColumnsModalOpen = true"
                     placeholder="Поиск по названию товара или номеру заказа..."
-                >
-                    <template #actions>
-                        <button
-                            @click="openModal()"
-                            class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm"
-                        >
-                            <i class="ri-download-line text-base"></i>
-                            Оприходовать товар
-                        </button>
-                    </template>
-                </DataTableToolbar>
+                />
                 <div class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
@@ -269,8 +219,11 @@ const movementTypes = {
                                         {{ formatMoney(movement.cost_price) }}
                                     </template>
                                     <template v-else-if="col.key === 'reason'">
-                                        <Link v-if="movement.workOrder" :href="route('operations.work-orders.show', movement.workOrder.id)" class="text-primary hover:underline font-medium">
-                                            Заказ #{{ String(movement.workOrder.id).padStart(6, '0') }}
+                                        <Link v-if="movement.work_order" :href="route('operations.work-orders.show', movement.work_order.id)" class="text-primary hover:underline font-medium">
+                                            Заказ #{{ String(movement.work_order.id).padStart(6, '0') }}
+                                        </Link>
+                                        <Link v-else-if="movement.goods_receipt" :href="route('warehouse.goods-receipts.show', movement.goods_receipt.id)" class="text-primary hover:underline font-medium">
+                                            Накладная №{{ String(movement.goods_receipt.id).padStart(6, '0') }}<span v-if="movement.goods_receipt.supplier"> ({{ movement.goods_receipt.supplier.name }})</span>
                                         </Link>
                                         <span v-else class="text-xs text-gray-500">{{ movement.comment || 'Ручная операция' }}</span>
                                     </template>
@@ -285,90 +238,6 @@ const movementTypes = {
                     </table>
                 </div>
                 <Pagination :meta="movements" />
-            </div>
-        </div>
-
-        <!-- Модальное окно Оприходования -->
-        <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 w-full sm:max-w-4xl my-8 mx-auto flex flex-col">
-                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
-                        Оприходование товаров
-                    </h3>
-                    <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <i class="ri-close-line text-xl"></i>
-                    </button>
-                </div>
-
-                <form @submit.prevent="submit" class="flex flex-col">
-                    <div class="p-6 space-y-6">
-                        
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Склад получатель <span class="text-danger">*</span></label>
-                                <select v-model="form.warehouse_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите склад...</option>
-                                    <option v-for="wh in warehouses" :key="wh.id" :value="wh.id" class="bg-white dark:bg-gray-800">{{ wh.name }}</option>
-                                </select>
-                                <span v-if="form.errors.warehouse_id" class="text-xs text-danger mt-1">{{ form.errors.warehouse_id }}</span>
-                            </div>
-                            <div v-if="branches.length > 1">
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация инициатор <span class="text-danger">*</span></label>
-                                <select v-model="form.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                    <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
-                                    <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
-                                </select>
-                                <span v-if="form.errors.branch_id" class="text-xs text-danger mt-1">{{ form.errors.branch_id }}</span>
-                            </div>
-                        </div>
-
-                        <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-                            <div class="flex justify-between items-center mb-3">
-                                <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">Позиции к оприходованию</h4>
-                                <button type="button" @click="addItem" class="text-sm text-primary hover:text-primary-600 font-medium flex items-center gap-1">
-                                    <i class="ri-add-line"></i> Добавить строку
-                                </button>
-                            </div>
-
-                            <div class="space-y-3">
-                                <div v-for="(item, index) in form.items" :key="index" class="flex gap-3 items-start bg-gray-50/50 dark:bg-gray-800/30 p-3 rounded-md border border-gray-200 dark:border-gray-700">
-                                    <div class="flex-1">
-                                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Товар <span class="text-danger">*</span></label>
-                                        <select v-model="item.product_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                            <option value="" disabled>Выберите товар...</option>
-                                            <option v-for="p in products" :key="p.id" :value="p.id">
-                                                {{ getLocalizedLabel(p.name) }} ({{ p.accounting_type === 'batch' ? 'Партионный' : 'Средневзвешенный' }})
-                                            </option>
-                                        </select>
-                                        <span v-if="form.errors[`items.${index}.product_id`]" class="text-xs text-danger mt-1">{{ form.errors[`items.${index}.product_id`] }}</span>
-                                    </div>
-                                    <div class="w-32">
-                                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Кол-во <span class="text-danger">*</span></label>
-                                        <input v-model="item.quantity" type="number" step="any" min="0.001" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                                        <span v-if="form.errors[`items.${index}.quantity`]" class="text-xs text-danger mt-1">{{ form.errors[`items.${index}.quantity`] }}</span>
-                                    </div>
-                                    <div class="w-40">
-                                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Цена закупки (₽) <span class="text-danger">*</span></label>
-                                        <input v-model="item.cost_price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
-                                        <span v-if="form.errors[`items.${index}.cost_price`]" class="text-xs text-danger mt-1">{{ form.errors[`items.${index}.cost_price`] }}</span>
-                                    </div>
-                                    <div class="pt-6">
-                                        <button type="button" @click="removeItem(index)" :disabled="form.items.length === 1" class="text-danger hover:text-danger-600 disabled:opacity-30 p-1">
-                                            <i class="ri-delete-bin-line text-lg"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
-                        <button type="button" @click="closeModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                        <button type="submit" :disabled="form.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">
-                            <i class="ri-download-line mr-2"></i> Оприходовать
-                        </button>
-                    </div>
-                </form>
             </div>
         </div>
 

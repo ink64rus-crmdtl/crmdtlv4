@@ -17,6 +17,7 @@ use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\DocumentController;
 use App\Http\Controllers\Tenant\DocumentTemplateController;
 use App\Http\Controllers\Tenant\EmployeeController;
+use App\Http\Controllers\Tenant\GoodsReceiptController;
 use App\Http\Controllers\Tenant\LegalEntityController;
 use App\Http\Controllers\Tenant\ListViewController;
 use App\Http\Controllers\Tenant\LookupController;
@@ -352,8 +353,13 @@ Route::middleware([
         Route::post('/warehouse/balances/bulk-export', [StockBalanceController::class, 'bulkExport'])->name('warehouse.balances.bulk-export');
 
         Route::get('/warehouse/movements', [StockMovementController::class, 'index'])->name('warehouse.movements.index');
-        Route::post('/warehouse/movements/receipt', [StockMovementController::class, 'storeReceipt'])->name('warehouse.movements.receipt');
         Route::post('/warehouse/movements/bulk-export', [StockMovementController::class, 'bulkExport'])->name('warehouse.movements.bulk-export');
+
+        // Warehouse: Приходные накладные (оприходование через поставщика — заменяет старое warehouse.movements.receipt)
+        Route::get('/warehouse/goods-receipts', [GoodsReceiptController::class, 'index'])->name('warehouse.goods-receipts.index');
+        Route::post('/warehouse/goods-receipts', [GoodsReceiptController::class, 'store'])->name('warehouse.goods-receipts.store');
+        Route::get('/warehouse/goods-receipts/{receipt}', [GoodsReceiptController::class, 'show'])->name('warehouse.goods-receipts.show');
+        Route::post('/warehouse/goods-receipts/{receipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('warehouse.goods-receipts.cancel');
 
         // Finance: Статьи доходов и расходов
         Route::get('/finance/categories', [TransactionCategoryController::class, 'index'])->name('finance.categories.index');

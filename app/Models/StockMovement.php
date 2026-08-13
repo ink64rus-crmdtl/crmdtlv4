@@ -14,6 +14,7 @@ class StockMovement extends Model
         'product_id',
         'product_batch_id',
         'work_order_id',
+        'goods_receipt_id',
         'type',
         'quantity',
         'cost_price',
@@ -59,5 +60,10 @@ class StockMovement extends Model
     public function workOrder(): BelongsTo
     {
         return $this->belongsTo(WorkOrder::class);
+    }
+
+    public function goodsReceipt(): BelongsTo
+    {
+        return $this->belongsTo(GoodsReceipt::class);
     }
 }
