@@ -365,6 +365,9 @@ Route::middleware([
         Route::post('/warehouse/goods-receipts', [GoodsReceiptController::class, 'store'])->name('warehouse.goods-receipts.store');
         Route::get('/warehouse/goods-receipts/{receipt}', [GoodsReceiptController::class, 'show'])->name('warehouse.goods-receipts.show');
         Route::post('/warehouse/goods-receipts/{receipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('warehouse.goods-receipts.cancel');
+        Route::post('/warehouse/goods-receipts/{receipt}/items', [GoodsReceiptController::class, 'addItem'])->name('warehouse.goods-receipts.items.store');
+        Route::put('/warehouse/goods-receipts/{receipt}/items/{item}', [GoodsReceiptController::class, 'updateItem'])->name('warehouse.goods-receipts.items.update');
+        Route::delete('/warehouse/goods-receipts/{receipt}/items/{item}', [GoodsReceiptController::class, 'destroyItem'])->name('warehouse.goods-receipts.items.destroy');
 
         // Finance: Статьи доходов и расходов
         Route::get('/finance/categories', [TransactionCategoryController::class, 'index'])->name('finance.categories.index');

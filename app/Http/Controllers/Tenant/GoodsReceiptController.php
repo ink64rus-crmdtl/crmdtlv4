@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\GoodsReceipt;
+use App\Models\GoodsReceiptItem;
 use App\Models\Lookup;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Warehouse;
 use App\Services\ActivityLogger;
 use App\Services\QueryFilterService;
@@ -65,6 +67,10 @@ class GoodsReceiptController extends Controller
             'warehouses' => Warehouse::where('is_active', true)->get(['id', 'name']),
             'branches' => Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']),
             'products' => Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'accounting_type']),
+            // Для модалки быстрого добавления товара (см. CompanySuggestInput-
+            // аналог для товаров — переиспользуем существующий
+            // WorkOrderController::storeProductQuick(), отдельный эндпоинт не нужен).
+            'productCategories' => ProductCategory::where('is_active', true)->get(['id', 'name']),
         ]);
     }
 
@@ -100,7 +106,77 @@ class GoodsReceiptController extends Controller
         return Inertia::render('Warehouse/GoodsReceipts/Show', [
             'receipt' => $receipt,
             'activities' => $presented['activities'],
+            // Для добавления/редактирования позиций и quick-add товара прямо
+            // с Карточки — тот же набор, что и на списке (index()).
+            'products' => Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'accounting_type']),
+            'productCategories' => ProductCategory::where('is_active', true)->get(['id', 'name']),
         ]);
+    }
+
+    /**
+     * Добавление позиции к уже существующей накладной — StockService::
+     * addReceiptItem() (блокируется для отменённой накладной).
+     */
+    public function addItem(Request $request, GoodsReceipt $receipt)
+    {
+        $itemData = $this->validateItem($request);
+
+        try {
+            StockService::addReceiptItem($receipt, $itemData, auth()->id());
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        ActivityLogger::log($receipt, "В накладную №{$receipt->id} добавлена позиция", [], 'item_added');
+
+        return redirect()->back()->with('success', 'Позиция добавлена');
+    }
+
+    /**
+     * Правка количества/цены/партии/товара уже существующей позиции —
+     * StockService::updateReceiptItem() (реверс старого движения + повторное
+     * оприходование новыми значениями; блокируется, если товар с этой
+     * позиции уже частично списан — та же защита, что и у отмены накладной).
+     */
+    public function updateItem(Request $request, GoodsReceipt $receipt, GoodsReceiptItem $item)
+    {
+        if ($item->goods_receipt_id !== $receipt->id) {
+            abort(403);
+        }
+
+        $itemData = $this->validateItem($request);
+
+        try {
+            StockService::updateReceiptItem($item, $itemData, auth()->id());
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        ActivityLogger::log($receipt, "В накладной №{$receipt->id} изменена позиция", [], 'item_updated');
+
+        return redirect()->back()->with('success', 'Позиция обновлена');
+    }
+
+    /**
+     * Удаление одной позиции — StockService::removeReceiptItem() (реверс
+     * движения/остатка/партии, сама строка удаляется; блокируется, если
+     * товар с этой позиции уже частично списан).
+     */
+    public function destroyItem(GoodsReceipt $receipt, GoodsReceiptItem $item)
+    {
+        if ($item->goods_receipt_id !== $receipt->id) {
+            abort(403);
+        }
+
+        try {
+            StockService::removeReceiptItem($item, auth()->id());
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        ActivityLogger::log($receipt, "Из накладной №{$receipt->id} удалена позиция", [], 'item_removed');
+
+        return redirect()->back()->with('success', 'Позиция удалена');
     }
 
     /**
@@ -147,6 +223,25 @@ class GoodsReceiptController extends Controller
                 $fail('Выбранное юрлицо не привязано к этой локации.');
             }
         };
+    }
+
+    /**
+     * @return array{product_id:int, quantity:float, cost_price:int, batch_number:?string}
+     */
+    private function validateItem(Request $request): array
+    {
+        $validated = $request->validate([
+            'product_id' => ['required', 'exists:products,id'],
+            'quantity' => ['required', 'numeric', 'min:0.001'],
+            'cost_price' => ['required', 'numeric', 'min:0'],
+            'batch_number' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        // cost_price приходит с фронта в рублях — переводим в копейки, тот
+        // же приём, что и у items.*.cost_price в validateReceipt().
+        $validated['cost_price'] = (int) round($validated['cost_price'] * 100);
+
+        return $validated;
     }
 
     private function validateReceipt(Request $request): array

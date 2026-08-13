@@ -8,6 +8,16 @@ defineProps({
         type: String,
         required: true,
     },
+    // Только для неизменяемых журналов (движения склада, транзакции, остатки) —
+    // прямое удаление их строк рассинхронило бы StockBalance/Account.balance с
+    // фактической историей (CLAUDE.md, §8: "не удаляй бизнес-записи, которые
+    // уже повлияли на склад/финансы — нужен явный откат через сервис"). Такие
+    // страницы передают hide-delete, чтобы не показывать кнопку, которая либо
+    // ничего не делает, либо делает что-то опасное.
+    hideDelete: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 defineEmits(['export', 'delete']);
@@ -23,7 +33,7 @@ defineEmits(['export', 'delete']);
             <button @click="$emit('export')" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
                 <i class="ri-file-excel-2-line mr-1.5 text-success"></i> Экспорт в Excel
             </button>
-            <button @click="$emit('delete')" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
+            <button v-if="!hideDelete" @click="$emit('delete')" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger text-white hover:bg-danger-600 shadow-sm">
                 <i class="ri-delete-bin-line mr-1.5"></i> Удалить выбранные
             </button>
         </div>

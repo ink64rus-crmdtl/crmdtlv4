@@ -285,10 +285,10 @@ const totalBalance = computed(() => {
             <!-- Action Bar (Bulk Actions) -->
             <BulkActions 
                 v-if="selectedIds.length > 0" 
-                :selectedCount="selectedIds.length" 
-                noun="записей" 
-                @export="bulkExport" 
-                @delete="() => {}" 
+                :selectedCount="selectedIds.length"
+                noun="записей"
+                @export="bulkExport"
+                hide-delete
             />
 
             <!-- Table Card -->

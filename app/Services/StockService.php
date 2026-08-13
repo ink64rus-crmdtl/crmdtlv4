@@ -16,9 +16,10 @@ class StockService
 {
     /**
      * Оприходование одной позиции товара на склад — низкоуровневый примитив,
-     * вызывается из receiveGoods() для каждой позиции накладной. $goodsReceiptId/
-     * $batchNumber опциональны, чтобы метод оставался пригоден для точечного
-     * оприходования без накладной (если вдруг понадобится).
+     * вызывается из receiveGoods()/addReceiptItem()/updateReceiptItem() для
+     * каждой позиции накладной. $goodsReceiptId/$batchNumber опциональны,
+     * чтобы метод оставался пригоден для точечного оприходования без
+     * накладной (если вдруг понадобится).
      */
     public static function receipt(Product $product, Warehouse $warehouse, int $branchId, float $quantity, int $costPriceCents, ?int $userId = null, ?int $goodsReceiptId = null, ?string $batchNumber = null): ?ProductBatch
     {
@@ -96,30 +97,105 @@ class StockService
             ]);
 
             foreach ($data['items'] as $itemData) {
-                $product = Product::findOrFail($itemData['product_id']);
-
-                $batch = self::receipt(
-                    $product,
-                    $warehouse,
-                    $receipt->branch_id,
-                    $itemData['quantity'],
-                    $itemData['cost_price'],
-                    $userId,
-                    $receipt->id,
-                    $itemData['batch_number'] ?? null,
-                );
-
-                GoodsReceiptItem::create([
-                    'goods_receipt_id' => $receipt->id,
-                    'product_id' => $product->id,
-                    'product_batch_id' => $batch?->id,
-                    'quantity' => $itemData['quantity'],
-                    'cost_price' => $itemData['cost_price'],
-                    'batch_number' => $itemData['batch_number'] ?? null,
-                ]);
+                self::createReceiptItem($receipt, $warehouse, $itemData, $userId);
             }
 
             return $receipt;
+        });
+    }
+
+    /**
+     * Добавление ОДНОЙ позиции к уже существующей (posted) накладной —
+     * с Карточки, см. GoodsReceiptController::addItem(). Полноценная
+     * альтернатива "отменить всю накладную и создать заново", если забыли
+     * одну строку. Блокируется для уже отменённой накладной — добавлять
+     * приход в то, чего по документам официально не было, не имеет смысла.
+     *
+     * @param  array{product_id:int,quantity:float,cost_price:int,batch_number:?string}  $itemData
+     */
+    public static function addReceiptItem(GoodsReceipt $receipt, array $itemData, ?int $userId = null): GoodsReceiptItem
+    {
+        if ($receipt->status !== 'posted') {
+            throw new Exception('Нельзя добавить позицию в отменённую накладную.');
+        }
+
+        return DB::transaction(function () use ($receipt, $itemData, $userId) {
+            $warehouse = Warehouse::findOrFail($receipt->warehouse_id);
+
+            return self::createReceiptItem($receipt, $warehouse, $itemData, $userId);
+        });
+    }
+
+    /**
+     * Изменение количества/цены/партии уже оприходованной позиции — не
+     * редактирование задним числом "как будто так и было", а честный
+     * реверс старых движений/остатка/партии (та же защита, что у
+     * removeReceiptItem — нельзя, если товар уже частично списан) с
+     * последующим повторным оприходованием НОВЫМИ значениями. Позиция
+     * (GoodsReceiptItem) остаётся той же строкой — история движений видит
+     * оба факта (in_reversal старого и in нового) через тот же goods_receipt_id.
+     *
+     * @param  array{product_id:int,quantity:float,cost_price:int,batch_number:?string}  $newData
+     */
+    public static function updateReceiptItem(GoodsReceiptItem $item, array $newData, ?int $userId = null): GoodsReceiptItem
+    {
+        return DB::transaction(function () use ($item, $newData, $userId) {
+            $item->loadMissing('goodsReceipt', 'product');
+            $receipt = $item->goodsReceipt;
+
+            if ($receipt->status !== 'posted') {
+                throw new Exception('Нельзя изменить позицию отменённой накладной.');
+            }
+
+            self::reverseItemStockEffect($item, $receipt, $userId, "Корректировка позиции в накладной #{$receipt->id} (пересчёт)");
+
+            $warehouse = Warehouse::findOrFail($receipt->warehouse_id);
+            $product = Product::findOrFail($newData['product_id']);
+
+            $batch = self::receipt(
+                $product,
+                $warehouse,
+                $receipt->branch_id,
+                $newData['quantity'],
+                $newData['cost_price'],
+                $userId,
+                $receipt->id,
+                $newData['batch_number'] ?? null,
+            );
+
+            $item->update([
+                'product_id' => $product->id,
+                'product_batch_id' => $batch?->id,
+                'quantity' => $newData['quantity'],
+                'cost_price' => $newData['cost_price'],
+                'batch_number' => $newData['batch_number'] ?? null,
+            ]);
+
+            return $item->fresh();
+        });
+    }
+
+    /**
+     * Удаление ОДНОЙ позиции из накладной (не всей накладной — см.
+     * reverseReceipt()) — реверс движения/остатка/партии этой позиции, сама
+     * строка GoodsReceiptItem удаляется физически (в отличие от отмены всей
+     * накладной, где позиции сохраняются как исторический факт статуса
+     * 'canceled' — здесь позиции изначально не должно было быть, это правка
+     * ошибки ввода, а не документированное событие).
+     */
+    public static function removeReceiptItem(GoodsReceiptItem $item, ?int $userId = null): void
+    {
+        DB::transaction(function () use ($item, $userId) {
+            $item->loadMissing('goodsReceipt', 'product');
+            $receipt = $item->goodsReceipt;
+
+            if ($receipt->status !== 'posted') {
+                throw new Exception('Нельзя удалить позицию отменённой накладной.');
+            }
+
+            self::reverseItemStockEffect($item, $receipt, $userId, "Удаление позиции из накладной #{$receipt->id}");
+
+            $item->delete();
         });
     }
 
@@ -133,6 +209,11 @@ class StockService
      * невозможен без полной переигровки истории) — откатывается только
      * количество, что для сценария "оприходовали по ошибке, тут же отменили"
      * достаточно и не искажает будущие расчёты сильнее, чем сама ошибка.
+     *
+     * В отличие от removeReceiptItem() строки GoodsReceiptItem НЕ удаляются —
+     * это фиксация факта "накладная была, но отменена", а не правка ошибки
+     * ввода: Карточка отменённой накладной должна по-прежнему показывать,
+     * что именно в ней было.
      */
     public static function reverseReceipt(GoodsReceipt $receipt, ?int $userId = null): void
     {
@@ -144,48 +225,89 @@ class StockService
             $receipt->loadMissing('items.product');
 
             foreach ($receipt->items as $item) {
-                $productName = is_array($item->product->name) ? ($item->product->name['ru'] ?? current($item->product->name)) : $item->product->name;
-
-                $balance = StockBalance::where('warehouse_id', $receipt->warehouse_id)
-                    ->where('product_id', $item->product_id)
-                    ->first();
-
-                if (! $balance || $balance->quantity < $item->quantity) {
-                    throw new Exception("Нельзя отменить приход «{$productName}» — часть товара уже списана со склада.");
-                }
-
-                if ($item->product_batch_id) {
-                    $batch = ProductBatch::find($item->product_batch_id);
-                    if ($batch && $batch->current_quantity < $batch->initial_quantity) {
-                        throw new Exception("Нельзя отменить приход «{$productName}» — партия уже частично списана.");
-                    }
-                }
-
-                StockMovement::create([
-                    'warehouse_id' => $receipt->warehouse_id,
-                    'branch_id' => $receipt->branch_id,
-                    'product_id' => $item->product_id,
-                    'product_batch_id' => $item->product_batch_id,
-                    'goods_receipt_id' => $receipt->id,
-                    'type' => 'in_reversal',
-                    'quantity' => $item->quantity,
-                    'cost_price' => $item->cost_price,
-                    'created_by' => $userId,
-                    'comment' => "Отмена прихода по накладной #{$receipt->id}",
-                ]);
-
-                $balance->quantity -= $item->quantity;
-                $balance->save();
-
-                if ($item->product_batch_id) {
-                    // Партия создана исключительно этим приходом и ещё не
-                    // тронута (проверка выше) — просто убираем её из учёта.
-                    ProductBatch::where('id', $item->product_batch_id)->delete();
-                }
+                self::reverseItemStockEffect($item, $receipt, $userId, "Отмена прихода по накладной #{$receipt->id}");
             }
 
             $receipt->update(['status' => 'canceled']);
         });
+    }
+
+    /**
+     * Общее ядро реверса ОДНОЙ позиции — используется и полной отменой
+     * накладной (reverseReceipt), и точечным удалением/правкой позиции
+     * (removeReceiptItem/updateReceiptItem). Сама GoodsReceiptItem НЕ
+     * трогается здесь — только её эффект на остаток/партию плюс движение-
+     * реверс для истории; что делать со строкой (удалить, оставить,
+     * перезаписать) решает вызывающий метод.
+     */
+    private static function reverseItemStockEffect(GoodsReceiptItem $item, GoodsReceipt $receipt, ?int $userId, string $comment): void
+    {
+        $productName = is_array($item->product->name) ? ($item->product->name['ru'] ?? current($item->product->name)) : $item->product->name;
+
+        $balance = StockBalance::where('warehouse_id', $receipt->warehouse_id)
+            ->where('product_id', $item->product_id)
+            ->first();
+
+        if (! $balance || $balance->quantity < $item->quantity) {
+            throw new Exception("Нельзя изменить/удалить позицию «{$productName}» — часть товара уже списана со склада.");
+        }
+
+        if ($item->product_batch_id) {
+            $batch = ProductBatch::find($item->product_batch_id);
+            if ($batch && $batch->current_quantity < $batch->initial_quantity) {
+                throw new Exception("Нельзя изменить/удалить позицию «{$productName}» — партия уже частично списана.");
+            }
+        }
+
+        StockMovement::create([
+            'warehouse_id' => $receipt->warehouse_id,
+            'branch_id' => $receipt->branch_id,
+            'product_id' => $item->product_id,
+            'product_batch_id' => $item->product_batch_id,
+            'goods_receipt_id' => $receipt->id,
+            'type' => 'in_reversal',
+            'quantity' => $item->quantity,
+            'cost_price' => $item->cost_price,
+            'created_by' => $userId,
+            'comment' => $comment,
+        ]);
+
+        $balance->quantity -= $item->quantity;
+        $balance->save();
+
+        if ($item->product_batch_id) {
+            // Партия создана исключительно этой позицией и ещё не тронута
+            // (проверка выше) — просто убираем её из учёта.
+            ProductBatch::where('id', $item->product_batch_id)->delete();
+        }
+    }
+
+    /**
+     * @param  array{product_id:int,quantity:float,cost_price:int,batch_number:?string}  $itemData
+     */
+    private static function createReceiptItem(GoodsReceipt $receipt, Warehouse $warehouse, array $itemData, ?int $userId): GoodsReceiptItem
+    {
+        $product = Product::findOrFail($itemData['product_id']);
+
+        $batch = self::receipt(
+            $product,
+            $warehouse,
+            $receipt->branch_id,
+            $itemData['quantity'],
+            $itemData['cost_price'],
+            $userId,
+            $receipt->id,
+            $itemData['batch_number'] ?? null,
+        );
+
+        return GoodsReceiptItem::create([
+            'goods_receipt_id' => $receipt->id,
+            'product_id' => $product->id,
+            'product_batch_id' => $batch?->id,
+            'quantity' => $itemData['quantity'],
+            'cost_price' => $itemData['cost_price'],
+            'batch_number' => $itemData['batch_number'] ?? null,
+        ]);
     }
 
     /**

@@ -22,6 +22,7 @@ const props = defineProps({
     warehouses: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
+    productCategories: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -42,6 +43,28 @@ const statusMeta = {
 };
 
 const supplierOptions = computed(() => props.suppliers.map(s => ({ value: s.id, label: s.name })));
+
+const isPreviewOpen = ref(false);
+const previewReceipt = ref(null);
+const openPreview = (receipt) => {
+    previewReceipt.value = receipt;
+    isPreviewOpen.value = true;
+};
+const closePreview = () => {
+    isPreviewOpen.value = false;
+    previewReceipt.value = null;
+};
+
+const cancelReceipt = (receipt) => {
+    if (confirm(`Отменить накладную №${String(receipt.id).padStart(6, '0')}? Оприходованный товар будет списан обратно.`)) {
+        router.post(route('warehouse.goods-receipts.cancel', receipt.id), {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                if (previewReceipt.value && previewReceipt.value.id === receipt.id) closePreview();
+            },
+        });
+    }
+};
 const warehouseOptions = computed(() => props.warehouses.map(w => ({ value: w.id, label: w.name })));
 const branchOptions = computed(() => props.branches.map(b => ({ value: b.id, label: b.name })));
 const productOptions = computed(() => props.products.map(p => ({
@@ -77,6 +100,51 @@ const addItem = () => {
 
 const removeItem = (index) => {
     if (form.items.length > 1) form.items.splice(index, 1);
+};
+
+// --- Быстрое добавление товара прямо из строки позиции (тот же приём и тот
+// же эндпоинт, что уже есть в Operations/WorkOrders/Show.vue — отдельный
+// "quick"-роут под склад заводить не нужно, товар и там, и здесь один и тот
+// же справочник). quickProductTargetIndex — какую именно строку заполнить
+// созданным товаром, раз строк с "+" может быть несколько одновременно. ---
+const isQuickProductModalOpen = ref(false);
+const quickProductTargetIndex = ref(null);
+const quickProductForm = useForm({
+    product_category_id: '',
+    name: '',
+    sku: '',
+    unit: 'шт',
+    accounting_type: 'average',
+});
+
+const openQuickProductModal = (index) => {
+    quickProductTargetIndex.value = index;
+    quickProductForm.reset();
+    quickProductForm.unit = 'шт';
+    quickProductForm.accounting_type = 'average';
+    isQuickProductModalOpen.value = true;
+};
+
+const closeQuickProductModal = () => {
+    isQuickProductModalOpen.value = false;
+    quickProductTargetIndex.value = null;
+    quickProductForm.reset();
+    quickProductForm.clearErrors();
+};
+
+const submitQuickProduct = () => {
+    const existingIds = new Set(props.products.map(p => p.id));
+    quickProductForm.post(route('operations.work-orders.quick-product'), {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.products.find(p => !existingIds.has(p.id));
+            if (created && quickProductTargetIndex.value !== null) {
+                form.items[quickProductTargetIndex.value].product_id = created.id;
+            }
+            closeQuickProductModal();
+        },
+    });
 };
 
 const openModal = () => {
@@ -230,14 +298,15 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Склад / Локация</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Позиций</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr
                                 v-for="receipt in receipts.data"
                                 :key="receipt.id"
-                                @click="router.visit(route('warehouse.goods-receipts.show', receipt.id))"
-                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer"
+                                @click="openPreview(receipt)"
+                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group"
                             >
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <div class="font-bold text-gray-800 dark:text-gray-200 font-mono">№{{ String(receipt.id).padStart(6, '0') }}</div>
@@ -255,9 +324,17 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <span :class="[statusMeta[receipt.status]?.class, 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ statusMeta[receipt.status]?.label || receipt.status }}</span>
                                 </td>
+                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
+                                    <Link :href="route('warehouse.goods-receipts.show', receipt.id)" @click.stop class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-info/10 text-info hover:bg-info hover:text-white transition-colors" title="Открыть накладную">
+                                        <i class="ri-folder-open-line"></i>
+                                    </Link>
+                                    <button v-if="receipt.status === 'posted'" @click.stop="cancelReceipt(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-danger/10 text-danger hover:bg-danger hover:text-white transition-colors" title="Отменить накладную">
+                                        <i class="ri-delete-bin-line"></i>
+                                    </button>
+                                </td>
                             </tr>
                             <tr v-if="receipts.data.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Накладных пока нет.</td>
+                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Накладных пока нет.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -331,29 +408,34 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
 
                             <div class="space-y-3">
                                 <div v-for="(item, index) in form.items" :key="index" class="bg-gray-50/50 dark:bg-gray-800/30 p-3 rounded-md border border-gray-200 dark:border-gray-700">
-                                    <div class="flex gap-3 items-start">
-                                        <div class="flex-1">
+                                    <!-- flex-wrap: на узкой модалке партия (если есть) уходит на новую
+                                         строку сама, на широкой — умещается рядом с товаром/ценой. -->
+                                    <div class="flex gap-3 items-start flex-wrap">
+                                        <div class="flex-1 min-w-[220px]">
                                             <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Товар <span class="text-danger">*</span></label>
-                                            <SearchableSelect v-model="item.product_id" :options="productOptions" placeholder="Выберите товар..." />
+                                            <div class="flex gap-2 items-start">
+                                                <div class="flex-1 min-w-0"><SearchableSelect v-model="item.product_id" :options="productOptions" placeholder="Выберите товар..." /></div>
+                                                <button type="button" @click="openQuickProductModal(index)" title="Добавить товар в справочник" class="shrink-0 inline-flex items-center justify-center rounded-md w-9 h-9 bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"><i class="ri-add-line text-lg"></i></button>
+                                            </div>
                                             <span v-if="form.errors[`items.${index}.product_id`]" class="text-xs text-danger mt-1 block">{{ form.errors[`items.${index}.product_id`] }}</span>
                                         </div>
-                                        <div class="w-28">
+                                        <div class="w-24">
                                             <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Кол-во <span class="text-danger">*</span></label>
                                             <input v-model="item.quantity" type="number" step="any" min="0.001" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                             <span v-if="form.errors[`items.${index}.quantity`]" class="text-xs text-danger mt-1 block">{{ form.errors[`items.${index}.quantity`] }}</span>
                                         </div>
-                                        <div class="w-36">
-                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Цена закупки (₽) <span class="text-danger">*</span></label>
+                                        <div class="w-28">
+                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Цена (₽) <span class="text-danger">*</span></label>
                                             <input v-model="item.cost_price" type="number" step="0.01" min="0" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                             <span v-if="form.errors[`items.${index}.cost_price`]" class="text-xs text-danger mt-1 block">{{ form.errors[`items.${index}.cost_price`] }}</span>
+                                        </div>
+                                        <div v-if="productById(item.product_id)?.accounting_type === 'batch'" class="w-32">
+                                            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1" title="Номер партии/серии с накладной поставщика">№ партии</label>
+                                            <input v-model="item.batch_number" type="text" placeholder="Необязательно" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                         </div>
                                         <div class="pt-6">
                                             <button type="button" @click="removeItem(index)" :disabled="form.items.length === 1" class="text-danger hover:text-danger-600 disabled:opacity-30 p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                         </div>
-                                    </div>
-                                    <div v-if="productById(item.product_id)?.accounting_type === 'batch'" class="mt-2 pl-0">
-                                        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Номер партии/серии (с накладной поставщика)</label>
-                                        <input v-model="item.batch_number" type="text" placeholder="Необязательно" class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
                                     </div>
                                 </div>
                             </div>
@@ -443,6 +525,57 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
             </div>
         </Modal>
 
+        <!-- Быстрое добавление товара (та же форма и тот же роут, что в
+             Operations/WorkOrders/Show.vue) -->
+        <Modal :show="isQuickProductModalOpen" @close="closeQuickProductModal" max-width="3xl">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Быстрое добавление товара в каталог</h3>
+                    <button @click="closeQuickProductModal()" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitQuickProduct">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
+                            <select v-model="quickProductForm.product_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="">Без категории</option>
+                                <option v-for="cat in productCategories" :key="cat.id" :value="cat.id">{{ getLocalizedLabel(cat.name) }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название товара <span class="text-danger">*</span></label>
+                            <input v-model="quickProductForm.name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <span v-if="quickProductForm.errors.name" class="text-xs text-danger mt-1 block">{{ quickProductForm.errors.name }}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ед. изм. <span class="text-danger">*</span></label>
+                                <select v-model="quickProductForm.unit" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="шт">Штуки (шт)</option>
+                                    <option value="мл">Миллилитры (мл)</option>
+                                    <option value="л">Литры (л)</option>
+                                    <option value="гр">Граммы (гр)</option>
+                                    <option value="кг">Килограммы (кг)</option>
+                                    <option value="пог.м">Погонные метры (пог.м)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип учёта <span class="text-danger">*</span></label>
+                                <select v-model="quickProductForm.accounting_type" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="average">Средневзвешенный</option>
+                                    <option value="batch">Партионный (FIFO)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeQuickProductModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="quickProductForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
         <!-- Offcanvas Фильтры -->
         <Offcanvas :show="isFiltersOpen" @close="isFiltersOpen = false" maxWidth="sm">
             <div class="flex flex-col h-full">
@@ -476,6 +609,74 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                 <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">
                     <button @click="resetFilters" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">Сбросить</button>
                     <button @click="isFiltersOpen = false" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">Применить</button>
+                </div>
+            </div>
+        </Offcanvas>
+
+        <!-- Offcanvas Панель просмотра -->
+        <Offcanvas :show="isPreviewOpen" @close="closePreview" maxWidth="sm">
+            <div v-if="previewReceipt" class="flex flex-col h-full">
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-start bg-gray-50/50 dark:bg-gray-800/30">
+                    <div class="flex items-center gap-3">
+                        <div class="w-11 h-11 rounded-full bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                            <i class="ri-truck-line text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200 font-mono">№{{ String(previewReceipt.id).padStart(6, '0') }}</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">{{ new Date(previewReceipt.receipt_date).toLocaleDateString('ru-RU') }}</p>
+                        </div>
+                    </div>
+                    <button @click="closePreview" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                    <div class="flex items-center gap-2">
+                        <span :class="[statusMeta[previewReceipt.status]?.class, 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ statusMeta[previewReceipt.status]?.label || previewReceipt.status }}</span>
+                        <PointBadge :branch="previewReceipt.branch" />
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-800/40 rounded-md p-4 space-y-3">
+                        <div class="flex items-start gap-2 text-sm">
+                            <i class="ri-building-2-line text-gray-400 mt-0.5"></i>
+                            <div>
+                                <div class="text-xs text-gray-500">Поставщик</div>
+                                <div class="text-gray-800 dark:text-gray-200 font-medium">{{ previewReceipt.supplier?.name || '—' }}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2 text-sm">
+                            <i class="ri-building-4-line text-gray-400 mt-0.5"></i>
+                            <div>
+                                <div class="text-xs text-gray-500">Склад</div>
+                                <div class="text-gray-800 dark:text-gray-200 font-medium">{{ previewReceipt.warehouse?.name || '—' }}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2 text-sm">
+                            <i class="ri-store-2-line text-gray-400 mt-0.5"></i>
+                            <div>
+                                <div class="text-xs text-gray-500">Локация</div>
+                                <div class="text-gray-800 dark:text-gray-200 font-medium">{{ previewReceipt.branch?.name || '—' }}</div>
+                            </div>
+                        </div>
+                        <div v-if="previewReceipt.supplier_document_number" class="flex items-start gap-2 text-sm">
+                            <i class="ri-file-list-3-line text-gray-400 mt-0.5"></i>
+                            <div>
+                                <div class="text-xs text-gray-500">Номер накладной поставщика</div>
+                                <div class="text-gray-800 dark:text-gray-200 font-medium">{{ previewReceipt.supplier_document_number }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 gap-3">
+                        <div class="bg-gray-50 dark:bg-gray-800/40 rounded-md p-4 text-center">
+                            <div class="text-xs text-gray-500 mb-1">Позиций в накладной</div>
+                            <div class="text-lg font-bold text-gray-800 dark:text-gray-200">{{ previewReceipt.items_count }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between gap-3 bg-gray-50/50 dark:bg-gray-800/30">
+                    <button v-if="previewReceipt.status === 'posted'" @click="cancelReceipt(previewReceipt)" class="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-danger/10 text-danger hover:bg-danger hover:text-white">
+                        <i class="ri-delete-bin-line mr-1.5"></i> Отменить
+                    </button>
+                    <Link :href="route('warehouse.goods-receipts.show', previewReceipt.id)" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">
+                        Открыть накладную →
+                    </Link>
                 </div>
             </div>
         </Offcanvas>
