@@ -1,52 +1,53 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
-use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
-use App\Http\Controllers\ProfileController;
-use App\Http\Middleware\PreventSandboxTenantHttpAccess;
-use App\Http\Middleware\SetBranchContext;
 use App\Http\Controllers\DumpController;
-use App\Http\Controllers\Tenant\LegalEntityController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Tenant\AccountController;
-use App\Http\Controllers\Tenant\BranchController;
-use App\Http\Controllers\Tenant\SystemController;
-use App\Http\Controllers\Tenant\BusinessDirectionController;
-use App\Http\Controllers\Tenant\PostController;
-use App\Http\Controllers\Tenant\WarehouseSettingsController;
-use App\Http\Controllers\Tenant\CustomFieldController;
-use App\Http\Controllers\Tenant\RolePermissionController;
-use App\Http\Controllers\Tenant\PositionController;
-use App\Http\Controllers\Tenant\EmployeeController;
-use App\Http\Controllers\Tenant\ListViewController;
-use App\Http\Controllers\Tenant\ClientController;
-use App\Http\Controllers\Tenant\VehicleController;
-use App\Http\Controllers\Tenant\DictionaryController;
-use App\Http\Controllers\Tenant\CrmSettingsController;
-use App\Http\Controllers\Tenant\LoyaltySettingsController;
-use App\Http\Controllers\Tenant\NotificationController;
-use App\Http\Controllers\Tenant\LookupController;
-use App\Http\Controllers\Tenant\WorkOrderController;
-use App\Http\Controllers\Tenant\AppointmentController;
-use App\Http\Controllers\Tenant\ServiceController;
-use App\Http\Controllers\Tenant\ProductController;
-use App\Http\Controllers\Tenant\StockBalanceController;
-use App\Http\Controllers\Tenant\StockMovementController;
-use App\Http\Controllers\Tenant\TransactionCategoryController;
-use App\Http\Controllers\Tenant\TransactionController;
 use App\Http\Controllers\Tenant\AccountSnapshotController;
-use App\Http\Controllers\Tenant\PeriodClosureController;
-use App\Http\Controllers\Tenant\PayrollSettingsController;
-use App\Http\Controllers\Tenant\PayrollController;
-use App\Http\Controllers\Tenant\MessengerWebhookController;
+use App\Http\Controllers\Tenant\AppointmentController;
+use App\Http\Controllers\Tenant\BranchController;
+use App\Http\Controllers\Tenant\BusinessDirectionController;
 use App\Http\Controllers\Tenant\ChannelController;
 use App\Http\Controllers\Tenant\ChatController;
-use App\Http\Controllers\Tenant\MessageTemplateController;
-use App\Http\Controllers\Tenant\DocumentTemplateController;
-use App\Http\Controllers\Tenant\DocumentController;
+use App\Http\Controllers\Tenant\ClientController;
 use App\Http\Controllers\Tenant\CommunicationsController;
+use App\Http\Controllers\Tenant\CrmSettingsController;
+use App\Http\Controllers\Tenant\CustomFieldController;
+use App\Http\Controllers\Tenant\DictionaryController;
+use App\Http\Controllers\Tenant\DocumentController;
+use App\Http\Controllers\Tenant\DocumentTemplateController;
+use App\Http\Controllers\Tenant\EmployeeController;
+use App\Http\Controllers\Tenant\LegalEntityController;
+use App\Http\Controllers\Tenant\ListViewController;
+use App\Http\Controllers\Tenant\LookupController;
+use App\Http\Controllers\Tenant\LoyaltySettingsController;
+use App\Http\Controllers\Tenant\MessageTemplateController;
+use App\Http\Controllers\Tenant\MessengerWebhookController;
+use App\Http\Controllers\Tenant\NotificationController;
+use App\Http\Controllers\Tenant\PayrollController;
+use App\Http\Controllers\Tenant\PayrollSettingsController;
+use App\Http\Controllers\Tenant\PeriodClosureController;
+use App\Http\Controllers\Tenant\PositionController;
+use App\Http\Controllers\Tenant\PostController;
+use App\Http\Controllers\Tenant\ProductController;
+use App\Http\Controllers\Tenant\RolePermissionController;
+use App\Http\Controllers\Tenant\ServiceController;
+use App\Http\Controllers\Tenant\StockBalanceController;
+use App\Http\Controllers\Tenant\StockMovementController;
+use App\Http\Controllers\Tenant\SystemController;
+use App\Http\Controllers\Tenant\TransactionCategoryController;
+use App\Http\Controllers\Tenant\TransactionController;
+use App\Http\Controllers\Tenant\VehicleController;
+use App\Http\Controllers\Tenant\WarehouseSettingsController;
+use App\Http\Controllers\Tenant\WorkOrderController;
+use App\Http\Middleware\PreventSandboxTenantHttpAccess;
+use App\Http\Middleware\SetBranchContext;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
+use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 
 Route::middleware([
     'web',
@@ -76,7 +77,7 @@ Route::middleware([
         // POST /broadcasting/auth обязан идти через InitializeTenancyByDomain, иначе
         // Broadcast::channel()-коллбэки в routes/channels.php бьют не в ту БД. См. комментарий
         // в bootstrap/app.php.
-        \Illuminate\Support\Facades\Broadcast::routes();
+        Broadcast::routes();
         require base_path('routes/channels.php');
 
         Route::get('/dashboard', function () {
@@ -86,7 +87,7 @@ Route::middleware([
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
         Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-        
+
         // Уведомления и экспорт
         Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
         Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
@@ -149,6 +150,9 @@ Route::middleware([
         // Настройки: Склад
         Route::get('/settings/warehouse', [WarehouseSettingsController::class, 'index'])->name('settings.warehouse.index');
         Route::post('/settings/warehouse', [WarehouseSettingsController::class, 'store'])->name('settings.warehouse.store');
+        Route::post('/settings/warehouses', [WarehouseSettingsController::class, 'storeWarehouse'])->name('settings.warehouses.store');
+        Route::put('/settings/warehouses/{warehouse}', [WarehouseSettingsController::class, 'updateWarehouse'])->name('settings.warehouses.update');
+        Route::delete('/settings/warehouses/{warehouse}', [WarehouseSettingsController::class, 'destroyWarehouse'])->name('settings.warehouses.destroy');
 
         // Настройки: Кастомные поля
         Route::get('/settings/custom-fields', [CustomFieldController::class, 'index'])->name('settings.custom-fields.index');
@@ -173,7 +177,7 @@ Route::middleware([
         Route::put('/settings/dictionaries/models/{model}', [DictionaryController::class, 'updateModel'])->name('settings.dictionaries.models.update');
         Route::delete('/settings/dictionaries/models/{model}', [DictionaryController::class, 'destroyModel'])->name('settings.dictionaries.models.destroy');
         Route::post('/settings/dictionaries/import', [DictionaryController::class, 'importCsv'])->name('settings.dictionaries.import');
-        
+
         // Настройки: Категории услуг и товаров
         Route::post('/settings/dictionaries/service-categories', [DictionaryController::class, 'storeServiceCategory'])->name('settings.dictionaries.service-categories.store');
         Route::put('/settings/dictionaries/service-categories/{category}', [DictionaryController::class, 'updateServiceCategory'])->name('settings.dictionaries.service-categories.update');
@@ -295,7 +299,7 @@ Route::middleware([
         Route::delete('/operations/work-orders/{workOrder}', [WorkOrderController::class, 'destroy'])->name('operations.work-orders.destroy');
         Route::post('/operations/work-orders/bulk-delete', [WorkOrderController::class, 'bulkDestroy'])->name('operations.work-orders.bulk-destroy');
         Route::post('/operations/work-orders/bulk-export', [WorkOrderController::class, 'bulkExport'])->name('operations.work-orders.bulk-export');
-        
+
         // Operations: Заказ-наряды (Позиции, Скидки, Финансы, Склад)
         Route::post('/operations/work-orders/{workOrder}/items', [WorkOrderController::class, 'addItem'])->name('operations.work-orders.items.store');
         Route::put('/operations/work-orders/{workOrder}/items/{item}', [WorkOrderController::class, 'updateItem'])->name('operations.work-orders.items.update');
@@ -310,7 +314,7 @@ Route::middleware([
         Route::patch('/operations/work-orders/{workOrder}/admin', [WorkOrderController::class, 'updateAdmin'])->name('operations.work-orders.admin.update');
         Route::put('/operations/work-orders/{workOrder}/items/{item}/payout', [WorkOrderController::class, 'updateItemPayout'])->name('operations.work-orders.items.payout');
         Route::get('/operations/work-orders/{workOrder}/payroll-preview', [WorkOrderController::class, 'payrollPreview'])->name('operations.work-orders.payroll-preview');
-        
+
         // Operations: Прайс-лист услуг (Перенесено из Warehouse в Operations)
         Route::get('/operations/services', [ServiceController::class, 'index'])->name('operations.services.index');
         Route::post('/operations/services', [ServiceController::class, 'store'])->name('operations.services.store');
@@ -346,7 +350,7 @@ Route::middleware([
         // Warehouse: Остатки и Движения (Оприходование)
         Route::get('/warehouse/balances', [StockBalanceController::class, 'index'])->name('warehouse.balances.index');
         Route::post('/warehouse/balances/bulk-export', [StockBalanceController::class, 'bulkExport'])->name('warehouse.balances.bulk-export');
-        
+
         Route::get('/warehouse/movements', [StockMovementController::class, 'index'])->name('warehouse.movements.index');
         Route::post('/warehouse/movements/receipt', [StockMovementController::class, 'storeReceipt'])->name('warehouse.movements.receipt');
         Route::post('/warehouse/movements/bulk-export', [StockMovementController::class, 'bulkExport'])->name('warehouse.movements.bulk-export');

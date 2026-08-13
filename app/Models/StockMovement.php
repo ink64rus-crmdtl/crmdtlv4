@@ -33,7 +33,7 @@ class StockMovement extends Model
 
     protected static function booted(): void
     {
-        static::addGlobalScope(new BranchScope());
+        static::addGlobalScope(new BranchScope);
     }
 
     public function batch(): BelongsTo
@@ -54,5 +54,10 @@ class StockMovement extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function workOrder(): BelongsTo
+    {
+        return $this->belongsTo(WorkOrder::class);
     }
 }

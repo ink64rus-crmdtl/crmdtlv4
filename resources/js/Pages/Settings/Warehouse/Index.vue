@@ -2,10 +2,15 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
+import Modal from '@/Components/Modal.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
 
 const props = defineProps({
     warehouseMode: String,
+    warehouses: { type: Array, default: () => [] },
+    branches: { type: Array, default: () => [] },
 });
 
 const form = useForm({
@@ -14,6 +19,96 @@ const form = useForm({
 
 const submit = () => {
     form.post(route('settings.warehouse.store'));
+};
+
+// --- Склады (CRUD) ---
+const branchOptions = computed(() => props.branches.map(b => ({ value: b.id, label: b.name })));
+const branchName = (id) => props.branches.find(b => b.id === id)?.name || '—';
+
+const isWarehouseModalOpen = ref(false);
+const editingWarehouse = ref(null);
+
+const warehouseForm = useForm({
+    name: '',
+    owner_type: 'branch',
+    owner_id: '',
+    is_default: false,
+    is_active: true,
+});
+
+const openWarehouseModal = (warehouse = null) => {
+    editingWarehouse.value = warehouse;
+    if (warehouse) {
+        warehouseForm.name = warehouse.name;
+        warehouseForm.owner_type = warehouse.owner_type;
+        warehouseForm.owner_id = warehouse.owner_id || '';
+        warehouseForm.is_default = Boolean(warehouse.is_default);
+        warehouseForm.is_active = Boolean(warehouse.is_active);
+    } else {
+        warehouseForm.reset();
+        // Смысловой дефолт по текущему режиму: в "Общий" резолвер вообще не
+        // смотрит на склады точек (WarehouseResolver::resolveFor()), поэтому
+        // предлагать "Склад точки" по умолчанию было бы вводящим в заблуждение —
+        // в "Раздельном"/"Смешанном", наоборот, обычно нужен склад точки.
+        warehouseForm.owner_type = props.warehouseMode === 'shared' ? 'company' : 'branch';
+        warehouseForm.is_active = true;
+    }
+    isWarehouseModalOpen.value = true;
+};
+
+const warehouseModeLabels = {
+    per_branch: 'Раздельный',
+    shared: 'Общий',
+    mixed: 'Смешанный',
+};
+
+// Тип склада, который резолвер СЕЙЧАС реально использует для текущего
+// режима (см. WarehouseResolver::resolveFor()) — остальные типы можно
+// создать (например, впрок перед сменой режима), но толку от них до
+// переключения режима не будет, о чём и предупреждаем: в форме — заранее,
+// в списке — для уже существующих складов, которые молча "не работают".
+const isOwnerTypeUnusedInMode = (ownerType) => {
+    if (props.warehouseMode === 'shared') return ownerType === 'branch';
+    if (props.warehouseMode === 'per_branch') return ownerType === 'company';
+    return false; // mixed — задействованы оба типа
+};
+
+const ownerTypeUnusedInCurrentMode = computed(() => isOwnerTypeUnusedInMode(warehouseForm.owner_type));
+
+const closeWarehouseModal = () => {
+    isWarehouseModalOpen.value = false;
+    editingWarehouse.value = null;
+    warehouseForm.reset();
+    warehouseForm.clearErrors();
+};
+
+// Переключение типа владельца "на лету" чистит выбор точки — иначе при
+// смене "Точка" → "Компания" отправился бы устаревший owner_id.
+const setOwnerType = (type) => {
+    warehouseForm.owner_type = type;
+    if (type === 'company') {
+        warehouseForm.owner_id = '';
+    }
+};
+
+const submitWarehouse = () => {
+    if (editingWarehouse.value) {
+        warehouseForm.put(route('settings.warehouses.update', editingWarehouse.value.id), {
+            onSuccess: () => closeWarehouseModal(),
+        });
+    } else {
+        warehouseForm.post(route('settings.warehouses.store'), {
+            onSuccess: () => closeWarehouseModal(),
+        });
+    }
+};
+
+const deleteWarehouse = (warehouse) => {
+    if (confirm(`Удалить склад "${warehouse.name}"?`)) {
+        warehouseForm.delete(route('settings.warehouses.destroy', warehouse.id), {
+            preserveScroll: true,
+        });
+    }
 };
 </script>
 
@@ -131,6 +226,138 @@ const submit = () => {
                 </form>
             </div>
 
+            <!-- Header Card: Склады -->
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
+                <div>
+                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Склады</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Список физических складов — выбираются при оприходовании товара и используются для списания по заказам
+                    </p>
+                </div>
+                <button @click="openWarehouseModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm">
+                    <i class="ri-add-line"></i> Добавить склад
+                </button>
+            </div>
+
+            <!-- Content Card: список складов -->
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <div class="overflow-x-auto w-full">
+                    <table class="min-w-full text-left whitespace-nowrap">
+                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                            <tr>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">По умолчанию</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
+                            <tr v-for="warehouse in warehouses" :key="warehouse.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ warehouse.name }}</td>
+                                <td class="py-4 px-6 text-sm">
+                                    <span v-if="warehouse.owner_type === 'company'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info">
+                                        <i class="ri-building-4-line"></i> Компания
+                                    </span>
+                                    <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                        <i class="ri-store-3-line"></i> {{ branchName(warehouse.owner_id) }}
+                                    </span>
+                                    <i
+                                        v-if="isOwnerTypeUnusedInMode(warehouse.owner_type)"
+                                        class="ri-error-warning-line text-warning ml-1"
+                                        :title="`Не используется в текущем режиме склада («${warehouseModeLabels[warehouseMode]}»)`"
+                                    ></i>
+                                </td>
+                                <td class="py-4 px-6 text-sm">
+                                    <i v-if="warehouse.is_default" class="ri-star-fill text-warning" title="Склад по умолчанию в своей области"></i>
+                                    <span v-else class="text-gray-300 dark:text-gray-600">—</span>
+                                </td>
+                                <td class="py-4 px-6 text-sm">
+                                    <span :class="[warehouse.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                        {{ warehouse.is_active ? 'Активен' : 'Неактивен' }}
+                                    </span>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-right space-x-2">
+                                    <button @click="openWarehouseModal(warehouse)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                    <button @click="deleteWarehouse(warehouse)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                </td>
+                            </tr>
+                            <tr v-if="warehouses.length === 0">
+                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    Складов пока нет. Пока не добавите хотя бы один, оприходовать товар будет не на что.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
+
+        <Modal :show="isWarehouseModalOpen" @close="closeWarehouseModal">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingWarehouse ? 'Редактирование склада' : 'Новый склад' }}</h3>
+                    <button @click="closeWarehouseModal()" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitWarehouse">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
+                            <input v-model="warehouseForm.name" type="text" required placeholder="Например: Основной склад" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <p v-if="warehouseForm.errors.name" class="text-xs text-danger mt-1">{{ warehouseForm.errors.name }}</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип склада <span class="text-danger">*</span></label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <label :class="[warehouseForm.owner_type === 'branch' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" :checked="warehouseForm.owner_type === 'branch'" @change="setOwnerType('branch')" class="sr-only" />
+                                    <span class="w-full"><i class="ri-store-3-line mr-1"></i> Склад точки</span>
+                                </label>
+                                <label :class="[warehouseForm.owner_type === 'company' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" :checked="warehouseForm.owner_type === 'company'" @change="setOwnerType('company')" class="sr-only" />
+                                    <span class="w-full"><i class="ri-building-4-line mr-1"></i> Общий (компания)</span>
+                                </label>
+                            </div>
+                            <p class="text-[11px] text-gray-400 mt-1.5">Склад точки резолвится для локации автоматически. Общий склад используется в режиме "Общий" и как центральный в режиме "Смешанный".</p>
+                            <div v-if="ownerTypeUnusedInCurrentMode" class="mt-2 p-2.5 rounded-md bg-warning/10 border border-warning/20 text-xs text-gray-700 dark:text-gray-300 flex items-start gap-1.5">
+                                <i class="ri-error-warning-line text-warning shrink-0 mt-0.5"></i>
+                                <span>Сейчас выбран режим "{{ warehouseModeLabels[warehouseMode] }}" — склад такого типа списанием использоваться не будет, пока вы не смените режим (см. выше).</span>
+                            </div>
+                        </div>
+
+                        <div v-if="warehouseForm.owner_type === 'branch'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Точка <span class="text-danger">*</span></label>
+                            <SearchableSelect v-model="warehouseForm.owner_id" :options="branchOptions" placeholder="Выберите точку" />
+                            <p v-if="warehouseForm.errors.owner_id" class="text-xs text-danger mt-1">{{ warehouseForm.errors.owner_id }}</p>
+                        </div>
+
+                        <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                            <div @click="warehouseForm.is_default = !warehouseForm.is_default" :class="[warehouseForm.is_default ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
+                                <div :class="[warehouseForm.is_default ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="warehouseForm.is_default = !warehouseForm.is_default">
+                                По умолчанию
+                            </label>
+                        </div>
+                        <p class="text-[11px] text-gray-400 -mt-2">Единственный такой склад в своей области (для общего — на всю компанию, для точки — в пределах этой точки, если складов у неё несколько). Влияет на резолвинг в режиме "Общий".</p>
+
+                        <div class="flex items-center pt-2">
+                            <div @click="warehouseForm.is_active = !warehouseForm.is_active" :class="[warehouseForm.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">
+                                <div :class="[warehouseForm.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="warehouseForm.is_active = !warehouseForm.is_active">
+                                Склад активен
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeWarehouseModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="warehouseForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
