@@ -115,6 +115,38 @@ const currentTableSection = computed(() => props.entityTablePlaceholders[form.en
 
 const wrapTag = (key) => '{{' + key + '}}';
 
+// Полный список плейсхолдеров текущего типа сущности (общие + специфичные +
+// таблица позиций, если есть) — тот же набор, что уже отрисован справа,
+// просто в виде текстового файла для копирования в Word/памятки менеджеру.
+const downloadPlaceholders = () => {
+    const lines = [];
+    const entityLabel = props.entityTypes[form.entity_type] || form.entity_type;
+    lines.push(`Плейсхолдеры для шаблона документа: ${entityLabel}`);
+    lines.push('');
+
+    for (const [key, label] of Object.entries(currentPlaceholders.value)) {
+        lines.push(`${wrapTag(key)} — ${label}`);
+    }
+
+    if (currentTableSection.value) {
+        lines.push('');
+        lines.push('Таблица позиций (строка таблицы клонируется на каждую позицию заказа):');
+        for (const [key, label] of Object.entries(currentTableSection.value.fields)) {
+            lines.push(`${wrapTag(key)} — ${label}`);
+        }
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `плейсхолдеры-${form.entity_type}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+};
+
 const insertPlaceholder = (key) => {
     const tag = '{{' + key + '}}';
     if (form.format === 'docx') {
@@ -293,8 +325,16 @@ const insertTable = () => {
 
                             <!-- Плейсхолдеры с пояснениями — рядом с редактором, не сверху -->
                             <div class="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden flex flex-col max-h-[360px]">
-                                <div class="px-3 py-2 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                                    Плейсхолдеры {{ form.format === 'docx' ? '(скопировать в Word)' : '(клик — вставить)' }}
+                                <div class="px-3 py-2 bg-gray-50/50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center justify-between gap-2">
+                                    <span>Плейсхолдеры {{ form.format === 'docx' ? '(скопировать в Word)' : '(клик — вставить)' }}</span>
+                                    <button
+                                        type="button"
+                                        @click="downloadPlaceholders"
+                                        class="shrink-0 text-gray-400 hover:text-primary transition-colors normal-case font-normal"
+                                        title="Скачать список плейсхолдеров с пояснениями (.txt)"
+                                    >
+                                        <i class="ri-download-2-line"></i>
+                                    </button>
                                 </div>
                                 <div class="overflow-y-auto custom-scrollbar p-2 space-y-1 flex-1">
                                     <button
