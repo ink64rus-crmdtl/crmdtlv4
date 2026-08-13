@@ -361,6 +361,7 @@ Route::middleware([
         Route::post('/warehouse/movements/bulk-export', [StockMovementController::class, 'bulkExport'])->name('warehouse.movements.bulk-export');
 
         // Warehouse: Приходные накладные (оприходование через поставщика — заменяет старое warehouse.movements.receipt)
+        Route::get('/warehouse/suppliers-debt', [GoodsReceiptController::class, 'debts'])->name('warehouse.suppliers-debt.index');
         Route::get('/warehouse/goods-receipts', [GoodsReceiptController::class, 'index'])->name('warehouse.goods-receipts.index');
         Route::post('/warehouse/goods-receipts', [GoodsReceiptController::class, 'store'])->name('warehouse.goods-receipts.store');
         Route::get('/warehouse/goods-receipts/{receipt}', [GoodsReceiptController::class, 'show'])->name('warehouse.goods-receipts.show');

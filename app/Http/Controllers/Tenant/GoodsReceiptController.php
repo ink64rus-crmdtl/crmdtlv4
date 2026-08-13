@@ -12,6 +12,7 @@ use App\Models\GoodsReceiptItem;
 use App\Models\Lookup;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\Transaction;
 use App\Models\Warehouse;
 use App\Services\ActivityLogger;
 use App\Services\FinanceService;
@@ -45,18 +46,40 @@ class GoodsReceiptController extends Controller
     public function index(Request $request): Response
     {
         $query = GoodsReceipt::with(['supplier:id,name,phone', 'warehouse:id,name', 'branch:id,name'])
-            ->withCount('items');
+            ->withCount('items')
+            // Сумма закупки и оплаченное — подзапросами (не через ->items,
+            // иначе на страницу из 15 накладных пришлось бы тянуть все их
+            // позиции/транзакции целиком ради одной суммы). Тот же приём,
+            // что withSum() у WorkOrderController::index() для paid_amount.
+            ->addSelect($this->debtSubqueries());
 
         $query = QueryFilterService::apply($query, $request->all(), ['supplier_document_number', 'supplier.name']);
+
+        if ($request->filled('filters.payment_status')) {
+            $query->where('payment_status', $request->input('filters.payment_status'));
+        }
 
         if (! $request->has('sort_by')) {
             $query->orderBy('receipt_date', 'desc')->orderBy('id', 'desc');
         }
 
+        // Сводка по долгу — с учётом уже применённых фильтров (поставщик/
+        // склад/статус и т.п.), НЕ только по текущей странице пагинации:
+        // повторный лёгкий запрос по уже отфильтрованному набору, до paginate().
+        $debtSummary = (clone $query)->get(['id', 'payment_status', 'items_total', 'paid_total'])
+            ->reduce(function (array $carry, GoodsReceipt $r) {
+                $remaining = max(0, (int) $r->items_total - (int) $r->paid_total);
+                $carry['total_debt'] += $remaining;
+                $carry['receipts_with_debt'] += $remaining > 0 ? 1 : 0;
+
+                return $carry;
+            }, ['total_debt' => 0, 'receipts_with_debt' => 0]);
+
         $receipts = $query->paginate(15)->withQueryString();
 
         return Inertia::render('Warehouse/GoodsReceipts/Index', [
             'receipts' => $receipts,
+            'debtSummary' => $debtSummary,
             'filters' => $request->all(),
             'suppliers' => $this->supplierOptions(),
             // Для формы быстрого добавления поставщика (crm.clients.store,
@@ -75,6 +98,9 @@ class GoodsReceiptController extends Controller
             // аналог для товаров — переиспользуем существующий
             // WorkOrderController::storeProductQuick(), отдельный эндпоинт не нужен).
             'productCategories' => ProductCategory::where('is_active', true)->get(['id', 'name']),
+            // Для иконки "Принять оплату" прямо в списке (см. show() ниже —
+            // тот же набор счетов, без 'bonus': поставщику им не платят).
+            'accounts' => auth()->user()->availableAccounts()->where('is_active', true)->where('type', '!=', 'bonus')->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']),
         ]);
     }
 
@@ -273,6 +299,82 @@ class GoodsReceiptController extends Controller
         return Client::whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::SUPPLIER_ROLE))
             ->orderBy('name')
             ->get(['id', 'name', 'phone']);
+    }
+
+    /**
+     * Сумма закупки (goods_receipt_items.quantity*cost_price) и оплаченное
+     * (expense-транзакции payable=GoodsReceipt) — подзапросами-алиасами для
+     * addSelect(), см. index()/debts(). Общий помощник, чтобы формула суммы
+     * закупки не разъехалась между списком накладных и сводкой по поставщикам.
+     */
+    private function debtSubqueries(): array
+    {
+        return [
+            'items_total' => GoodsReceiptItem::selectRaw('COALESCE(SUM(quantity * cost_price), 0)')
+                ->whereColumn('goods_receipt_id', 'goods_receipts.id'),
+            'paid_total' => Transaction::selectRaw('COALESCE(SUM(amount), 0)')
+                ->where('payable_type', GoodsReceipt::class)
+                ->where('type', 'expense')
+                ->whereColumn('payable_id', 'goods_receipts.id'),
+        ];
+    }
+
+    /**
+     * Задолженность поставщикам (см. CLAUDE.md) — тот же архитектурный
+     * паттерн, что и PayrollController::index()/contractorSettlements():
+     * список строится ОТ накладных (агрегат по supplier_id), а не от всех
+     * клиентов с ролью «Поставщик» — так список не разрастается вместе с
+     * клиентской базой и не нуждается в пагинации. Отменённые накладные
+     * (status=canceled) в долг не входят — реверсированный приход не создаёт
+     * обязательства перед поставщиком.
+     */
+    public function debts(): Response
+    {
+        $sums = GoodsReceipt::where('goods_receipts.status', 'posted')
+            ->join('goods_receipt_items', 'goods_receipt_items.goods_receipt_id', '=', 'goods_receipts.id')
+            ->groupBy('goods_receipts.supplier_id')
+            ->selectRaw('goods_receipts.supplier_id, COUNT(DISTINCT goods_receipts.id) as receipts_count, SUM(goods_receipt_items.quantity * goods_receipt_items.cost_price) as accrued_total')
+            ->get();
+
+        if ($sums->isEmpty()) {
+            return Inertia::render('Warehouse/SuppliersDebt/Index', ['suppliers' => []]);
+        }
+
+        $paidSums = Transaction::where('payable_type', GoodsReceipt::class)
+            ->where('type', 'expense')
+            ->join('goods_receipts', 'goods_receipts.id', '=', 'transactions.payable_id')
+            ->whereIn('goods_receipts.supplier_id', $sums->pluck('supplier_id'))
+            ->groupBy('goods_receipts.supplier_id')
+            ->selectRaw('goods_receipts.supplier_id, SUM(transactions.amount) as paid_total')
+            ->get()
+            ->keyBy('supplier_id');
+
+        // withTrashed — задолженность перед поставщиком, чья карточка была
+        // удалена, не должна тихо пропадать из сводки (тот же принцип, что
+        // и у PayrollController::contractorSettlements()).
+        $suppliers = Client::withTrashed()
+            ->whereIn('id', $sums->pluck('supplier_id'))
+            ->get(['id', 'name', 'phone', 'deleted_at'])
+            ->keyBy('id');
+
+        $rows = $sums->map(function ($row) use ($paidSums, $suppliers) {
+            $accruedTotal = (int) $row->accrued_total;
+            $paidTotal = (int) ($paidSums->get($row->supplier_id)->paid_total ?? 0);
+            $supplier = $suppliers->get($row->supplier_id);
+
+            return [
+                'id' => $row->supplier_id,
+                'name' => $supplier?->name ?? '—',
+                'phone' => $supplier?->phone,
+                'is_deleted' => (bool) $supplier?->deleted_at,
+                'receipts_count' => (int) $row->receipts_count,
+                'accrued_total' => $accruedTotal,
+                'paid_total' => $paidTotal,
+                'balance' => $accruedTotal - $paidTotal,
+            ];
+        })->sortByDesc('balance')->values()->all();
+
+        return Inertia::render('Warehouse/SuppliersDebt/Index', ['suppliers' => $rows]);
     }
 
     /**

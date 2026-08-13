@@ -1154,13 +1154,13 @@ const deleteOrder = (order) => {
                     <div class="p-6 space-y-4">
                         <!-- Краткая карточка заказа: клиент/авто + KPI остатка -->
                         <div class="rounded-md bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 p-4 space-y-3">
-                            <div class="flex items-center gap-3">
+                            <div class="flex items-start gap-3">
                                 <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
                                     <i class="ri-user-3-line"></i>
                                 </div>
                                 <div class="min-w-0">
-                                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200 truncate">{{ paymentOrder.client?.name || 'Без клиента' }}</p>
-                                    <p v-if="paymentOrder.vehicle" class="text-xs text-gray-500 truncate">{{ paymentOrder.vehicle.plate_number || '' }}</p>
+                                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200 break-words">{{ paymentOrder.client?.name || 'Без клиента' }}</p>
+                                    <p v-if="paymentOrder.vehicle" class="text-xs text-gray-500 break-words">{{ paymentOrder.vehicle.plate_number || '' }}</p>
                                 </div>
                             </div>
                             <div class="grid grid-cols-3 gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">

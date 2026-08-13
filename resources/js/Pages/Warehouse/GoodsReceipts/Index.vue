@@ -15,6 +15,7 @@ import { useDebounceFn } from '@vueuse/core';
 
 const props = defineProps({
     receipts: Object,
+    debtSummary: { type: Object, default: () => ({ total_debt: 0, receipts_with_debt: 0 }) },
     filters: Object,
     suppliers: { type: Array, default: () => [] },
     supplierRoleId: { type: Number, default: null },
@@ -23,6 +24,7 @@ const props = defineProps({
     branches: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
     productCategories: { type: Array, default: () => [] },
+    accounts: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -41,6 +43,15 @@ const statusMeta = {
     posted: { label: 'Оприходована', class: 'bg-success/10 text-success' },
     canceled: { label: 'Отменена', class: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400' },
 };
+
+const paymentStatuses = {
+    unpaid: { label: 'Не оплачено', class: 'bg-danger/10 text-danger' },
+    partial: { label: 'Частично', class: 'bg-warning/10 text-warning' },
+    paid: { label: 'Оплачено', class: 'bg-success/10 text-success' },
+};
+
+const paidAmount = (receipt) => Number(receipt.paid_total) || 0;
+const remainingAmount = (receipt) => Math.max(0, Number(receipt.items_total) - paidAmount(receipt));
 
 const supplierOptions = computed(() => props.suppliers.map(s => ({ value: s.id, label: s.name })));
 
@@ -65,6 +76,51 @@ const cancelReceipt = (receipt) => {
         });
     }
 };
+// --- Приём оплаты иконкой действия в списке (тот же поток, что и на
+// Карточке накладной — GoodsReceiptController::pay()) ---
+const accountTypeLabels = {
+    cash: 'Касса',
+    bank: 'Расчетный счет',
+    acquiring: 'Эквайринг',
+};
+
+const isPaymentModalOpen = ref(false);
+const paymentReceipt = ref(null);
+const paymentForm = useForm({
+    account_id: '',
+    amount: 0,
+});
+
+const openPaymentModal = (receipt) => {
+    paymentReceipt.value = receipt;
+    paymentForm.reset();
+    paymentForm.amount = remainingAmount(receipt) / 100;
+    if (props.accounts.length > 0) paymentForm.account_id = props.accounts[0].id;
+    isPaymentModalOpen.value = true;
+};
+
+const closePaymentModal = () => {
+    isPaymentModalOpen.value = false;
+    paymentReceipt.value = null;
+    paymentForm.reset();
+    paymentForm.clearErrors();
+};
+
+const submitPayment = () => {
+    const paidReceiptId = paymentReceipt.value.id;
+    paymentForm.post(route('warehouse.goods-receipts.pay', paidReceiptId), {
+        preserveScroll: true,
+        onSuccess: () => {
+            closePaymentModal();
+            // previewReceipt — снимок из старого receipts.data, Inertia после
+            // редиректа пересоздаёт props целиком, а не мутирует объект внутри
+            // него — панель просмотра иначе продолжила бы показывать старый
+            // остаток долга. Закрываем, как и cancelReceipt() при отмене.
+            if (previewReceipt.value && previewReceipt.value.id === paidReceiptId) closePreview();
+        },
+    });
+};
+
 const warehouseOptions = computed(() => props.warehouses.map(w => ({ value: w.id, label: w.name })));
 const branchOptions = computed(() => props.branches.map(b => ({ value: b.id, label: b.name })));
 const productOptions = computed(() => props.products.map(p => ({
@@ -227,6 +283,7 @@ const filtersForm = ref({
     warehouse_id: props.filters?.filters?.warehouse_id || '',
     branch_id: props.filters?.filters?.branch_id || '',
     status: props.filters?.filters?.status || '',
+    payment_status: props.filters?.filters?.payment_status || '',
 });
 const isFiltersOpen = ref(false);
 
@@ -250,7 +307,7 @@ watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
 const resetFilters = () => {
-    filtersForm.value = { supplier_id: '', warehouse_id: '', branch_id: '', status: '' };
+    filtersForm.value = { supplier_id: '', warehouse_id: '', branch_id: '', status: '', payment_status: '' };
 };
 
 const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v => v !== '' && v !== null));
@@ -276,6 +333,20 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                 <div><p class="font-bold mb-1">Ошибка:</p><p>{{ page.props.errors.error }}</p></div>
             </div>
 
+            <!-- Сводка по долгу — с учётом текущих фильтров (см. GoodsReceiptController::index()) -->
+            <div v-if="debtSummary.total_debt > 0" class="rounded-md bg-danger/5 border border-danger/20 p-4 flex items-center gap-4">
+                <div class="w-11 h-11 rounded-full bg-danger/10 text-danger flex items-center justify-center shrink-0">
+                    <i class="ri-error-warning-line text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200">Задолженность поставщикам: {{ formatMoney(debtSummary.total_debt) }}</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">По {{ debtSummary.receipts_with_debt }} накладн{{ debtSummary.receipts_with_debt === 1 ? 'ой' : 'ым' }} с учётом текущих фильтров</p>
+                </div>
+                <Link :href="route('warehouse.suppliers-debt.index')" class="text-sm font-medium text-danger hover:underline whitespace-nowrap">
+                    По поставщикам <i class="ri-arrow-right-s-line"></i>
+                </Link>
+            </div>
+
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <DataTableToolbar
                     v-model="search"
@@ -298,6 +369,7 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Склад / Локация</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Позиций</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Оплата</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
@@ -324,17 +396,24 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <span :class="[statusMeta[receipt.status]?.class, 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ statusMeta[receipt.status]?.label || receipt.status }}</span>
                                 </td>
+                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
+                                    <span :class="[paymentStatuses[receipt.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ paymentStatuses[receipt.payment_status]?.label || receipt.payment_status }}</span>
+                                    <div v-if="remainingAmount(receipt) > 0" class="text-[11px] text-danger mt-0.5">Остаток: {{ formatMoney(remainingAmount(receipt)) }}</div>
+                                </td>
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
                                     <Link :href="route('warehouse.goods-receipts.show', receipt.id)" @click.stop class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-info/10 text-info hover:bg-info hover:text-white transition-colors" title="Открыть накладную">
                                         <i class="ri-folder-open-line"></i>
                                     </Link>
+                                    <button v-if="remainingAmount(receipt) > 0" @click.stop="openPaymentModal(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-success/10 text-success hover:bg-success hover:text-white transition-colors" title="Принять оплату">
+                                        <i class="ri-money-dollar-circle-line"></i>
+                                    </button>
                                     <button v-if="receipt.status === 'posted'" @click.stop="cancelReceipt(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-danger/10 text-danger hover:bg-danger hover:text-white transition-colors" title="Отменить накладную">
                                         <i class="ri-delete-bin-line"></i>
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="receipts.data.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Накладных пока нет.</td>
+                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Накладных пока нет.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -605,6 +684,15 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                             <option value="canceled">Отменена</option>
                         </select>
                     </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статус оплаты</label>
+                        <select v-model="filtersForm.payment_status" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="">Любой</option>
+                            <option value="unpaid">Не оплачено</option>
+                            <option value="partial">Частично</option>
+                            <option value="paid">Оплачено</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">
                     <button @click="resetFilters" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">Сбросить</button>
@@ -629,8 +717,9 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                     <button @click="closePreview" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
                 </div>
                 <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
                         <span :class="[statusMeta[previewReceipt.status]?.class, 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ statusMeta[previewReceipt.status]?.label || previewReceipt.status }}</span>
+                        <span :class="[paymentStatuses[previewReceipt.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ paymentStatuses[previewReceipt.payment_status]?.label || previewReceipt.payment_status }}</span>
                         <PointBadge :branch="previewReceipt.branch" />
                     </div>
                     <div class="bg-gray-50 dark:bg-gray-800/40 rounded-md p-4 space-y-3">
@@ -663,10 +752,18 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                             </div>
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 gap-3">
+                    <div class="grid grid-cols-2 gap-3">
                         <div class="bg-gray-50 dark:bg-gray-800/40 rounded-md p-4 text-center">
                             <div class="text-xs text-gray-500 mb-1">Позиций в накладной</div>
                             <div class="text-lg font-bold text-gray-800 dark:text-gray-200">{{ previewReceipt.items_count }}</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-800/40 rounded-md p-4 text-center">
+                            <div class="text-xs text-gray-500 mb-1">Сумма закупки</div>
+                            <div class="text-lg font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(previewReceipt.items_total) }}</div>
+                        </div>
+                        <div v-if="remainingAmount(previewReceipt) > 0" class="col-span-2 bg-danger/5 border border-danger/20 rounded-md p-4 flex justify-between items-center">
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Остаток долга поставщику</span>
+                            <span class="text-lg font-bold text-danger">{{ formatMoney(remainingAmount(previewReceipt)) }}</span>
                         </div>
                     </div>
                 </div>
@@ -674,11 +771,77 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                     <button v-if="previewReceipt.status === 'posted'" @click="cancelReceipt(previewReceipt)" class="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-danger/10 text-danger hover:bg-danger hover:text-white">
                         <i class="ri-delete-bin-line mr-1.5"></i> Отменить
                     </button>
+                    <button v-if="remainingAmount(previewReceipt) > 0" @click="openPaymentModal(previewReceipt)" class="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-success text-white hover:bg-success-600 shadow-sm">
+                        <i class="ri-money-dollar-circle-line mr-1.5"></i> Оплатить
+                    </button>
                     <Link :href="route('warehouse.goods-receipts.show', previewReceipt.id)" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">
                         Открыть накладную →
                     </Link>
                 </div>
             </div>
         </Offcanvas>
+
+        <!-- Принять оплату (иконка действия / панель просмотра) -->
+        <Modal :show="isPaymentModalOpen" @close="closePaymentModal" max-width="md">
+            <div v-if="paymentReceipt" class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Оплата поставщику — накладная №{{ String(paymentReceipt.id).padStart(6, '0') }}
+                    </h3>
+                    <button @click="closePaymentModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <form @submit.prevent="submitPayment" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div class="rounded-md bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                            <div class="flex items-start gap-3">
+                                <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                                    <i class="ri-building-2-line"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200 break-words">{{ paymentReceipt.supplier?.name || 'Поставщик не указан' }}</p>
+                                    <p class="text-xs text-gray-500 break-words">{{ new Date(paymentReceipt.receipt_date).toLocaleDateString('ru-RU') }}<span v-if="paymentReceipt.supplier_document_number"> · их №{{ paymentReceipt.supplier_document_number }}</span></p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                <div class="text-center">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Сумма закупки</p>
+                                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(paymentReceipt.items_total) }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Оплачено</p>
+                                    <p class="text-sm font-bold text-success">{{ formatMoney(paidAmount(paymentReceipt)) }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Остаток</p>
+                                    <p class="text-sm font-bold text-danger">{{ formatMoney(remainingAmount(paymentReceipt)) }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Счет <span class="text-danger">*</span></label>
+                            <select v-model="paymentForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled>Выберите счет...</option>
+                                <option v-for="acc in accounts" :key="acc.id" :value="acc.id">{{ acc.name }} — {{ accountTypeLabels[acc.type] || acc.type }}</option>
+                            </select>
+                            <span v-if="paymentForm.errors.account_id" class="text-xs text-danger mt-1 block">{{ paymentForm.errors.account_id }}</span>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма к оплате (₽) <span class="text-danger">*</span></label>
+                            <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="remainingAmount(paymentReceipt) / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <p class="text-xs text-gray-500 mt-1">Остаток долга: {{ formatMoney(remainingAmount(paymentReceipt)) }}</p>
+                            <span v-if="paymentForm.errors.amount" class="text-xs text-danger mt-1 block">{{ paymentForm.errors.amount }}</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closePaymentModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="paymentForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-success text-white hover:bg-success-600 disabled:opacity-50">Провести оплату</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
