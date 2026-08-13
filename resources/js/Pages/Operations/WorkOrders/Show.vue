@@ -176,6 +176,19 @@ const form = useForm({
     custom_fields: {},
 });
 
+// Локация может иметь несколько юрлиц (branch_legal_entity) — если на самом
+// заказе юрлицо не выбрано явно, а у локации таких вариантов 2+,
+// DocumentPlaceholderService::resolveLegalEntity() не может угадать, какое
+// использовать (см. CLAUDE.md, п.4). Документ всё равно сформируется, но
+// с пустыми реквизитами и временным номером "БН-<дата>-<рандом>" вместо
+// сквозной нумерации — предупреждаем ДО формирования, а не когда документ
+// уже вышел с пустыми полями.
+const legalEntityAmbiguousForDocuments = computed(() => {
+    if (props.workOrder.legal_entity_id) return false;
+    const branch = props.branches.find(b => b.id === props.workOrder.branch_id);
+    return (branch?.legal_entities?.length || 0) > 1;
+});
+
 // --- Юрлицо заказа (см. Operations/WorkOrders/Index.vue — тот же паттерн) ---
 const currentSidebarLegalEntityId = computed(() => page.props.current_legal_entity_id ? Number(page.props.current_legal_entity_id) : null);
 
@@ -1026,6 +1039,10 @@ const formatMoney = (amount) => {
                     </div>
 
                     <div v-if="activeMainTab === 'documents'" class="flex-1 flex flex-col min-h-0">
+                        <div v-if="legalEntityAmbiguousForDocuments" class="p-3 bg-warning/10 border-b border-warning/20 text-xs text-gray-700 dark:text-gray-300 flex items-start gap-1.5">
+                            <i class="ri-error-warning-line text-warning shrink-0 mt-0.5"></i>
+                            <span>Юрлицо не выбрано, а у локации их несколько — система не может определить, от чьего имени формировать документ. Новые документы получат временный номер без сквозной нумерации и пустые реквизиты. Выберите юрлицо в <button type="button" @click="openModal" class="text-primary hover:underline font-medium">Форме</button> заказа.</span>
+                        </div>
                         <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] flex items-center gap-2">
                             <select v-if="documentTemplates.length > 0" v-model="selectedDocumentTemplateId" class="block w-64 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option v-for="t in documentTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
