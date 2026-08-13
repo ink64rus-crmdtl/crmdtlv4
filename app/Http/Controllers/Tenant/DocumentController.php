@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\WorkOrder;
 use App\Services\Documents\DocumentGenerationService;
 use App\Services\Documents\DocumentNumerator;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response as ResponseFacade;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,7 @@ class DocumentController extends Controller
         'work_order' => ['class' => WorkOrder::class, 'with' => ['branch.legalEntities', 'legalEntity', 'client', 'vehicle', 'items']],
         'transaction' => ['class' => Transaction::class, 'with' => ['branch.legalEntities']],
         'client' => ['class' => Client::class, 'with' => ['branch.legalEntities']],
+        'goods_receipt' => ['class' => GoodsReceipt::class, 'with' => ['branch.legalEntities', 'legalEntity', 'supplier', 'items.product']],
     ];
 
     public function index(Request $request): Response
@@ -63,7 +65,7 @@ class DocumentController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = '%' . $request->input('search') . '%';
+            $search = '%'.$request->input('search').'%';
             $query->where(fn ($q) => $q->where('number', 'like', $search)->orWhere('title', 'like', $search));
         }
 
@@ -85,7 +87,7 @@ class DocumentController extends Controller
      */
     public function templatesFor(string $entityType)
     {
-        if (!isset(self::ENTITY_MODELS[$entityType])) {
+        if (! isset(self::ENTITY_MODELS[$entityType])) {
             return response()->json(['templates' => []]);
         }
 
@@ -102,7 +104,7 @@ class DocumentController extends Controller
             'entity_id' => ['required', 'integer'],
         ]);
 
-        if (!isset(self::ENTITY_MODELS[$validated['entity_type']])) {
+        if (! isset(self::ENTITY_MODELS[$validated['entity_type']])) {
             throw ValidationException::withMessages(['entity_type' => 'Неизвестный тип сущности.']);
         }
 
@@ -120,7 +122,7 @@ class DocumentController extends Controller
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }
 
-        return redirect()->back()->with('success', 'Документ №' . $document->number . ' сформирован');
+        return redirect()->back()->with('success', 'Документ №'.$document->number.' сформирован');
     }
 
     /**
@@ -148,7 +150,7 @@ class DocumentController extends Controller
 
         $document->update(['superseded_by_document_id' => $newDocument->id]);
 
-        return redirect()->back()->with('success', 'Сформирован новый документ №' . $newDocument->number . ', прежний сохранён в истории');
+        return redirect()->back()->with('success', 'Сформирован новый документ №'.$newDocument->number.', прежний сохранён в истории');
     }
 
     /**
@@ -172,17 +174,17 @@ class DocumentController extends Controller
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }
 
-        return redirect()->back()->with('success', 'Документ №' . $document->number . ' заменён актуальными данными');
+        return redirect()->back()->with('success', 'Документ №'.$document->number.' заменён актуальными данными');
     }
 
     /**
-     * @return array{0: ?DocumentTemplate, 1: ?string, 2: ?\Illuminate\Database\Eloquent\Model, 3: ?string} [шаблон, short-key типа сущности, сущность, текст ошибки]
+     * @return array{0: ?DocumentTemplate, 1: ?string, 2: ?Model, 3: ?string} [шаблон, short-key типа сущности, сущность, текст ошибки]
      */
     private function resolveForRegeneration(Document $document): array
     {
         $template = $document->template;
 
-        if (!$template) {
+        if (! $template) {
             return [null, null, null, 'Шаблон, по которому сформирован документ, был удалён.'];
         }
 
@@ -195,7 +197,7 @@ class DocumentController extends Controller
         $config = self::ENTITY_MODELS[$entityType];
         $entity = $config['class']::with($config['with'])->find($document->documentable_id);
 
-        if (!$entity) {
+        if (! $entity) {
             return [null, null, null, 'Связанная запись была удалена.'];
         }
 
@@ -208,14 +210,14 @@ class DocumentController extends Controller
         $document->clearMediaCollection('file');
         $document->delete();
 
-        return redirect()->back()->with('success', 'Документ №' . $document->number . ' удалён');
+        return redirect()->back()->with('success', 'Документ №'.$document->number.' удалён');
     }
 
     public function download(Document $document)
     {
         $media = $document->getFirstMedia('file');
 
-        if (!$media) {
+        if (! $media) {
             abort(404, 'Файл документа не найден');
         }
 
@@ -233,13 +235,13 @@ class DocumentController extends Controller
     {
         $media = $document->getFirstMedia('file');
 
-        if (!$media) {
+        if (! $media) {
             abort(404, 'Файл документа не найден');
         }
 
         return ResponseFacade::file($media->getPath(), [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $media->file_name . '"',
+            'Content-Disposition' => 'inline; filename="'.$media->file_name.'"',
         ]);
     }
 }

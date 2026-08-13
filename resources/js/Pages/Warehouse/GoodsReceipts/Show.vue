@@ -13,6 +13,8 @@ const props = defineProps({
     activities: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
     productCategories: { type: Array, default: () => [] },
+    accounts: { type: Array, default: () => [] },
+    documentTemplates: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -22,6 +24,12 @@ const activeMainTab = ref('items');
 const statusMeta = {
     posted: { label: 'Оприходована', class: 'bg-success/10 text-success' },
     canceled: { label: 'Отменена', class: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400' },
+};
+
+const paymentStatuses = {
+    unpaid: { label: 'Не оплачено', class: 'bg-danger/10 text-danger' },
+    partial: { label: 'Частично оплачено', class: 'bg-warning/10 text-warning' },
+    paid: { label: 'Оплачено', class: 'bg-success/10 text-success' },
 };
 
 const getLocalizedLabel = (label) => {
@@ -37,6 +45,76 @@ const formatMoney = (amount) => new Intl.NumberFormat('ru-RU', { style: 'currenc
 const cancelReceipt = () => {
     if (!confirm(`Отменить накладную №${String(props.receipt.id).padStart(6, '0')}? Все её движения будут реверсированы. Возможно, только если товар с неё ещё не был списан.`)) return;
     router.post(route('warehouse.goods-receipts.cancel', props.receipt.id), {}, { preserveScroll: true });
+};
+
+// --- Оплата поставщику (expense-транзакция, payable=GoodsReceipt) ---
+const accountTypeLabels = {
+    cash: 'Касса',
+    bank: 'Расчетный счет',
+    acquiring: 'Эквайринг',
+};
+
+const paidTransactions = computed(() => props.receipt.transactions?.filter(t => t.type === 'expense') || []);
+const paidAmount = computed(() => paidTransactions.value.reduce((sum, t) => sum + t.amount, 0));
+const remainingAmount = computed(() => Math.max(0, props.receipt.total_value - paidAmount.value));
+
+const isPaymentModalOpen = ref(false);
+const paymentForm = useForm({
+    account_id: '',
+    amount: 0,
+});
+
+const openPaymentModal = () => {
+    paymentForm.reset();
+    paymentForm.amount = remainingAmount.value / 100;
+    if (props.accounts.length > 0) paymentForm.account_id = props.accounts[0].id;
+    isPaymentModalOpen.value = true;
+};
+
+const closePaymentModal = () => {
+    isPaymentModalOpen.value = false;
+    paymentForm.reset();
+    paymentForm.clearErrors();
+};
+
+const submitPayment = () => {
+    paymentForm.post(route('warehouse.goods-receipts.pay', props.receipt.id), {
+        preserveScroll: true,
+        onSuccess: () => closePaymentModal(),
+    });
+};
+
+// --- Документы (Фаза 12) ---
+const selectedDocumentTemplateId = ref(props.documentTemplates[0]?.id ?? '');
+const generatingDocument = ref(false);
+
+const generateDocument = () => {
+    if (!selectedDocumentTemplateId.value) return;
+    generatingDocument.value = true;
+    router.post(route('documents.generate'), {
+        document_template_id: selectedDocumentTemplateId.value,
+        entity_type: 'goods_receipt',
+        entity_id: props.receipt.id,
+    }, {
+        preserveScroll: true,
+        onFinish: () => { generatingDocument.value = false; },
+    });
+};
+
+const deleteDocument = (doc) => {
+    if (confirm(`Удалить документ №${doc.number}? Если это последний выданный номер — следующий документ получит тот же номер.`)) {
+        router.delete(route('documents.destroy', doc.id), { preserveScroll: true });
+    }
+};
+
+const regenerateAsNew = (doc) => {
+    router.post(route('documents.regenerate-as-new', doc.id), {}, { preserveScroll: true });
+};
+
+const replaceDocument = (doc) => {
+    if (confirm(`Заменить документ №${doc.number} актуальными данными? Номер останется прежним, содержимое и дата формирования обновятся.`)) {
+        router.post(route('documents.replace', doc.id), {}, { preserveScroll: true });
+    }
 };
 
 const productOptions = computed(() => props.products.map(p => ({
@@ -226,6 +304,9 @@ const submitQuickProduct = () => {
                         <button @click="activeMainTab = 'history'" :class="[activeMainTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
                             <i class="ri-history-line"></i> История
                         </button>
+                        <button @click="activeMainTab = 'documents'" :class="[activeMainTab === 'documents' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 px-2 text-sm transition-colors focus:outline-none flex items-center gap-2']">
+                            <i class="ri-file-text-line"></i> Документы
+                        </button>
                     </div>
 
                     <div v-if="activeMainTab === 'items'" class="flex-1 flex flex-col">
@@ -272,14 +353,54 @@ const submitQuickProduct = () => {
                     <div v-if="activeMainTab === 'history'" class="flex-1 flex flex-col min-h-0">
                         <ActivityTimeline :activities="activities" />
                     </div>
+
+                    <div v-if="activeMainTab === 'documents'" class="flex-1 flex flex-col min-h-0">
+                        <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] flex items-center gap-2">
+                            <select v-if="documentTemplates.length > 0" v-model="selectedDocumentTemplateId" class="block w-64 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option v-for="t in documentTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                            <button v-if="documentTemplates.length > 0" @click="generateDocument" :disabled="generatingDocument" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm disabled:opacity-50">
+                                <i class="ri-file-add-line"></i> Сформировать документ
+                            </button>
+                            <p v-else class="text-sm text-gray-400">Нет активных шаблонов документов для накладных — настройте их в Настройках → Шаблоны документов.</p>
+                        </div>
+                        <div class="flex-1 overflow-auto custom-scrollbar">
+                            <table v-if="receipt.documents && receipt.documents.length > 0" class="min-w-full text-left">
+                                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                    <tr v-for="doc in receipt.documents" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
+                                        <td class="py-3 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                                            {{ doc.number }}
+                                            <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
+                                            <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные накладной изменились с момента формирования — рекомендуем обновить документ"></i>
+                                        </td>
+                                        <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
+                                        <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
+                                        <td class="py-3 px-6 text-sm text-right space-x-1 whitespace-nowrap">
+                                            <template v-if="doc.is_stale && !doc.superseded_by_document_id">
+                                                <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)"><i class="ri-file-add-line"></i></button>
+                                                <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)"><i class="ri-refresh-line"></i></button>
+                                            </template>
+                                            <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать"><i class="ri-printer-line"></i></a>
+                                            <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF"><i class="ri-download-2-line"></i></a>
+                                            <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-else class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Документов по этой накладной ещё нет.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <CollapsiblePanel storage-key="goods-receipt-card-right" side="right">
 
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
-                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
                         <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Итоги</h3>
+                        <span :class="[paymentStatuses[receipt.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase']">
+                            {{ paymentStatuses[receipt.payment_status]?.label || receipt.payment_status }}
+                        </span>
                     </div>
                     <div class="p-6 space-y-4">
                         <div class="flex justify-between items-center text-sm">
@@ -290,6 +411,21 @@ const submitQuickProduct = () => {
                             <span class="font-bold text-gray-800 dark:text-gray-200">Сумма закупки:</span>
                             <span class="text-xl font-bold text-success">{{ formatMoney(receipt.total_value) }}</span>
                         </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Оплачено поставщику:</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatMoney(paidAmount) }}</span>
+                        </div>
+                        <div v-if="remainingAmount > 0" class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Остаток долга:</span>
+                            <span class="font-bold text-danger">{{ formatMoney(remainingAmount) }}</span>
+                        </div>
+                        <button
+                            v-if="receipt.status === 'posted' && remainingAmount > 0"
+                            @click="openPaymentModal"
+                            class="w-full inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-all duration-300 bg-success text-white hover:bg-success-600 shadow-sm"
+                        >
+                            <i class="ri-money-dollar-circle-line"></i> Оплатить поставщику
+                        </button>
                     </div>
                 </div>
 
@@ -400,6 +536,38 @@ const submitQuickProduct = () => {
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                         <button type="button" @click="closeQuickProductModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
                         <button type="submit" :disabled="quickProductForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
+        <!-- Оплата поставщику -->
+        <Modal :show="isPaymentModalOpen" @close="closePaymentModal" max-width="md">
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Оплата поставщику</h3>
+                    <button @click="closePaymentModal()" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitPayment">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Счет <span class="text-danger">*</span></label>
+                            <select v-model="paymentForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled>Выберите счет...</option>
+                                <option v-for="acc in accounts" :key="acc.id" :value="acc.id">{{ acc.name }} — {{ accountTypeLabels[acc.type] || acc.type }}</option>
+                            </select>
+                            <span v-if="paymentForm.errors.account_id" class="text-xs text-danger mt-1 block">{{ paymentForm.errors.account_id }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма к оплате (₽) <span class="text-danger">*</span></label>
+                            <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="remainingAmount / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <p class="text-xs text-gray-500 mt-1">Остаток долга: {{ formatMoney(remainingAmount) }}</p>
+                            <span v-if="paymentForm.errors.amount" class="text-xs text-danger mt-1 block">{{ paymentForm.errors.amount }}</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closePaymentModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="paymentForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-success text-white hover:bg-success-600 disabled:opacity-50">Провести оплату</button>
                     </div>
                 </form>
             </div>

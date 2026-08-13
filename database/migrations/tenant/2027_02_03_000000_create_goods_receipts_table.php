@@ -20,9 +20,9 @@ use Illuminate\Support\Facades\Schema;
  * поле supplier_document_number, свободный текст: это чужая нумерация, мы
  * её не контролируем и не проверяем на уникальность.
  *
- * Явно НЕ делаем в этой фазе (см. CLAUDE.md, обсуждение архитектуры):
- * привязку к Transaction/кассе (оплата поставщику — отдельная ручная
- * операция) и генерацию PDF через DocumentTemplate.
+ * В этой фазе НЕ делали привязку к Transaction/кассе и генерацию PDF через
+ * DocumentTemplate — оба добавлены позже отдельными миграциями/правками
+ * (см. GoodsReceipt::transactions()/documents(), CLAUDE.md).
  */
 return new class extends Migration
 {

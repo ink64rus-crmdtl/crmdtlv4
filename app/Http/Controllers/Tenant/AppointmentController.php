@@ -4,23 +4,23 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
-use App\Models\Client;
-use App\Models\Vehicle;
 use App\Models\Branch;
+use App\Models\Client;
 use App\Models\Employee;
+use App\Models\ListView;
+use App\Models\Lookup;
 use App\Models\Post;
-use App\Models\Service;
 use App\Models\Product;
+use App\Models\Service;
+use App\Models\Setting;
+use App\Models\Vehicle;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
-use App\Models\Lookup;
-use App\Models\ListView;
-use App\Models\Setting;
 use App\Models\WorkOrder;
+use App\Services\ActivityLogger;
 use App\Services\QueryFilterService;
 use App\Services\TimezoneResolver;
 use App\Services\WorkingHoursResolver;
-use App\Services\ActivityLogger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,9 +31,18 @@ use Inertia\Response;
 
 class AppointmentController extends Controller
 {
+    /**
+     * Значение системной роли клиента (тот же принцип и то же
+     * value-значение, что и WorkOrderController::CONTRACTOR_ROLE — стабильный
+     * слаг, не завязанный на отображаемый текст роли в Справочниках).
+     */
+    private const CONTRACTOR_ROLE = 'contractor';
+
+    private const CONTRACTOR_ROLE_LABEL = 'Подрядчик';
+
     public function index(Request $request): Response
     {
-        $query = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'post', 'items']);
+        $query = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'contractor', 'post', 'items']);
 
         $query = QueryFilterService::apply(
             $query,
@@ -41,7 +50,7 @@ class AppointmentController extends Controller
             ['comment']
         );
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('start_at', 'desc');
         }
 
@@ -55,6 +64,7 @@ class AppointmentController extends Controller
             $appointment->setAttribute('end_at_local', $appointment->end_at->copy()->setTimezone($tz)->format('Y-m-d\TH:i'));
             $appointment->setAttribute('start_at_display', $appointment->start_at->copy()->setTimezone($tz)->format('d.m.Y H:i'));
             $appointment->setAttribute('end_at_display', $appointment->end_at->copy()->setTimezone($tz)->format('d.m.Y H:i'));
+
             return $appointment;
         });
 
@@ -62,6 +72,7 @@ class AppointmentController extends Controller
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $employees = Employee::where('is_active', true)->get(['id', 'first_name', 'last_name']);
+        $contractors = $this->contractorOptions();
         $posts = Post::where('is_active', true)->orderBy('sort_order')->get(['id', 'branch_id', 'name', 'icon']);
         $services = Service::where('is_active', true)->get(['id', 'name', 'price']);
         $products = Product::where('is_active', true)->get(['id', 'name']);
@@ -105,7 +116,7 @@ class AppointmentController extends Controller
         // списка, поэтому подгружаем её отдельно и открываем модалку на фронте.
         $openAppointment = null;
         if ($request->filled('appointment')) {
-            $openAppointment = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'post', 'items'])
+            $openAppointment = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'contractor', 'post', 'items'])
                 ->find($request->query('appointment'));
 
             if ($openAppointment) {
@@ -122,6 +133,7 @@ class AppointmentController extends Controller
             'clients' => $clients,
             'vehicles' => $vehicles,
             'employees' => $employees,
+            'contractors' => $contractors,
             'posts' => $posts,
             'services' => $services,
             'products' => $products,
@@ -156,7 +168,7 @@ class AppointmentController extends Controller
         $rangeStart = Carbon::parse($validated['start'])->subDay();
         $rangeEnd = Carbon::parse($validated['end'])->addDay();
 
-        $appointments = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'post', 'items'])
+        $appointments = Appointment::with(['branch', 'client', 'vehicle.make', 'vehicle.vehicleModel', 'employee', 'contractor', 'post', 'items'])
             ->where('start_at', '<', $rangeEnd)
             ->where('end_at', '>', $rangeStart)
             ->get();
@@ -186,7 +198,7 @@ class AppointmentController extends Controller
 
             $title = $appointment->client?->name ?: 'Без клиента';
             if ($appointment->vehicle?->plate_number) {
-                $title .= ' — ' . $appointment->vehicle->plate_number;
+                $title .= ' — '.$appointment->vehicle->plate_number;
             }
 
             return [
@@ -202,6 +214,7 @@ class AppointmentController extends Controller
                         'client_id' => $appointment->client_id,
                         'vehicle_id' => $appointment->vehicle_id,
                         'employee_id' => $appointment->employee_id,
+                        'contractor_id' => $appointment->contractor_id,
                         'post_id' => $appointment->post_id,
                         'status' => $appointment->status,
                         'work_order_id' => $appointment->work_order_id,
@@ -239,6 +252,7 @@ class AppointmentController extends Controller
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'employee_id' => $validated['employee_id'] ?? null,
+                'contractor_id' => $validated['contractor_id'] ?? null,
                 'post_id' => $validated['post_id'] ?? null,
                 'start_at' => $startAtUtc,
                 'end_at' => $endAtUtc,
@@ -272,6 +286,7 @@ class AppointmentController extends Controller
                 'client_id' => $validated['client_id'],
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'employee_id' => $validated['employee_id'] ?? null,
+                'contractor_id' => $validated['contractor_id'] ?? null,
                 'post_id' => $validated['post_id'] ?? null,
                 'start_at' => $startAtUtc,
                 'end_at' => $endAtUtc,
@@ -314,9 +329,9 @@ class AppointmentController extends Controller
 
         $daySchedule = collect($hours)->firstWhere('day', $dayKey);
 
-        if ($daySchedule && !($daySchedule['is_open'] ?? true)) {
+        if ($daySchedule && ! ($daySchedule['is_open'] ?? true)) {
             throw ValidationException::withMessages([
-                'end_at' => 'Локация не работает в этот день (' . $dayLabels[$dayKey] . ') — окончание записи нельзя ставить на нерабочий день. Выберите другое время.',
+                'end_at' => 'Локация не работает в этот день ('.$dayLabels[$dayKey].') — окончание записи нельзя ставить на нерабочий день. Выберите другое время.',
             ]);
         }
     }
@@ -328,12 +343,12 @@ class AppointmentController extends Controller
      */
     private function assertNoOverlap(?int $postId, Carbon $startAtUtc, Carbon $endAtUtc, ?int $excludeAppointmentId = null): void
     {
-        if (!$postId) {
+        if (! $postId) {
             return;
         }
 
         $post = Post::find($postId);
-        if (!$post || !$post->prevent_overlapping_appointments) {
+        if (! $post || ! $post->prevent_overlapping_appointments) {
             return;
         }
 
@@ -357,7 +372,7 @@ class AppointmentController extends Controller
         // "Право администратора на удаление без ограничений") — например, это
         // единственный способ убрать зависшую запись со статусом "converted",
         // чей заказ-наряд был удалён ещё до внедрения автоматической отвязки.
-        if ($appointment->status === 'converted' && !auth()->user()->isAdmin()) {
+        if ($appointment->status === 'converted' && ! auth()->user()->isAdmin()) {
             return redirect()->back()->withErrors(['error' => 'Запись уже конвертирована в заказ-наряд и не может быть удалена.']);
         }
 
@@ -412,6 +427,8 @@ class AppointmentController extends Controller
 
                 if ($appointment->employee_id) {
                     $workOrderItem->employees()->sync([$appointment->employee_id]);
+                } elseif ($appointment->contractor_id) {
+                    $workOrderItem->contractors()->sync([$appointment->contractor_id]);
                 }
             }
 
@@ -462,7 +479,7 @@ class AppointmentController extends Controller
 
         $workOrder = WorkOrder::find($validated['work_order_id']);
 
-        if (!$workOrder || $workOrder->client_id !== $appointment->client_id) {
+        if (! $workOrder || $workOrder->client_id !== $appointment->client_id) {
             return redirect()->back()->withErrors(['error' => 'Заказ-наряд принадлежит другому клиенту.']);
         }
 
@@ -510,7 +527,7 @@ class AppointmentController extends Controller
         ]);
 
         $query = Appointment::whereIn('id', $validated['ids']);
-        if (!auth()->user()->isAdmin()) {
+        if (! auth()->user()->isAdmin()) {
             $query->where('status', '!=', 'converted');
         }
         $query->delete();
@@ -520,11 +537,12 @@ class AppointmentController extends Controller
 
     private function validateAppointment(Request $request, ?Appointment $appointment = null): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'client_id' => ['required', 'exists:clients,id'],
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'employee_id' => ['nullable', 'exists:employees,id'],
+            'contractor_id' => ['nullable', 'exists:clients,id', $this->contractorRoleRule()],
             'post_id' => ['nullable', 'exists:posts,id'],
             'start_at' => ['required', 'date'],
             'end_at' => ['required', 'date', 'after:start_at'],
@@ -537,6 +555,47 @@ class AppointmentController extends Controller
             'items.*.quantity' => ['required_with:items', 'numeric', 'min:0.001'],
             'items.*.price' => ['required_with:items', 'numeric', 'min:0'],
         ]);
+
+        // Исполнитель записи — либо штатный сотрудник, либо подрядчик, не оба
+        // сразу (тот же принцип "нельзя смешивать", что и у исполнителей
+        // позиции заказа, см. WorkOrderController::assigneeTypesMixedError —
+        // здесь проще: не коллекция, а максимум один исполнитель на запись).
+        if (! empty($validated['employee_id']) && ! empty($validated['contractor_id'])) {
+            throw ValidationException::withMessages([
+                'contractor_id' => 'Исполнителем записи может быть либо штатный сотрудник, либо подрядчик — не оба одновременно.',
+            ]);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * Исполнителем-подрядчиком можно назначить только клиента с ролью
+     * «Подрядчик» — тот же принцип, что и у WorkOrderController::
+     * assertAssigneeIdsExist() для исполнителей позиции заказа.
+     */
+    private function contractorRoleRule(): \Closure
+    {
+        return function (string $attribute, $value, \Closure $fail) {
+            if (! $value) {
+                return;
+            }
+
+            $isContractor = Client::where('id', $value)
+                ->whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::CONTRACTOR_ROLE))
+                ->exists();
+
+            if (! $isContractor) {
+                $fail('Исполнителем-подрядчиком можно назначить только клиента с ролью «'.self::CONTRACTOR_ROLE_LABEL.'».');
+            }
+        };
+    }
+
+    private function contractorOptions()
+    {
+        return Client::whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::CONTRACTOR_ROLE))
+            ->orderBy('name')
+            ->get(['id', 'name', 'phone']);
     }
 
     private function syncItems(Appointment $appointment, array $items): void

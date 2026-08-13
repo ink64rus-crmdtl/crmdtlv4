@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * Приходная накладная — шапка поставки от поставщика (Client с ролью
@@ -24,6 +25,7 @@ class GoodsReceipt extends Model
         'receipt_date',
         'supplier_document_number',
         'status',
+        'payment_status',
         'comment',
         'created_by',
     ];
@@ -71,6 +73,25 @@ class GoodsReceipt extends Model
     }
 
     /**
+     * Оплата поставщику — тот же полиморфный payable, что и у WorkOrder/
+     * Payroll (App\Services\FinanceService::processTransaction()), только
+     * type='expense' (деньги уходят из кассы поставщику), а не 'income'.
+     */
+    public function transactions(): MorphMany
+    {
+        return $this->morphMany(Transaction::class, 'payable');
+    }
+
+    /**
+     * Сгенерированные печатные формы (Фаза 12) — тот же полиморфный
+     * documentable, что и у WorkOrder/Client, см. App\Models\Document.
+     */
+    public function documents(): MorphMany
+    {
+        return $this->morphMany(Document::class, 'documentable');
+    }
+
+    /**
      * Сумма закупки по накладной — точечно через ->append('total_value')
      * там, где items уже eager-loaded (см. GoodsReceiptController::show()),
      * иначе тихий N+1 (тот же приём, что у Document::isStale()). Единственная
@@ -83,5 +104,34 @@ class GoodsReceipt extends Model
         return Attribute::make(
             get: fn () => (int) $this->items->sum(fn (GoodsReceiptItem $item) => (int) round($item->quantity * $item->cost_price)),
         );
+    }
+
+    /**
+     * Пересчитывает payment_status на основе суммы expense-транзакций
+     * (payable_type=GoodsReceipt) — тот же паттерн, что WorkOrder::
+     * syncPaymentStatus() для income. Вызывается FinanceService после
+     * проведения/правки/отката транзакции (см. revertTransaction() —
+     * method_exists($payable, 'syncPaymentStatus')), а также явно из
+     * GoodsReceiptController::pay(). Требует загруженных items для
+     * total_value — при отсутствии подгружает сам (та же защита от
+     * N+1-ловушки, что у самого total_value, просто здесь цена запроса
+     * оправдана: вызывается редко, не в списках).
+     */
+    public function syncPaymentStatus(): void
+    {
+        $this->loadMissing('items');
+
+        $paidTotal = $this->transactions()->where('type', 'expense')->sum('amount');
+        $total = $this->total_value;
+
+        if ($total > 0 && $paidTotal >= $total) {
+            $this->payment_status = 'paid';
+        } elseif ($paidTotal > 0) {
+            $this->payment_status = 'partial';
+        } else {
+            $this->payment_status = 'unpaid';
+        }
+
+        $this->save();
     }
 }

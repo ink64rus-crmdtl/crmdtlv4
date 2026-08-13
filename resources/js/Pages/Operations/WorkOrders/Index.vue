@@ -28,6 +28,8 @@ const props = defineProps({
     availableColumns: Array,
     listView: Object,
     workOrderStatuses: { type: Array, default: () => [] },
+    accounts: { type: Array, default: () => [] },
+    bonusRubPerPoint: { type: Number, default: 1 },
 });
 
 const page = usePage();
@@ -432,10 +434,100 @@ const submit = () => {
     }
 };
 
+// "Завершён" — особый случай: у него есть побочные эффекты (списание
+// склада, расчёт ЗП), которые делает только operations.work-orders.complete
+// (см. WorkOrderController::completeOrder()) — обычный PATCH статуса их не
+// выполняет. Тот же принцип, что и в Operations/WorkOrders/Show.vue::changeStatus().
 const changeStatus = (order, status) => {
+    if (status === 'completed') {
+        if (confirm(`Завершить заказ #${String(order.id).padStart(6, '0')}? Это действие спишет все материалы со склада и зафиксирует статус.`)) {
+            router.post(route('operations.work-orders.complete', order.id), {}, { preserveScroll: true, preserveState: true });
+        }
+        return;
+    }
     router.patch(route('operations.work-orders.status.update', order.id), { status }, {
         preserveScroll: true,
         preserveState: true,
+    });
+};
+
+// --- Смена статуса иконкой действия (см. CLAUDE.md — эталон иконок списка) ---
+const isStatusModalOpen = ref(false);
+const statusChangeOrder = ref(null);
+
+const openStatusModal = (order) => {
+    statusChangeOrder.value = order;
+    isStatusModalOpen.value = true;
+};
+
+const closeStatusModal = () => {
+    isStatusModalOpen.value = false;
+    statusChangeOrder.value = null;
+};
+
+const applyStatusChange = (status) => {
+    changeStatus(statusChangeOrder.value, status);
+    closeStatusModal();
+};
+
+// --- Приём оплаты иконкой действия (тот же поток, что и Show.vue::submitPayment) ---
+const isPaymentModalOpen = ref(false);
+const paymentOrder = ref(null);
+const paymentForm = useForm({
+    account_id: '',
+    amount: 0,
+});
+
+const accountTypeLabels = {
+    cash: 'Касса',
+    bank: 'Расчетный счет',
+    acquiring: 'Эквайринг',
+    bonus: 'Бонусы клиента',
+};
+
+const paidAmount = (order) => order.paid_amount ?? 0;
+const remainingAmount = (order) => Math.max(0, order.final_amount - paidAmount(order));
+
+const selectedPaymentAccount = computed(() => props.accounts.find(a => a.id === paymentForm.account_id));
+
+const paymentClientBonusRub = computed(() => {
+    const points = paymentOrder.value?.client?.bonus_points || 0;
+    return Math.floor(points * props.bonusRubPerPoint * 100) / 100;
+});
+
+const paymentAcquiringCommissionPreview = computed(() => {
+    if (selectedPaymentAccount.value?.type !== 'acquiring') return null;
+    const commissionPercent = Number(selectedPaymentAccount.value.commission_percent) || 0;
+    const amount = Number(paymentForm.amount) || 0;
+    const commission = Math.round(amount * commissionPercent) / 100;
+    return { commission, net: Math.max(0, amount - commission) };
+});
+
+const paymentMaxPayableRub = computed(() => {
+    if (!paymentOrder.value) return 0;
+    const remaining = remainingAmount(paymentOrder.value) / 100;
+    return selectedPaymentAccount.value?.type === 'bonus' ? Math.min(remaining, paymentClientBonusRub.value) : remaining;
+});
+
+const openPaymentModal = (order) => {
+    paymentOrder.value = order;
+    paymentForm.reset();
+    paymentForm.amount = remainingAmount(order) / 100;
+    if (props.accounts.length > 0) paymentForm.account_id = props.accounts[0].id;
+    isPaymentModalOpen.value = true;
+};
+
+const closePaymentModal = () => {
+    isPaymentModalOpen.value = false;
+    paymentOrder.value = null;
+    paymentForm.reset();
+    paymentForm.clearErrors();
+};
+
+const submitPayment = () => {
+    paymentForm.post(route('operations.work-orders.payment.store', paymentOrder.value.id), {
+        preserveScroll: true,
+        onSuccess: () => closePaymentModal(),
     });
 };
 
@@ -584,15 +676,31 @@ const deleteOrder = (order) => {
                                     >
                                         <i class="ri-folder-open-line"></i>
                                     </Link>
-                                    <button 
-                                        @click.stop="openModal(order)" 
+                                    <button
+                                        v-if="remainingAmount(order) > 0"
+                                        @click.stop="openPaymentModal(order)"
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
+                                        title="Принять оплату"
+                                    >
+                                        <i class="ri-money-dollar-circle-line"></i>
+                                    </button>
+                                    <button
+                                        v-if="order.status !== 'completed'"
+                                        @click.stop="openStatusModal(order)"
+                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white"
+                                        title="Сменить статус"
+                                    >
+                                        <i class="ri-flag-2-line"></i>
+                                    </button>
+                                    <button
+                                        @click.stop="openModal(order)"
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
                                         title="Редактировать форму"
                                     >
                                         <i class="ri-pencil-line"></i>
                                     </button>
-                                    <button 
-                                        @click.stop="deleteOrder(order)" 
+                                    <button
+                                        @click.stop="deleteOrder(order)"
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
                                         title="Удалить"
                                     >
@@ -1028,6 +1136,109 @@ const deleteOrder = (order) => {
                         <button type="submit" :disabled="quickVehicleForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
                     </div>
                 </form>
+            </div>
+        </Modal>
+
+        <!-- Принять оплату (иконка действия в списке, тот же поток, что и Show.vue) -->
+        <Modal :show="isPaymentModalOpen" @close="closePaymentModal" max-width="md">
+            <div v-if="paymentOrder" class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Приём оплаты — заказ #{{ String(paymentOrder.id).padStart(6, '0') }}
+                    </h3>
+                    <button @click="closePaymentModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <form @submit.prevent="submitPayment" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <!-- Краткая карточка заказа: клиент/авто + KPI остатка -->
+                        <div class="rounded-md bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 p-4 space-y-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                                    <i class="ri-user-3-line"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200 truncate">{{ paymentOrder.client?.name || 'Без клиента' }}</p>
+                                    <p v-if="paymentOrder.vehicle" class="text-xs text-gray-500 truncate">{{ paymentOrder.vehicle.plate_number || '' }}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                <div class="text-center">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Сумма заказа</p>
+                                    <p class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(paymentOrder.final_amount) }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Оплачено</p>
+                                    <p class="text-sm font-bold text-success">{{ formatMoney(paidAmount(paymentOrder)) }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Остаток</p>
+                                    <p class="text-sm font-bold text-danger">{{ formatMoney(remainingAmount(paymentOrder)) }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Касса / Счет <span class="text-danger">*</span></label>
+                            <select v-model="paymentForm.account_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled>Выберите счет...</option>
+                                <option v-for="acc in accounts" :key="acc.id" :value="acc.id">{{ acc.name }} — {{ accountTypeLabels[acc.type] || acc.type }}</option>
+                            </select>
+                            <span v-if="paymentForm.errors.account_id" class="text-xs text-danger mt-1 block">{{ paymentForm.errors.account_id }}</span>
+                        </div>
+
+                        <div v-if="selectedPaymentAccount?.type === 'bonus'" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
+                            Доступно бонусами: <span class="font-bold text-info">{{ formatMoney(paymentClientBonusRub * 100) }}</span>
+                            ({{ paymentOrder.client?.bonus_points || 0 }} баллов)
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма к оплате (₽) <span class="text-danger">*</span></label>
+                            <input v-model="paymentForm.amount" type="number" step="0.01" min="0.01" :max="paymentMaxPayableRub" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <p class="text-xs text-gray-500 mt-1">Остаток долга: {{ formatMoney(remainingAmount(paymentOrder)) }}</p>
+                            <span v-if="paymentForm.errors.amount" class="text-xs text-danger mt-1 block">{{ paymentForm.errors.amount }}</span>
+                        </div>
+
+                        <div v-if="paymentAcquiringCommissionPreview" class="p-3 rounded-md bg-warning/5 border border-warning/20 text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                            <div class="flex justify-between"><span>Комиссия банка ({{ selectedPaymentAccount.commission_percent }}%):</span> <span class="font-bold text-warning">− {{ formatMoney(paymentAcquiringCommissionPreview.commission * 100) }}</span></div>
+                            <div class="flex justify-between"><span>Зачислится на счет:</span> <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(paymentAcquiringCommissionPreview.net * 100) }}</span></div>
+                            <p class="text-[11px] text-gray-400 pt-1">Заказ будет учтен как оплаченный на полную сумму — комиссия проводится отдельным расходом.</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closePaymentModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="paymentForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-success text-white hover:bg-success-600 disabled:opacity-50">Провести оплату</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
+        <!-- Сменить статус (иконка действия в списке) -->
+        <Modal :show="isStatusModalOpen" @close="closeStatusModal" max-width="sm">
+            <div v-if="statusChangeOrder" class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">
+                        Статус заказа #{{ String(statusChangeOrder.id).padStart(6, '0') }}
+                    </h3>
+                    <button @click="closeStatusModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-2">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Текущий статус: <span :class="[statuses[statusChangeOrder.status]?.class, 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ml-1']">{{ statuses[statusChangeOrder.status]?.label || statusChangeOrder.status }}</span></p>
+                    <button
+                        v-for="option in workOrderStatuses.filter(s => s.is_active !== false)"
+                        :key="option.value"
+                        type="button"
+                        @click="applyStatusChange(option.value)"
+                        :disabled="option.value === statusChangeOrder.status"
+                        class="w-full flex items-center justify-between px-4 py-2.5 rounded-md text-sm transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 disabled:opacity-40 disabled:cursor-default"
+                    >
+                        <span :class="[statusColorClasses[option.color] || statusColorClasses.gray, 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ option.label || option.value }}</span>
+                        <i v-if="option.value === statusChangeOrder.status" class="ri-check-line text-primary"></i>
+                    </button>
+                </div>
             </div>
         </Modal>
 

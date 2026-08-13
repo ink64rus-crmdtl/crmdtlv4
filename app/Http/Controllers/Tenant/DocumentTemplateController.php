@@ -32,6 +32,7 @@ class DocumentTemplateController extends Controller
         'work_order' => 'Заказ-наряд',
         'transaction' => 'Транзакция',
         'client' => 'Клиент',
+        'goods_receipt' => 'Приходная накладная',
     ];
 
     /**
@@ -86,6 +87,16 @@ class DocumentTemplateController extends Controller
             'client.email' => 'Email клиента',
             ...self::CLIENT_ORGANIZATION_PLACEHOLDERS,
         ],
+        'goods_receipt' => [
+            'goods_receipt.id' => 'Номер накладной',
+            'goods_receipt.date' => 'Дата поступления товара',
+            'goods_receipt.supplier_document_number' => 'Номер накладной поставщика (их бумага)',
+            'goods_receipt.total_value' => 'Сумма закупки по накладной',
+            'items_total' => 'Сумма закупки (то же, что goods_receipt.total_value)',
+            'supplier.name' => 'Имя/название поставщика',
+            'supplier.phone' => 'Телефон поставщика',
+            ...self::SUPPLIER_ORGANIZATION_PLACEHOLDERS,
+        ],
     ];
 
     /**
@@ -103,6 +114,21 @@ class DocumentTemplateController extends Controller
         'client.director_name' => 'ФИО руководителя клиента-организации (для подписи "Покупатель")',
     ];
 
+    /**
+     * Поставщик — тот же Client, что и в CLIENT_ORGANIZATION_PLACEHOLDERS,
+     * но в накладной он не "покупатель", а сторона-продавец — реквизиты
+     * подмешиваются под своим префиксом supplier.*, а не client.*, чтобы не
+     * путать роли в шаблоне приходной накладной (DocumentPlaceholderService::
+     * goodsReceiptPlaceholders() строит их из того же requisites JSON).
+     */
+    private const SUPPLIER_ORGANIZATION_PLACEHOLDERS = [
+        'supplier.inn' => 'ИНН поставщика (только для B2B)',
+        'supplier.kpp' => 'КПП поставщика (только для B2B)',
+        'supplier.legal_address' => 'Юридический адрес поставщика (только для B2B)',
+        'supplier.director_position' => 'Должность руководителя поставщика (для подписи "Поставщик" в акте)',
+        'supplier.director_name' => 'ФИО руководителя поставщика (для подписи "Поставщик" в акте)',
+    ];
+
     public const ENTITY_TABLE_PLACEHOLDERS = [
         'work_order' => [
             'section' => 'items',
@@ -115,6 +141,16 @@ class DocumentTemplateController extends Controller
                 'item.total' => 'Сумма по позиции',
             ],
         ],
+        'goods_receipt' => [
+            'section' => 'items',
+            'fields' => [
+                'item.index' => 'Порядковый номер строки (1, 2, 3…)',
+                'item.name' => 'Наименование товара',
+                'item.quantity' => 'Количество',
+                'item.price' => 'Цена закупки за единицу',
+                'item.total' => 'Сумма по позиции',
+            ],
+        ],
     ];
 
     public function index(): Response
@@ -124,6 +160,7 @@ class DocumentTemplateController extends Controller
                 ->map(function (DocumentTemplate $t) {
                     $data = $t->toArray();
                     $data['source_file_name'] = $t->getFirstMedia('source_file')?->file_name;
+
                     return $data;
                 }),
             'entityTypes' => self::ENTITY_TYPES,
@@ -179,7 +216,7 @@ class DocumentTemplateController extends Controller
             $html = DocxToHtmlConverter::convert($file->getRealPath());
         } catch (Throwable $e) {
             throw ValidationException::withMessages([
-                'source_file' => 'Не удалось прочитать .docx-файл: ' . $e->getMessage(),
+                'source_file' => 'Не удалось прочитать .docx-файл: '.$e->getMessage(),
             ]);
         }
 

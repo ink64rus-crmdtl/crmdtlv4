@@ -5,7 +5,9 @@ namespace App\Services\Documents;
 use App\Models\Account;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\GoodsReceipt;
 use App\Models\LegalEntity;
+use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\WorkOrder;
 use App\Services\CountryConfigService;
@@ -34,12 +36,14 @@ class DocumentPlaceholderService
                 'work_order' => self::workOrderPlaceholders($entity),
                 'transaction' => self::transactionPlaceholders($entity),
                 'client' => self::clientPlaceholders($entity),
+                'goods_receipt' => self::goodsReceiptPlaceholders($entity),
                 default => [],
             }
         );
 
         $tables = match ($entityType) {
             'work_order' => ['items' => self::workOrderItemRows($entity)],
+            'goods_receipt' => ['items' => self::goodsReceiptItemRows($entity)],
             default => [],
         };
 
@@ -62,7 +66,7 @@ class DocumentPlaceholderService
         }
 
         $branch = $entity->branch ?? null;
-        if (!$branch) {
+        if (! $branch) {
             return null;
         }
 
@@ -97,11 +101,11 @@ class DocumentPlaceholderService
             // (CountryConfigService::signatorySchema) — нужны в подписях
             // печатных форм (Акт/Счёт/Договор — CLAUDE.md, документооборот).
             foreach ([...($schema['requisite_schema'] ?? []), ...($schema['signatory_schema'] ?? [])] as $field) {
-                $placeholders['legal_entity.' . $field['key']] = '';
+                $placeholders['legal_entity.'.$field['key']] = '';
             }
 
             foreach ($requisites as $key => $value) {
-                $placeholders['legal_entity.' . $key] = (string) $value;
+                $placeholders['legal_entity.'.$key] = (string) $value;
             }
 
             $account = Account::where('legal_entity_id', $legalEntity->id)
@@ -186,17 +190,80 @@ class DocumentPlaceholderService
      */
     private static function clientRequisitePlaceholders(?Client $client): array
     {
-        if (!$client) {
+        if (! $client) {
             return [];
         }
 
         $placeholders = [];
 
         foreach ((array) $client->requisites as $key => $value) {
-            $placeholders['client.' . $key] = (string) $value;
+            $placeholders['client.'.$key] = (string) $value;
         }
 
         return $placeholders;
+    }
+
+    private static function goodsReceiptPlaceholders(GoodsReceipt $receipt): array
+    {
+        return [
+            'goods_receipt.id' => (string) $receipt->id,
+            'goods_receipt.date' => $receipt->receipt_date?->format('d.m.Y') ?? '',
+            'goods_receipt.supplier_document_number' => $receipt->supplier_document_number ?? '',
+            'goods_receipt.total_value' => self::money($receipt->total_value),
+            'items_total' => self::money($receipt->total_value),
+            'supplier.name' => $receipt->supplier?->name ?? '',
+            'supplier.phone' => $receipt->supplier?->phone ?? '',
+            ...self::supplierRequisitePlaceholders($receipt->supplier),
+        ];
+    }
+
+    private static function goodsReceiptItemRows(GoodsReceipt $receipt): array
+    {
+        return $receipt->items->values()->map(fn ($item, $index) => [
+            'item.index' => (string) ($index + 1),
+            'item.name' => self::localizedProductName($item->product),
+            'item.quantity' => rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ''), '0'), '.'),
+            'item.price' => self::money($item->cost_price),
+            'item.total' => self::money((int) round($item->quantity * $item->cost_price)),
+        ])->all();
+    }
+
+    /**
+     * Поставщик в накладной — тоже Client (та же роль-система, что и
+     * подрядчик, см. CLAUDE.md), но плейсхолдеры под своим префиксом
+     * supplier.*, а не client.* — иначе смысл поля путается в шаблоне
+     * приходной накладной ("Покупатель"/"Поставщик" — разные стороны).
+     */
+    private static function supplierRequisitePlaceholders(?Client $supplier): array
+    {
+        if (! $supplier) {
+            return [];
+        }
+
+        $placeholders = [];
+
+        foreach ((array) $supplier->requisites as $key => $value) {
+            $placeholders['supplier.'.$key] = (string) $value;
+        }
+
+        return $placeholders;
+    }
+
+    /**
+     * Product.name — spatie/laravel-translatable (CLAUDE.md, п.6). Тот же
+     * защитный паттерн, что и App\Jobs\ExportEntitiesJob (is_array-проверка):
+     * в зависимости от контекста загрузки атрибут отдаёт либо уже
+     * отрезолвленную под текущую локаль строку, либо сырой массив локалей.
+     */
+    private static function localizedProductName(?Product $product): string
+    {
+        if (! $product) {
+            return '';
+        }
+
+        $name = $product->name;
+
+        return is_array($name) ? ($name['ru'] ?? current($name) ?: '') : (string) $name;
     }
 
     private static function money(int $amountInMinorUnits): string

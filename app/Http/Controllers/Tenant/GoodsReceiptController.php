@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Account;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\DocumentTemplate;
 use App\Models\GoodsReceipt;
 use App\Models\GoodsReceiptItem;
 use App\Models\Lookup;
@@ -12,10 +14,12 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Warehouse;
 use App\Services\ActivityLogger;
+use App\Services\FinanceService;
 use App\Services\QueryFilterService;
 use App\Services\StockService;
 use Exception;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -99,7 +103,10 @@ class GoodsReceiptController extends Controller
             'legalEntity' => fn ($q) => $q->withTrashed(),
             'items.product',
             'items.batch',
+            'transactions.account',
+            'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc'),
         ])->append('total_value');
+        $receipt->documents->each->append('is_stale');
 
         $presented = ActivityLogger::present(ActivityLogger::feedFor($receipt));
 
@@ -110,7 +117,71 @@ class GoodsReceiptController extends Controller
             // с Карточки — тот же набор, что и на списке (index()).
             'products' => Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'accounting_type']),
             'productCategories' => ProductCategory::where('is_active', true)->get(['id', 'name']),
+            // Для оплаты поставщику — тот же набор счетов, доступных
+            // пользователю по ABAC (User::availableAccounts()), что и у
+            // WorkOrderController::show(). 'bonus' исключён: виртуальный
+            // счёт для списания баллов клиента, поставщику им не платят.
+            'accounts' => auth()->user()->availableAccounts()->where('is_active', true)->where('type', '!=', 'bonus')->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']),
+            'documentTemplates' => DocumentTemplate::where('entity_type', 'goods_receipt')->where('is_active', true)->get(['id', 'name']),
         ]);
+    }
+
+    /**
+     * Оплата поставщику — тот же приём, что и WorkOrderController::
+     * processPayment() (частичная оплата долга, сумма ограничена остатком
+     * серверно, не только на фронте) и PayrollController::payout() (деньги
+     * трогает ТОЛЬКО FinanceService::processTransaction(), никогда не сам
+     * контроллер). type='expense' — деньги уходят из кассы поставщику,
+     * в отличие от 'income' у оплаты клиентом заказ-наряда.
+     */
+    public function pay(Request $request, GoodsReceipt $receipt)
+    {
+        if ($receipt->status !== 'posted') {
+            return redirect()->back()->withErrors(['error' => 'Накладная отменена — оплата недоступна.']);
+        }
+
+        $validated = $request->validate([
+            'account_id' => ['required', 'exists:accounts,id'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+        ]);
+
+        $account = Account::findOrFail($validated['account_id']);
+        $amountCents = (int) round($validated['amount'] * 100);
+
+        $receipt->loadMissing('items');
+        $paidSoFar = $receipt->transactions()->where('type', 'expense')->sum('amount');
+        $remainingCents = max(0, $receipt->total_value - $paidSoFar);
+
+        if ($amountCents > $remainingCents) {
+            return redirect()->back()->withErrors(['amount' => 'Сумма оплаты ('.$this->formatMoney($amountCents).') превышает остаток долга по накладной ('.$this->formatMoney($remainingCents).').']);
+        }
+
+        try {
+            DB::transaction(function () use ($receipt, $account, $amountCents) {
+                FinanceService::processTransaction([
+                    'account_id' => $account->id,
+                    'branch_id' => $receipt->branch_id,
+                    'type' => 'expense',
+                    'amount' => $amountCents,
+                    'comment' => 'Оплата поставщику по накладной №'.$receipt->id.($receipt->supplier ? ' ('.$receipt->supplier->name.')' : ''),
+                    'payable_type' => GoodsReceipt::class,
+                    'payable_id' => $receipt->id,
+                ], auth()->id());
+
+                $receipt->syncPaymentStatus();
+            });
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => 'Ошибка при оплате: '.$e->getMessage()]);
+        }
+
+        ActivityLogger::log($receipt, 'Оплата поставщику по накладной №'.$receipt->id.' на сумму '.$this->formatMoney($amountCents), [], 'payment');
+
+        return redirect()->back()->with('success', 'Оплата проведена');
+    }
+
+    private function formatMoney(int $cents): string
+    {
+        return number_format($cents / 100, 2, ',', ' ').' ₽';
     }
 
     /**

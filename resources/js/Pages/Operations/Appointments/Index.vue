@@ -30,6 +30,7 @@ const props = defineProps({
     clients: Array,
     vehicles: Array,
     employees: Array,
+    contractors: { type: Array, default: () => [] },
     posts: { type: Array, default: () => [] },
     services: Array,
     products: Array,
@@ -177,6 +178,7 @@ const form = useForm({
     client_id: '',
     vehicle_id: '',
     employee_id: '',
+    contractor_id: '',
     post_id: '',
     start_at: '',
     end_at: '',
@@ -184,6 +186,18 @@ const form = useForm({
     comment: '',
     items: [],
 });
+
+// Исполнитель записи — штатный сотрудник ИЛИ подрядчик (Client с ролью
+// «Подрядчик»), не оба сразу (см. AppointmentController::validateAppointment()
+// — тот же принцип "нельзя смешивать", что и у исполнителей позиции заказа,
+// только здесь ОДИН исполнитель, а не коллекция, поэтому простой toggle,
+// а не AssigneeMultiSelect). Переключение типа очищает поле другого типа.
+const assigneeType = ref('employee');
+const setAssigneeType = (type) => {
+    assigneeType.value = type;
+    if (type === 'employee') form.contractor_id = '';
+    else form.employee_id = '';
+};
 
 // Посты общие для всего центра (branch_id === null) видны при любой выбранной локации.
 const filteredPosts = computed(() => {
@@ -202,6 +216,7 @@ const filteredVehicles = computed(() => {
 // --- ОПЦИИ ДЛЯ SearchableSelect ---
 const branchOptions = computed(() => props.branches.map(b => ({ value: b.id, label: b.name })));
 const employeeOptions = computed(() => props.employees.map(e => ({ value: e.id, label: `${e.first_name} ${e.last_name}` })));
+const contractorOptions = computed(() => props.contractors.map(c => ({ value: c.id, label: `${c.name}${c.phone ? ` (${c.phone})` : ''}` })));
 const postOptions = computed(() => filteredPosts.value.map(p => ({ value: p.id, label: p.name })));
 const clientOptions = computed(() => props.clients.map(c => ({ value: c.id, label: `${c.name}${c.phone ? ` (${c.phone})` : ''}` })));
 
@@ -379,6 +394,8 @@ const openModal = (appointment = null, prefill = null) => {
         form.client_id = appointment.client_id;
         form.vehicle_id = appointment.vehicle_id || '';
         form.employee_id = appointment.employee_id || '';
+        form.contractor_id = appointment.contractor_id || '';
+        assigneeType.value = appointment.contractor_id ? 'contractor' : 'employee';
         form.post_id = appointment.post_id || '';
         form.start_at = appointment.start_at_local;
         form.end_at = appointment.end_at_local;
@@ -395,6 +412,7 @@ const openModal = (appointment = null, prefill = null) => {
         form.reset();
         form.status = 'scheduled';
         form.items = [];
+        assigneeType.value = 'employee';
         // Предзаполнение при создании из клика по слоту в видах "по постам"
         if (prefill) {
             if (prefill.branch_id) form.branch_id = prefill.branch_id;
@@ -536,6 +554,7 @@ const rescheduleAppointment = (appointment, patch, revert = null) => {
         client_id: appointment.client_id,
         vehicle_id: appointment.vehicle_id || '',
         employee_id: appointment.employee_id || '',
+        contractor_id: appointment.contractor_id || '',
         post_id: (patch.post_id !== undefined ? patch.post_id : appointment.post_id) || '',
         start_at: patch.start_at_local,
         end_at: patch.end_at_local,
@@ -594,6 +613,16 @@ const employeeNameById = (id) => {
     return e ? `${e.first_name} ${e.last_name}` : null;
 };
 
+const contractorNameById = (id) => {
+    if (!id) return null;
+    const c = props.contractors.find(x => x.id === id);
+    return c ? c.name : null;
+};
+
+// Исполнитель записи — сотрудник ИЛИ подрядчик (заполнен максимум один из
+// employee_id/contractor_id, см. AppointmentController::validateAppointment()).
+const assigneeNameFor = (appt) => employeeNameById(appt.employee_id) || contractorNameById(appt.contractor_id);
+
 const postNameById = (id) => {
     if (!id) return null;
     const p = props.posts.find(x => x.id === id);
@@ -618,7 +647,8 @@ const enrichAppointment = (appt) => {
         client_phone: client ? client.phone : null,
         vehicle_label: vehicleLabel(appt.vehicle_id),
         branch_name: branchNameById(appt.branch_id),
-        employee_name: employeeNameById(appt.employee_id),
+        employee_name: assigneeNameFor(appt),
+        is_contractor: !appt.employee_id && !!appt.contractor_id,
         post_name: postNameById(appt.post_id),
         status_label: status ? (status.label || status.value) : appt.status,
     };
@@ -1144,6 +1174,10 @@ const toggleDefaultView = () => {
                                     </template>
                                     <template v-else-if="col.key === 'employee'">
                                         <span v-if="appointment.employee">{{ appointment.employee.first_name }} {{ appointment.employee.last_name }}</span>
+                                        <span v-else-if="appointment.contractor" class="inline-flex items-center gap-1">
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"><i class="ri-briefcase-line"></i> Подрядчик</span>
+                                            {{ appointment.contractor.name }}
+                                        </span>
                                         <span v-else class="text-gray-400">Не назначен</span>
                                     </template>
                                     <template v-else-if="col.key === 'status'">
@@ -1254,14 +1288,28 @@ const toggleDefaultView = () => {
                                 <p v-if="form.errors.branch_id" class="mt-1 text-xs text-danger">{{ form.errors.branch_id }}</p>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Мастер</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Исполнитель</label>
+                                <div class="inline-flex rounded-md overflow-hidden border border-gray-200 dark:border-gray-700 mb-1.5 text-xs">
+                                    <button type="button" @click="setAssigneeType('employee')" :class="[assigneeType === 'employee' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400', 'px-3 py-1.5 font-medium transition-colors']">Сотрудник</button>
+                                    <button type="button" @click="setAssigneeType('contractor')" :class="[assigneeType === 'contractor' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400', 'px-3 py-1.5 font-medium transition-colors']">Подрядчик</button>
+                                </div>
                                 <SearchableSelect
+                                    v-if="assigneeType === 'employee'"
                                     v-model="form.employee_id"
                                     :options="employeeOptions"
                                     placeholder="Не назначен"
                                     searchPlaceholder="Поиск сотрудника..."
                                     clearable
                                 />
+                                <SearchableSelect
+                                    v-else
+                                    v-model="form.contractor_id"
+                                    :options="contractorOptions"
+                                    placeholder="Не назначен"
+                                    searchPlaceholder="Поиск подрядчика..."
+                                    clearable
+                                />
+                                <p v-if="form.errors.contractor_id" class="mt-1 text-xs text-danger">{{ form.errors.contractor_id }}</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Пост</label>

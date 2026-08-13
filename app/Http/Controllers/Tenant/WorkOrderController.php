@@ -75,7 +75,12 @@ class WorkOrderController extends Controller
     {
         $user = auth()->user();
 
-        $query = WorkOrder::with(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel']);
+        $query = WorkOrder::with(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel'])
+            // Для иконки "Принять оплату" и остатка долга прямо в списке —
+            // O(1) SQL-подзапрос на страницу (withSum), не N+1 по заказам
+            // (CLAUDE.md, п.6). Только income — та же выборка, что и в
+            // WorkOrder::syncPaymentStatus()/processPayment().
+            ->withSum(['transactions as paid_amount' => fn ($q) => $q->where('type', 'income')], 'amount');
 
         $query = QueryFilterService::apply(
             $query,
@@ -95,6 +100,11 @@ class WorkOrderController extends Controller
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $makes = VehicleMake::where('is_active', true)->orderBy('name')->get(['id', 'name']);
         $models = VehicleModel::where('is_active', true)->orderBy('name')->get(['id', 'vehicle_make_id', 'name']);
+
+        // Для модалки "Принять оплату" прямо из списка (тот же набор, что и
+        // у show() — WorkOrderController::processPayment() их и использует).
+        $accounts = $user->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']);
+        $bonusRubPerPoint = (float) (Setting::where('key', 'bonus_rub_per_point')->value('value') ?? 1);
 
         $baseColumns = [
             ['key' => 'id', 'label' => '№ Заказа', 'type' => 'system', 'is_default' => true],
@@ -163,6 +173,8 @@ class WorkOrderController extends Controller
                 'visible_columns' => $visibleColumns,
             ],
             'workOrderStatuses' => $this->workOrderStatuses(),
+            'accounts' => $accounts,
+            'bonusRubPerPoint' => $bonusRubPerPoint,
         ]);
     }
 
