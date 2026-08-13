@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lookup;
-use App\Models\WorkOrder;
-use App\Models\VehicleModel;
 use App\Models\Service;
+use App\Models\VehicleModel;
+use App\Models\WorkOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +30,7 @@ class LookupController extends Controller
             if ($request->wantsJson()) {
                 return response()->json(['success' => true, 'data' => $existing]);
             }
+
             return redirect()->back()->withErrors(['value' => 'Такое значение уже существует в справочнике.']);
         }
 
@@ -53,6 +54,15 @@ class LookupController extends Controller
 
     public function update(Request $request, Lookup $lookup)
     {
+        // Системные роли клиента (Клиент/Подрядчик/Поставщик) когда-то
+        // разрешали переименование (текст уходил в label, value-слаг
+        // оставался неизменным — см. миграцию 2027_02_02). Решение отменено:
+        // случайная правка текста роли менеджером без понимания последствий
+        // сочли более вероятным риском, чем неудобство от невозможности
+        // переименовать. Теперь is_system блокирует ЛЮБУЮ правку полностью,
+        // без исключений — так же, как у остальных системных справочников.
+        // value/label из той миграции трогать не нужно: label уже хранит
+        // отображаемый текст, просто больше никем не редактируется.
         if ($lookup->is_system) {
             return redirect()->back()->withErrors(['error' => 'Системную запись нельзя изменить.']);
         }
@@ -84,6 +94,15 @@ class LookupController extends Controller
 
     public function destroy(Lookup $lookup)
     {
+        // Намеренно БЕЗ обхода для auth()->user()->isAdmin(): в отличие от
+        // обычных status/workflow-блокировок (см. CLAUDE.md, "Право
+        // администратора на удаление без ограничений"), это защита
+        // целостности данных, а не просто пометка статуса — системная роль
+        // клиента (Клиент/Подрядчик/Поставщик) захардкожена в бизнес-логике
+        // (CONTRACTOR_ROLE), и её удаление сломает право быть исполнителем
+        // услуги без единой ошибки в логах. Системную запись нельзя ни
+        // удалить, ни изменить — ни то, ни другое не должно быть доступно
+        // даже пользователю с ролью admin (см. update()).
         if ($lookup->is_system) {
             return redirect()->back()->withErrors(['error' => 'Системную запись нельзя удалить.']);
         }

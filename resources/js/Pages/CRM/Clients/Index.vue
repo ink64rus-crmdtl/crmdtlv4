@@ -6,6 +6,7 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
+import SearchableMultiSelect from '@/Components/SearchableMultiSelect.vue';
 import GroupColorPicker, { groupColorMeta } from '@/Components/GroupColorPicker.vue';
 import Modal from '@/Components/Modal.vue';
 import draggable from 'vuedraggable';
@@ -45,7 +46,7 @@ const initialFilters = {
     type: props.filters?.filters?.type || '',
     is_lead: props.filters?.filters?.is_lead || '',
     client_group_id: props.filters?.filters?.client_group_id || '',
-    role: props.filters?.filters?.role || '',
+    role: props.filters?.filters?.role || [],
     segment: props.filters?.filters?.segment || '',
 };
 props.customFieldDefs.filter(f => f.is_filterable).forEach(def => {
@@ -67,7 +68,7 @@ watch(filtersForm, () => fetchFiltered(), { deep: true });
 
 const resetFilters = () => {
     Object.keys(filtersForm).forEach(key => {
-        filtersForm[key] = '';
+        filtersForm[key] = key === 'role' ? [] : '';
     });
 };
 // ------------------------------------
@@ -232,7 +233,7 @@ const form = useForm({
     client_group_id: '',
     is_lead: false,
     type: 'b2c',
-    role: '',
+    role_ids: [],
     name: '',
     alias: '',
     phone: '',
@@ -246,6 +247,20 @@ const form = useForm({
     requisites: {},
     custom_fields: {},
 });
+
+// Роли клиента (Клиент/Подрядчик/Поставщик + свои, многие-ко-многим) — своя
+// реактивная копия справочника, а не прямое обращение к props.lookups: когда
+// SearchableMultiSelect создаёт новую роль "на лету" (creatable), её нужно
+// сразу добавить в список опций, иначе только что созданный чип не найдёт
+// себя в :options и не отрисуется, хотя в form.role_ids id уже есть.
+// label||value: у системных ролей (Клиент/Подрядчик/Поставщик) value — стабильный
+// слаг, который никогда не показывается — отображаемый текст лежит в label.
+const roleOptions = ref((props.lookups.client_role || []).map(l => ({ id: l.id, label: l.label || l.value })));
+const handleRoleCreated = (lookup) => {
+    if (!roleOptions.value.some(o => o.id === lookup.id)) {
+        roleOptions.value.push({ id: lookup.id, label: lookup.label || lookup.value });
+    }
+};
 
 const currentCountrySchema = computed(() => {
     return props.countryConfig?.requisite_schema || [];
@@ -292,7 +307,7 @@ const openModal = (client = null) => {
         form.client_group_id = client.client_group_id || '';
         form.is_lead = Boolean(client.is_lead);
         form.type = client.type;
-        form.role = client.role || '';
+        form.role_ids = (client.roles || []).map(r => r.id);
         form.name = client.name;
         form.alias = client.alias || '';
         form.phone = client.phone || '';
@@ -320,7 +335,7 @@ const openModal = (client = null) => {
         form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
         form.is_lead = false;
         form.type = 'b2c';
-        form.role = '';
+        form.role_ids = [];
         form.discount_percent = 0;
         form.requisites = {};
         
@@ -435,7 +450,7 @@ const formatMoney = (amount) => {
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <DataTableToolbar
                     v-model="search"
-                    :has-filters="Object.values(filtersForm).some(v => v !== '' && v !== null)"
+                    :has-filters="Object.values(filtersForm).some(v => Array.isArray(v) ? v.length > 0 : (v !== '' && v !== null))"
                     @open-filters="isFiltersOpen = true"
                     @open-columns="openColumnsModal"
                     placeholder="Поиск по имени, телефону, email, номеру авто..."
@@ -494,7 +509,10 @@ const formatMoney = (amount) => {
                                     </template>
 
                                     <template v-else-if="col.key === 'role'">
-                                        {{ client.role || '—' }}
+                                        <div v-if="client.roles && client.roles.length > 0" class="flex flex-wrap gap-1">
+                                            <span v-for="r in client.roles" :key="r.id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ r.label || r.value }}</span>
+                                        </div>
+                                        <span v-else class="text-xs text-gray-400">—</span>
                                     </template>
 
                                     <template v-else-if="col.key === 'segment'">
@@ -671,6 +689,9 @@ const formatMoney = (amount) => {
                                 <span v-if="previewClient.segment" :class="[segmentClass(previewClient.segment), 'px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold']">
                                     {{ previewClient.segment_label }}
                                 </span>
+                                <span v-for="r in previewClient.roles || []" :key="r.id" class="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                    {{ r.label || r.value }}
+                                </span>
                             </p>
                         </div>
                     </div>
@@ -838,12 +859,15 @@ const formatMoney = (amount) => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
-                                <CreatableSelect
-                                    v-model="form.role"
-                                    :options="lookups.client_role?.map(l => l.value) || []"
+                                <SearchableMultiSelect
+                                    v-model="form.role_ids"
+                                    :options="roleOptions"
+                                    creatable
                                     lookupType="client_role"
-                                    placeholder="Выберите роль..."
+                                    placeholder="Выберите роли..."
+                                    @option-created="handleRoleCreated"
                                 />
+                                <p class="text-[11px] text-gray-400 mt-1">Можно выбрать несколько — например, одновременно Подрядчик и Поставщик.</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник привлечения</label>
@@ -1192,10 +1216,11 @@ const formatMoney = (amount) => {
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
-                        <select v-model="filtersForm.role" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                            <option value="">Все роли</option>
-                            <option v-for="r in lookups.client_role?.map(l => l.value) || []" :key="r" :value="r">{{ r }}</option>
-                        </select>
+                        <SearchableMultiSelect
+                            v-model="filtersForm.role"
+                            :options="roleOptions"
+                            placeholder="Все роли"
+                        />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сегмент</label>

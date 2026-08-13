@@ -90,7 +90,12 @@ class WorkOrder extends Model
     {
         return $this->belongsToMany(Employee::class, 'work_order_admins')
             ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override'])
-            ->withTimestamps();
+            ->withTimestamps()
+            // См. WorkOrderItem::employees() — назначенный человек не должен
+            // исчезать из расчёта денег из-за выбранной в шапке локации или
+            // последующего увольнения.
+            ->withoutGlobalScope(BranchScope::class)
+            ->withTrashed();
     }
 
     public function items(): HasMany

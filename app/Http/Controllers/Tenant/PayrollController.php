@@ -4,15 +4,16 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Payroll;
 use App\Services\FinanceService;
 use App\Services\QueryFilterService;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
-use Exception;
 
 class PayrollController extends Controller
 {
@@ -33,7 +34,7 @@ class PayrollController extends Controller
             ['first_name', 'last_name', 'phone'],
         );
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('last_name')->orderBy('first_name');
         }
 
@@ -70,8 +71,64 @@ class PayrollController extends Controller
 
         return Inertia::render('HR/Payroll/Index', [
             'employees' => $employees,
+            'contractors' => $this->contractorSettlements(),
             'filters' => $request->all(),
         ]);
+    }
+
+    /**
+     * Взаиморасчёты с подрядчиками (Client с ролью «Подрядчик», ставшие
+     * исполнителями услуг — см. work_order_item_assignees). Отдельным списком,
+     * а не вперемешку с сотрудниками: это разные сущности с разными карточками,
+     * а объединённая пагинация двух моделей всё равно невозможна.
+     *
+     * Выборка идёт ОТ начислений, а не от всех клиентов-подрядчиков: список
+     * ограничен теми, с кем реально есть расчёты, поэтому не нуждается в
+     * пагинации и не разрастается вместе с клиентской базой. Штрафов у
+     * подрядчиков не бывает (type=deduction им не начисляется), но формула
+     * баланса намеренно оставлена той же, что у сотрудников — если такие
+     * записи появятся, они будут учтены, а не молча проигнорированы.
+     */
+    private function contractorSettlements(): array
+    {
+        $sums = Payroll::whereNotNull('client_id')
+            ->selectRaw("
+                client_id,
+                SUM(CASE WHEN type = 'accrual' AND status != 'canceled' THEN amount ELSE 0 END) as accrued_total,
+                SUM(CASE WHEN type = 'accrual' AND status = 'paid' THEN amount ELSE 0 END) as paid_total,
+                SUM(CASE WHEN type = 'deduction' AND status = 'pending' THEN amount ELSE 0 END) as deductions_total
+            ")
+            ->groupBy('client_id')
+            ->get();
+
+        if ($sums->isEmpty()) {
+            return [];
+        }
+
+        // withTrashed — начисленное удалённому подрядчику не должно исчезать
+        // из взаиморасчётов: долг перед ним (или его перед нами) остаётся.
+        $clients = Client::withTrashed()
+            ->whereIn('id', $sums->pluck('client_id'))
+            ->get(['id', 'name', 'phone', 'deleted_at'])
+            ->keyBy('id');
+
+        return $sums->map(function ($row) use ($clients) {
+            $accruedTotal = (int) $row->accrued_total;
+            $paidTotal = (int) $row->paid_total;
+            $deductionsTotal = (int) $row->deductions_total;
+            $client = $clients->get($row->client_id);
+
+            return [
+                'id' => $row->client_id,
+                'name' => $client?->name ?? '—',
+                'phone' => $client?->phone,
+                'is_deleted' => (bool) $client?->deleted_at,
+                'accrued_total' => $accruedTotal,
+                'paid_total' => $paidTotal,
+                'deductions_total' => $deductionsTotal,
+                'balance' => $accruedTotal - $paidTotal - $deductionsTotal,
+            ];
+        })->sortBy('name')->values()->all();
     }
 
     /**
@@ -123,16 +180,22 @@ class PayrollController extends Controller
         ]);
 
         $account = Account::findOrFail($validated['account_id']);
-        $employee = $payroll->employee;
+
+        // Получателем может быть как штатный сотрудник, так и подрядчик —
+        // payeeName() сам разбирается, кто именно (см. Payroll::payee()).
+        // Само движение денег не меняется: как и раньше, единственный способ
+        // тронуть баланс кассы — FinanceService, напрямую balance не пишем.
+        $payeeName = $payroll->payeeName();
+        $payoutLabel = $payroll->client_id ? 'Выплата подрядчику' : 'Выплата ЗП';
 
         try {
-            DB::transaction(function () use ($payroll, $account, $employee) {
+            DB::transaction(function () use ($payroll, $account, $payeeName, $payoutLabel) {
                 $transaction = FinanceService::processTransaction([
                     'account_id' => $account->id,
                     'branch_id' => $payroll->branch_id,
                     'type' => 'expense',
                     'amount' => $payroll->amount,
-                    'comment' => 'Выплата ЗП: ' . trim($employee->first_name . ' ' . $employee->last_name) . ($payroll->comment ? ' (' . $payroll->comment . ')' : ''),
+                    'comment' => $payoutLabel.': '.$payeeName.($payroll->comment ? ' ('.$payroll->comment.')' : ''),
                     'payable_type' => Payroll::class,
                     'payable_id' => $payroll->id,
                 ], auth()->id());
@@ -145,7 +208,7 @@ class PayrollController extends Controller
 
             return redirect()->back()->with('success', 'Выплата проведена');
         } catch (Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Ошибка при выплате: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Ошибка при выплате: '.$e->getMessage()]);
         }
     }
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Client;
 use App\Models\PayrollRule;
 use App\Models\Position;
 use App\Models\Service;
@@ -16,6 +17,15 @@ use Inertia\Response;
 
 class PayrollSettingsController extends Controller
 {
+    /**
+     * Роль клиента, дающая право быть исполнителем услуги и, следовательно,
+     * иметь собственную ставку (см. WorkOrderController::CONTRACTOR_ROLE —
+     * та же логика неизменности value/label подробно объяснена там).
+     */
+    private const CONTRACTOR_ROLE = 'contractor';
+
+    private const CONTRACTOR_ROLE_LABEL = 'Подрядчик';
+
     public function index(): Response
     {
         $generalSettings = [
@@ -26,15 +36,22 @@ class PayrollSettingsController extends Controller
             'salary_accrual_day' => (int) (Setting::where('key', 'payroll_salary_accrual_day')->value('value') ?? 1),
         ];
 
-        $rules = PayrollRule::with(['position', 'employee', 'service', 'serviceCategory', 'branch'])
+        $rules = PayrollRule::with(['position', 'employee', 'client', 'service', 'serviceCategory', 'branch'])
             ->orderBy('id', 'desc')
             ->get();
 
         return Inertia::render('Settings/Payroll/Index', [
             'generalSettings' => $generalSettings,
+            // Ставки должностей и подрядчиков живут в одной таблице и в одном
+            // списке на странице: и то и другое — «общие» ставки, в отличие от
+            // персональных ставок сотрудника (employee_id), которые настраиваются
+            // в его карточке и сюда не попадают.
             'positionRules' => $rules->whereNull('employee_id')->values(),
             'personalRulesCount' => $rules->whereNotNull('employee_id')->count(),
             'positions' => Position::where('is_active', true)->get(['id', 'name', 'payroll_role']),
+            'contractors' => Client::whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::CONTRACTOR_ROLE))
+                ->orderBy('name')
+                ->get(['id', 'name']),
             'serviceCategories' => ServiceCategory::where('is_active', true)->get(['id', 'name']),
             'services' => Service::where('is_active', true)->get(['id', 'name', 'service_category_id']),
             'branches' => Branch::forSelect()->get(['id', 'name']),
@@ -81,8 +98,14 @@ class PayrollSettingsController extends Controller
     public function storeRule(Request $request)
     {
         $validated = $request->validate([
-            'position_id' => ['nullable', 'required_without:employee_id', 'exists:positions,id'],
-            'employee_id' => ['nullable', 'required_without:position_id', 'exists:employees,id'],
+            // Ставка адресуется ровно одному из трёх: должности (общая),
+            // конкретному сотруднику (персональная, из его карточки) или
+            // подрядчику. Ни одного — некому платить, больше одного —
+            // непонятно, чья это ставка при резолве (см. RULE_TARGET_COLUMNS
+            // в PayrollCalculationService).
+            'position_id' => ['nullable', 'required_without_all:employee_id,client_id', 'exists:positions,id'],
+            'employee_id' => ['nullable', 'required_without_all:position_id,client_id', 'exists:employees,id'],
+            'client_id' => ['nullable', 'required_without_all:position_id,employee_id', 'exists:clients,id'],
             'target' => ['required', 'string', 'in:service,category,default'],
             'service_id' => ['nullable', 'exists:services,id'],
             'service_ids' => ['array'],
@@ -115,6 +138,7 @@ class PayrollSettingsController extends Controller
         }
 
         $this->assertPercentageOnlyForAdmin($validated['position_id'] ?? null, $validated['type']);
+        $this->assertTargetIsContractor($validated['client_id'] ?? null);
 
         $created = 0;
         $skipped = 0;
@@ -124,6 +148,7 @@ class PayrollSettingsController extends Controller
                 $data = [
                     'position_id' => $validated['position_id'] ?? null,
                     'employee_id' => $validated['employee_id'] ?? null,
+                    'client_id' => $validated['client_id'] ?? null,
                     'service_id' => $validated['target'] === 'service' ? $targetId : null,
                     'service_category_id' => $validated['target'] === 'category' ? $targetId : null,
                     'is_default_for_unlisted' => $validated['target'] === 'default',
@@ -175,8 +200,9 @@ class PayrollSettingsController extends Controller
     private function validateRule(Request $request): array
     {
         $validated = $request->validate([
-            'position_id' => ['nullable', 'required_without:employee_id', 'exists:positions,id'],
-            'employee_id' => ['nullable', 'required_without:position_id', 'exists:employees,id'],
+            'position_id' => ['nullable', 'required_without_all:employee_id,client_id', 'exists:positions,id'],
+            'employee_id' => ['nullable', 'required_without_all:position_id,client_id', 'exists:employees,id'],
+            'client_id' => ['nullable', 'required_without_all:position_id,employee_id', 'exists:clients,id'],
             'target' => ['required', 'string', 'in:service,category,default'],
             'service_id' => ['nullable', 'required_if:target,service', 'exists:services,id'],
             'service_category_id' => ['nullable', 'required_if:target,category', 'exists:service_categories,id'],
@@ -187,10 +213,12 @@ class PayrollSettingsController extends Controller
         ]);
 
         $this->assertPercentageOnlyForAdmin($validated['position_id'] ?? null, $validated['type']);
+        $this->assertTargetIsContractor($validated['client_id'] ?? null);
 
         return [
             'position_id' => $validated['position_id'] ?? null,
             'employee_id' => $validated['employee_id'] ?? null,
+            'client_id' => $validated['client_id'] ?? null,
             'service_id' => $validated['target'] === 'service' ? $validated['service_id'] : null,
             'service_category_id' => $validated['target'] === 'category' ? $validated['service_category_id'] : null,
             'is_default_for_unlisted' => $validated['target'] === 'default',
@@ -200,6 +228,28 @@ class PayrollSettingsController extends Controller
             'percentage_value' => $validated['type'] === 'percentage' ? $validated['percentage_value'] : 0,
             'is_active' => true,
         ];
+    }
+
+    /**
+     * Ставку можно завести только тому клиенту, который реально помечен
+     * подрядчиком — иначе в справочнике ставок оказался бы обычный заказчик,
+     * которому по логике системы платить не за что.
+     */
+    private function assertTargetIsContractor(?int $clientId): void
+    {
+        if (! $clientId) {
+            return;
+        }
+
+        $isContractor = Client::where('id', $clientId)
+            ->whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::CONTRACTOR_ROLE))
+            ->exists();
+
+        if (! $isContractor) {
+            throw ValidationException::withMessages([
+                'client_id' => 'Ставку можно назначить только клиенту с ролью «'.self::CONTRACTOR_ROLE_LABEL.'».',
+            ]);
+        }
     }
 
     private function assertPercentageOnlyForAdmin(?int $positionId, string $type): void
@@ -227,7 +277,7 @@ class PayrollSettingsController extends Controller
     {
         $query = PayrollRule::where('is_active', true);
 
-        foreach (['position_id', 'employee_id', 'service_id', 'service_category_id', 'branch_id'] as $column) {
+        foreach (['position_id', 'employee_id', 'client_id', 'service_id', 'service_category_id', 'branch_id'] as $column) {
             $data[$column] === null ? $query->whereNull($column) : $query->where($column, $data[$column]);
         }
         $query->where('is_default_for_unlisted', $data['is_default_for_unlisted']);

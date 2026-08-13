@@ -1,6 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
+import SearchableMultiSelect from '@/Components/SearchableMultiSelect.vue';
 import { groupColorMeta } from '@/Components/GroupColorPicker.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
@@ -94,7 +95,7 @@ const clientForm = useForm({
     client_group_id: '',
     is_lead: false,
     type: 'b2c',
-    role: '',
+    role_ids: [],
     name: '',
     alias: '',
     phone: '',
@@ -107,6 +108,18 @@ const clientForm = useForm({
     requisites: {},
     custom_fields: {},
 });
+
+// См. комментарий в CRM/Clients/Index.vue — своя реактивная копия справочника
+// ролей, чтобы созданная "на лету" через SearchableMultiSelect роль сразу
+// попала в :options и её чип отрисовался.
+// label||value: у системных ролей (Клиент/Подрядчик/Поставщик) value — стабильный
+// слаг, который никогда не показывается — отображаемый текст лежит в label.
+const roleOptions = ref((props.lookups.client_role || []).map(l => ({ id: l.id, label: l.label || l.value })));
+const handleRoleCreated = (lookup) => {
+    if (!roleOptions.value.some(o => o.id === lookup.id)) {
+        roleOptions.value.push({ id: lookup.id, label: lookup.label || lookup.value });
+    }
+};
 
 const resetGroupAuto = () => {
     router.post(route('crm.clients.group.auto', props.client.id), {}, {
@@ -123,7 +136,7 @@ const openClientModal = () => {
     clientForm.client_group_id = client.client_group_id || '';
     clientForm.is_lead = Boolean(client.is_lead);
     clientForm.type = client.type;
-    clientForm.role = client.role || '';
+    clientForm.role_ids = (client.roles || []).map(r => r.id);
     clientForm.name = client.name;
     clientForm.alias = client.alias || '';
     clientForm.phone = client.phone || '';
@@ -285,7 +298,10 @@ const currentCountrySchema = computed(() => {
                         <div class="grid grid-cols-3 gap-4 pt-2">
                             <div>
                                 <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Роль</p>
-                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ client.role || '—' }}</p>
+                                <div v-if="client.roles && client.roles.length > 0" class="flex flex-wrap gap-1">
+                                    <span v-for="r in client.roles" :key="r.id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">{{ r.label || r.value }}</span>
+                                </div>
+                                <p v-else class="text-sm font-medium text-gray-800 dark:text-gray-200">—</p>
                             </div>
                             <div>
                                 <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Источник</p>
@@ -631,12 +647,15 @@ const currentCountrySchema = computed(() => {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Роль клиента</label>
-                                <CreatableSelect 
-                                    v-model="clientForm.role" 
-                                    :options="lookups.client_role?.map(l => l.value) || []" 
-                                    lookupType="client_role" 
-                                    placeholder="Выберите роль..." 
+                                <SearchableMultiSelect
+                                    v-model="clientForm.role_ids"
+                                    :options="roleOptions"
+                                    creatable
+                                    lookupType="client_role"
+                                    placeholder="Выберите роли..."
+                                    @option-created="handleRoleCreated"
                                 />
+                                <p class="text-[11px] text-gray-400 mt-1">Можно выбрать несколько.</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Группа лояльности</label>

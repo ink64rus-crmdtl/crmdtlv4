@@ -44,11 +44,33 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class WorkOrderController extends Controller
 {
+    /**
+     * Значение системной роли клиента (Lookup type=client_role, is_system),
+     * дающей право быть исполнителем услуги наравне со штатным сотрудником.
+     * Заводится миграцией 2027_01_30_000000_create_client_roles_table.
+     * Это value-слаг (миграция 2027_02_02 развела value/label по образцу
+     * work_order_status), не отображаемый текст — CONTRACTOR_ROLE_LABEL ниже.
+     * LookupController::update() блокирует правку is_system-записей ПОЛНОСТЬЮ,
+     * включая эти три роли (переименование сознательно отключено — риск, что
+     * кто-то поменяет текст не подумав, оказался важнее удобства), поэтому
+     * слаг и текст гарантированно не разъедутся с тем, что видит пользователь.
+     */
+    private const CONTRACTOR_ROLE = 'contractor';
+
+    /**
+     * Отображаемый текст роли для сообщений об ошибке. Захардкожен константой,
+     * а не читается из БД: с тех пор как переименование системных ролей
+     * запрещено (см. выше), label гарантированно совпадает с этим текстом
+     * всегда, и лишний запрос ради «а вдруг переименовали» не нужен.
+     */
+    private const CONTRACTOR_ROLE_LABEL = 'Подрядчик';
+
     public function index(Request $request): Response
     {
         $user = auth()->user();
@@ -146,7 +168,7 @@ class WorkOrderController extends Controller
 
     public function show(WorkOrder $workOrder): Response
     {
-        $workOrder->load(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.admins', 'transactions.account', 'admins', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
+        $workOrder->load(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.contractors', 'items.admins', 'transactions.account', 'admins', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $workOrder->documents->each->append('is_stale');
 
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
@@ -177,6 +199,12 @@ class WorkOrderController extends Controller
         $serviceCategories = ServiceCategory::where('is_active', true)->get(['id', 'name', 'business_direction_id']);
         $productCategories = ProductCategory::where('is_active', true)->get(['id', 'name']);
         $employees = Employee::where('is_active', true)->with('position:id,payroll_role')->get(['id', 'first_name', 'last_name', 'type', 'position_id']);
+
+        // Подрядчики, доступные для назначения исполнителем услуги — только
+        // клиенты с системной ролью «Подрядчик» (см. assertAssigneeIdsExist()).
+        $contractors = Client::whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::CONTRACTOR_ROLE))
+            ->orderBy('name')
+            ->get(['id', 'name', 'phone']);
 
         // Фаза 9.4: связь с записью, из которой создан заказ (если создан через
         // конвертацию), либо — если заказ создан напрямую — подсказка привязать
@@ -225,6 +253,7 @@ class WorkOrderController extends Controller
             'serviceCategories' => $serviceCategories,
             'productCategories' => $productCategories,
             'employees' => $employees,
+            'contractors' => $contractors,
             'workOrderStatuses' => $this->workOrderStatuses(),
             'linkedAppointment' => $linkedAppointment,
             'candidateAppointment' => $candidateAppointment,
@@ -477,6 +506,13 @@ class WorkOrderController extends Controller
             'assignments.*.share_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'assignments.*.manual_amount_override' => ['nullable', 'numeric', 'min:0'],
             'assignments.*.manual_percent_override' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            // Подрядчики правятся отдельным массивом: у них нет доли объёма
+            // (share_percent к ним не применяется — см. PayrollCalculationService),
+            // поэтому и валидируется у них только сумма/процент.
+            'contractor_assignments' => ['array'],
+            'contractor_assignments.*.client_id' => ['required', 'integer', 'exists:clients,id'],
+            'contractor_assignments.*.manual_amount_override' => ['nullable', 'numeric', 'min:0'],
+            'contractor_assignments.*.manual_percent_override' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         $adminAssignments = $validated['admin_assignments'] ?? [];
@@ -495,7 +531,9 @@ class WorkOrderController extends Controller
             return redirect()->back()->withErrors(['assignments' => 'Суммарный объём работ бригады превышает 100%.']);
         }
 
-        DB::transaction(function () use ($item, $validated, $assignments, $adminAssignments) {
+        $contractorAssignments = $validated['contractor_assignments'] ?? [];
+
+        DB::transaction(function () use ($item, $validated, $assignments, $adminAssignments, $contractorAssignments) {
             $item->update(['admin_override' => $validated['admin_override']]);
 
             if ($validated['admin_override'] === 'custom') {
@@ -517,6 +555,13 @@ class WorkOrderController extends Controller
                     'manual_percent_override' => $assignment['manual_percent_override'] ?? null,
                 ]);
             }
+
+            foreach ($contractorAssignments as $assignment) {
+                $item->contractors()->updateExistingPivot($assignment['client_id'], [
+                    'manual_amount_override' => isset($assignment['manual_amount_override']) ? (int) round($assignment['manual_amount_override'] * 100) : null,
+                    'manual_percent_override' => $assignment['manual_percent_override'] ?? null,
+                ]);
+            }
         });
 
         return redirect()->back()->with('success', 'Распределение выплат по позиции сохранено');
@@ -533,29 +578,52 @@ class WorkOrderController extends Controller
      */
     public function payrollPreview(WorkOrder $workOrder)
     {
-        $workOrder->load(['items.employees', 'items.itemable']);
+        $workOrder->load(['items.employees', 'items.contractors', 'items.itemable']);
 
         $result = PayrollCalculationService::calculate($workOrder);
 
-        $employeeIds = collect($result['rows'])->pluck('employee_id')->unique();
-        $employees = Employee::whereIn('id', $employeeIds)->get(['id', 'first_name', 'last_name', 'type'])->keyBy('id');
+        $employeeIds = collect($result['rows'])->pluck('employee_id')->filter()->unique();
+        $clientIds = collect($result['rows'])->pluck('client_id')->filter()->unique();
+
+        // withoutGlobalScope(BranchScope) — по той же причине, что и в самих
+        // связях исполнителей (см. WorkOrderItem::employees()): получатель
+        // начисления не должен превращаться в «—» из-за выбранной в шапке
+        // локации. Расчёт его уже учёл, скрывать имя в предпросмотре нельзя.
+        $employees = Employee::withoutGlobalScope(BranchScope::class)->withTrashed()
+            ->whereIn('id', $employeeIds)->get(['id', 'first_name', 'last_name', 'type'])->keyBy('id');
+        $clients = Client::withoutGlobalScope(BranchScope::class)->withTrashed()
+            ->whereIn('id', $clientIds)->get(['id', 'name'])->keyBy('id');
         $items = $workOrder->items->keyBy('id');
 
-        $employeeInfo = fn (int $id) => [
-            'employee_id' => $id,
-            'name' => $employees->has($id) ? trim($employees[$id]->first_name.' '.$employees[$id]->last_name) : '—',
-            'type' => $employees[$id]->type ?? null,
-        ];
+        $payeeInfo = function (array $row) use ($employees, $clients) {
+            if ($row['client_id']) {
+                return [
+                    'employee_id' => null,
+                    'client_id' => $row['client_id'],
+                    'name' => $clients[$row['client_id']]->name ?? '—',
+                    'type' => 'contractor',
+                ];
+            }
 
-        $byItem = collect($result['rows'])->groupBy('work_order_item_id')->map(function ($rows, $itemId) use ($items, $employeeInfo) {
+            $id = $row['employee_id'];
+
+            return [
+                'employee_id' => $id,
+                'client_id' => null,
+                'name' => $employees->has($id) ? trim($employees[$id]->first_name.' '.$employees[$id]->last_name) : '—',
+                'type' => $employees[$id]->type ?? null,
+            ];
+        };
+
+        $byItem = collect($result['rows'])->groupBy('work_order_item_id')->map(function ($rows, $itemId) use ($items, $payeeInfo) {
             $admin = $rows->firstWhere('role', 'admin');
             $workers = $rows->where('role', 'worker')->values();
 
             return [
                 'item_id' => (int) $itemId,
                 'item_name' => $items->get((int) $itemId)?->name,
-                'admin' => $admin ? array_merge($employeeInfo($admin['employee_id']), ['amount' => $admin['amount']]) : null,
-                'workers' => $workers->map(fn ($w) => array_merge($employeeInfo($w['employee_id']), ['amount' => $w['amount']]))->all(),
+                'admin' => $admin ? array_merge($payeeInfo($admin), ['amount' => $admin['amount']]) : null,
+                'workers' => $workers->map(fn ($w) => array_merge($payeeInfo($w), ['amount' => $w['amount']]))->all(),
             ];
         })->values();
 
@@ -620,12 +688,15 @@ class WorkOrderController extends Controller
             'business_direction_id' => ['nullable', 'exists:business_directions,id'],
             'duration_minutes' => ['nullable', 'integer', 'min:0'],
             'employee_ids' => ['nullable', 'array'],
-            'employee_ids.*' => ['integer', 'exists:employees,id'],
+            'employee_ids.*' => ['integer'],
+            'assignee_type' => ['nullable', 'string', 'in:employee,contractor'],
             'name' => ['required', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'min:0.001'],
             'price' => ['required', 'numeric', 'min:0'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
+
+        $this->assertAssigneeIdsExist($validated['assignee_type'] ?? 'employee', $validated['employee_ids'] ?? []);
 
         $isCustom = $validated['is_custom'] ?? false;
 
@@ -672,7 +743,10 @@ class WorkOrderController extends Controller
             ]);
 
             if (! empty($validated['employee_ids'])) {
-                $item->employees()->sync($validated['employee_ids']);
+                // Позиция только что создана, чужих исполнителей на ней быть не
+                // может — проверка на смешивание типов здесь не нужна (см.
+                // assertAssigneeTypesNotMixed() в updateItem()).
+                $this->assigneeRelation($item, $validated['assignee_type'] ?? 'employee')->sync($validated['employee_ids']);
             }
 
             ActivityLogger::log($workOrder, "Добавлена позиция «{$item->name}» в заказ №{$workOrder->id}", $this->workOrderLink($workOrder), 'item_added');
@@ -691,14 +765,24 @@ class WorkOrderController extends Controller
 
         $validated = $request->validate([
             'employee_ids' => ['nullable', 'array'],
-            'employee_ids.*' => ['integer', 'exists:employees,id'],
+            'employee_ids.*' => ['integer'],
+            'assignee_type' => ['nullable', 'string', 'in:employee,contractor'],
             'quantity' => ['nullable', 'numeric', 'min:0.001'],
             'price' => ['nullable', 'numeric', 'min:0'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         if ($request->has('employee_ids')) {
-            $item->employees()->sync($validated['employee_ids'] ?? []);
+            $type = $validated['assignee_type'] ?? 'employee';
+            $ids = $validated['employee_ids'] ?? [];
+
+            $this->assertAssigneeIdsExist($type, $ids);
+
+            if ($error = $this->assigneeTypesMixedError($item, $type, $ids)) {
+                return redirect()->back()->withErrors(['employee_ids' => $error]);
+            }
+
+            $this->assigneeRelation($item, $type)->sync($ids);
         }
 
         $data = [];
@@ -720,6 +804,74 @@ class WorkOrderController extends Controller
         $this->recalculateTotals($workOrder);
 
         return redirect()->back()->with('success', 'Позиция обновлена');
+    }
+
+    /**
+     * Исполнителем позиции может быть штатный сотрудник ИЛИ подрядчик (Client
+     * с ролью «Подрядчик») — обе связи ходят в одну полиморфную таблицу
+     * work_order_item_assignees, но каждая видит и синхронизирует только свои
+     * строки (withPivotValue попадает и в pivot-запрос sync()). Именно поэтому
+     * запрет на смешивание нужен отдельной проверкой: сами по себе связи друг
+     * другу не мешают и спокойно ужились бы на одной позиции.
+     */
+    private function assigneeRelation(WorkOrderItem $item, string $type)
+    {
+        return $type === 'contractor' ? $item->contractors() : $item->employees();
+    }
+
+    /**
+     * Проверка существования вынесена из правил валидации, потому что таблица
+     * зависит от типа исполнителя (employees/clients), а для подрядчика этого
+     * мало: назначать можно только клиента, которому реально выдана роль
+     * «Подрядчик» — иначе исполнителем услуги стал бы обычный заказчик.
+     */
+    private function assertAssigneeIdsExist(string $type, array $ids): void
+    {
+        if (empty($ids)) {
+            return;
+        }
+
+        if ($type === 'contractor') {
+            $found = Client::whereIn('id', $ids)
+                ->whereHas('roles', fn ($q) => $q->where('type', 'client_role')->where('value', self::CONTRACTOR_ROLE))
+                ->count();
+
+            if ($found !== count(array_unique($ids))) {
+                throw ValidationException::withMessages([
+                    'employee_ids' => 'Исполнителем можно назначить только клиента с ролью «'.self::CONTRACTOR_ROLE_LABEL.'».',
+                ]);
+            }
+
+            return;
+        }
+
+        if (Employee::whereIn('id', $ids)->count() !== count(array_unique($ids))) {
+            throw ValidationException::withMessages([
+                'employee_ids' => 'Выбран несуществующий сотрудник.',
+            ]);
+        }
+    }
+
+    /**
+     * На одной позиции нельзя одновременно держать штатных исполнителей и
+     * подрядчиков (разные схемы расчёта: бригада делит базу долями, подрядчик
+     * получает свою сумму целиком). Возвращает текст ошибки или null.
+     */
+    private function assigneeTypesMixedError(WorkOrderItem $item, string $type, array $ids): ?string
+    {
+        if (empty($ids)) {
+            return null;
+        }
+
+        $otherType = $type === 'contractor' ? 'employee' : 'contractor';
+
+        if ($this->assigneeRelation($item, $otherType)->exists()) {
+            return $type === 'contractor'
+                ? 'На позиции уже назначены штатные исполнители. Уберите их, прежде чем назначать подрядчика — смешивать нельзя.'
+                : 'На позиции уже назначен подрядчик. Уберите его, прежде чем назначать штатных исполнителей — смешивать нельзя.';
+        }
+
+        return null;
     }
 
     public function removeItem(WorkOrder $workOrder, WorkOrderItem $item)
@@ -965,7 +1117,10 @@ class WorkOrderController extends Controller
 
                 foreach ($payroll['rows'] as $row) {
                     Payroll::create([
+                        // Ровно одно из двух заполнено — начисление либо штатному
+                        // сотруднику, либо подрядчику (Client с ролью «Подрядчик»).
                         'employee_id' => $row['employee_id'],
+                        'client_id' => $row['client_id'],
                         'branch_id' => $workOrder->branch_id,
                         'work_order_id' => $workOrder->id,
                         'work_order_item_id' => $row['work_order_item_id'],

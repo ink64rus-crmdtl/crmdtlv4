@@ -6,6 +6,7 @@ use App\Models\Concerns\HasActivityLog;
 use App\Models\Scopes\BranchScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -20,7 +21,6 @@ class Client extends Model
         'client_group_locked',
         'is_lead',
         'type',
-        'role',
         'name',
         'alias',
         'phone',
@@ -61,6 +61,18 @@ class Client extends Model
     public function group(): BelongsTo
     {
         return $this->belongsTo(ClientGroup::class, 'client_group_id');
+    }
+
+    /**
+     * Роли клиента (Клиент/Подрядчик/Поставщик и свои) — многие-ко-многим
+     * (client_roles) на справочник Lookup (type=client_role), одному клиенту
+     * можно назначить сразу несколько одновременно. 3 базовые роли системные
+     * (Lookup.is_system) — их нельзя переименовать/удалить в справочнике,
+     * но можно продолжать заводить свои поверх них.
+     */
+    public function roles(): BelongsToMany
+    {
+        return $this->belongsToMany(Lookup::class, 'client_roles')->withTimestamps();
     }
 
     public function vehicles(): HasMany

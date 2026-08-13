@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Client;
 use App\Models\Employee;
 use App\Models\PayrollRule;
 use App\Models\Position;
@@ -39,11 +40,24 @@ use Illuminate\Database\Eloquent\Collection;
  * work_order_item_admins, многие-ко-многим) — делят начисление между собой
  * по той же схеме share_percent/manual_amount_override/manual_percent_override,
  * что и бригада исполнителей: пустая доля = поровну между всеми админами.
+ *
+ * Исполнителем позиции может быть не только штатный сотрудник, но и Подрядчик
+ * (Client с ролью «Подрядчик», см. work_order_item_assignees). Отличия расчёта
+ * подрядчика от штатного исполнителя:
+ *   - он вне общего пула долей: свою сумму получает целиком, не деля базу
+ *     с бригадой (share_percent к нему не применяется);
+ *   - у него нет должности, поэтому каскад ставки короче — только его
+ *     персональные правила (client_id), без ступени «ставка должности»;
+ *   - компенсация налога самозанятого к нему не применяется: подрядчик
+ *     выставляет свою цену сам, гросс-ап тут был бы двойным начислением.
+ * Бизнес-правило «штатные и подрядчики не смешиваются на одной позиции»
+ * обеспечивает WorkOrderController; расчёт намеренно не полагается на него и
+ * корректно обработает обе коллекции, если инвариант когда-то нарушат.
  */
 class PayrollCalculationService
 {
     /**
-     * @return array{rows: array<int, array{employee_id:int, role:string, amount:int, work_order_item_id:int}>, skipped: array<int, string>}
+     * @return array{rows: array<int, array{employee_id:?int, client_id:?int, role:string, amount:int, work_order_item_id:int}>, skipped: array<int, string>}
      */
     public static function calculate(WorkOrder $workOrder): array
     {
@@ -52,7 +66,7 @@ class PayrollCalculationService
         $skipped = [];
 
         $workOrder->loadMissing('admins');
-        $items = $workOrder->items()->with(['employees', 'admins', 'materials', 'itemable'])->get();
+        $items = $workOrder->items()->with(['employees', 'contractors', 'admins', 'materials', 'itemable'])->get();
 
         foreach ($items as $item) {
             if ($item->itemable_type !== Service::class) {
@@ -112,31 +126,16 @@ class PayrollCalculationService
             $workerBase = max(0, $workerBase);
 
             $assignments = $item->employees;
-            // Аутсорсеры не участвуют в долевом делении базы — у них фиксированная
-            // сумма вне общего пула, поэтому не учитываются в знаменателе равной доли.
-            $shareableCount = $assignments->where('type', '!=', 'outsource')->count();
-            $anyShareSet = $assignments->where('type', '!=', 'outsource')->contains(fn (Employee $e) => $e->pivot->share_percent !== null);
+            // Все штатные исполнители позиции делят базу между собой: внешние
+            // подрядчики сюда не попадают в принципе (они в $item->contractors,
+            // отдельная связь), поэтому исключений из знаменателя больше нет.
+            $shareableCount = $assignments->count();
+            $anyShareSet = $assignments->contains(fn (Employee $e) => $e->pivot->share_percent !== null);
 
             foreach ($assignments as $employee) {
                 $share = $anyShareSet
                     ? (float) ($employee->pivot->share_percent ?? 0)
                     : ($shareableCount > 0 ? 100 / $shareableCount : 0);
-
-                if ($employee->type === 'outsource') {
-                    $amount = $employee->pivot->manual_amount_override !== null
-                        ? (int) $employee->pivot->manual_amount_override
-                        : self::resolveFixedOutsourceAmount($employee, $item, $workOrder->branch_id);
-
-                    if ($amount === null) {
-                        $skipped[] = self::skipNote($employee, $item, 'не указана сумма выплаты подрядчику');
-
-                        continue;
-                    }
-
-                    $rows[] = self::row($employee, 'worker', $amount, $item);
-
-                    continue;
-                }
 
                 if ($employee->pivot->manual_amount_override !== null) {
                     $amount = (int) $employee->pivot->manual_amount_override;
@@ -162,6 +161,30 @@ class PayrollCalculationService
                 $amount = self::applySelfEmployedCompensation($employee, $amount, $settings);
                 $rows[] = self::row($employee, 'worker', $amount, $item);
             }
+
+            // Подрядчики — вне пула долей: каждый получает свою сумму целиком,
+            // поэтому здесь нет ни share_percent, ни знаменателя равной доли.
+            foreach ($item->contractors as $contractor) {
+                if ($contractor->pivot->manual_amount_override !== null) {
+                    $amount = (int) $contractor->pivot->manual_amount_override;
+                } elseif ($contractor->pivot->manual_percent_override !== null) {
+                    $amount = (int) round($workerBase * (float) $contractor->pivot->manual_percent_override / 100);
+                } else {
+                    $rate = self::resolveRateForContractor($contractor, $item, $workOrder->branch_id);
+
+                    if (! $rate) {
+                        $skipped[] = self::skipNote($contractor, $item, 'не настроена ставка подрядчика и не указана сумма вручную');
+
+                        continue;
+                    }
+
+                    $amount = $rate['type'] === 'fixed'
+                        ? (int) round($rate['fixed_amount'] * (float) $item->quantity)
+                        : (int) round($workerBase * (float) $rate['percentage_value'] / 100);
+                }
+
+                $rows[] = self::row($contractor, 'worker', $amount, $item);
+            }
         }
 
         return ['rows' => $rows, 'skipped' => $skipped];
@@ -182,6 +205,14 @@ class PayrollCalculationService
     }
 
     /**
+     * Полный набор колонок-«адресов» правила. Кандидат обязан задавать ВСЕ из
+     * них (незаданные явно = NULL), иначе поиск ставки сотрудника мог бы
+     * случайно подобрать правило подрядчика и наоборот: недостающая колонка
+     * просто не попала бы в WHERE и перестала различать эти два случая.
+     */
+    private const RULE_TARGET_COLUMNS = ['employee_id', 'client_id', 'position_id', 'service_id', 'service_category_id'];
+
+    /**
      * @return array{type:string, fixed_amount:int, percentage_value:float}|null
      */
     private static function resolveRate(Employee $employee, ?Position $position, WorkOrderItem $item, ?int $branchId): ?array
@@ -192,23 +223,65 @@ class PayrollCalculationService
         $candidates = [];
 
         if ($serviceId) {
-            $candidates[] = ['employee_id' => $employee->id, 'service_id' => $serviceId, 'service_category_id' => null, 'position_id' => null, 'is_default_for_unlisted' => false];
+            $candidates[] = self::ruleCandidate(['employee_id' => $employee->id, 'service_id' => $serviceId]);
         }
         if ($serviceCategoryId) {
-            $candidates[] = ['employee_id' => $employee->id, 'service_id' => null, 'service_category_id' => $serviceCategoryId, 'position_id' => null, 'is_default_for_unlisted' => false];
+            $candidates[] = self::ruleCandidate(['employee_id' => $employee->id, 'service_category_id' => $serviceCategoryId]);
         }
-        $candidates[] = ['employee_id' => $employee->id, 'service_id' => null, 'service_category_id' => null, 'position_id' => null, 'is_default_for_unlisted' => true];
+        $candidates[] = self::ruleCandidate(['employee_id' => $employee->id, 'is_default_for_unlisted' => true]);
 
         if ($position) {
             if ($serviceId) {
-                $candidates[] = ['employee_id' => null, 'service_id' => $serviceId, 'service_category_id' => null, 'position_id' => $position->id, 'is_default_for_unlisted' => false];
+                $candidates[] = self::ruleCandidate(['position_id' => $position->id, 'service_id' => $serviceId]);
             }
             if ($serviceCategoryId) {
-                $candidates[] = ['employee_id' => null, 'service_id' => null, 'service_category_id' => $serviceCategoryId, 'position_id' => $position->id, 'is_default_for_unlisted' => false];
+                $candidates[] = self::ruleCandidate(['position_id' => $position->id, 'service_category_id' => $serviceCategoryId]);
             }
-            $candidates[] = ['employee_id' => null, 'service_id' => null, 'service_category_id' => null, 'position_id' => $position->id, 'is_default_for_unlisted' => true];
+            $candidates[] = self::ruleCandidate(['position_id' => $position->id, 'is_default_for_unlisted' => true]);
         }
 
+        return self::firstMatchingRule($candidates, $branchId);
+    }
+
+    /**
+     * Каскад для подрядчика короче, чем для сотрудника: у него нет должности,
+     * поэтому ступени «ставка должности» не существует в принципе — только
+     * его персональные правила (client_id).
+     *
+     * @return array{type:string, fixed_amount:int, percentage_value:float}|null
+     */
+    private static function resolveRateForContractor(Client $contractor, WorkOrderItem $item, ?int $branchId): ?array
+    {
+        $serviceId = $item->itemable_id;
+        $serviceCategoryId = $item->itemable?->service_category_id;
+
+        $candidates = [];
+
+        if ($serviceId) {
+            $candidates[] = self::ruleCandidate(['client_id' => $contractor->id, 'service_id' => $serviceId]);
+        }
+        if ($serviceCategoryId) {
+            $candidates[] = self::ruleCandidate(['client_id' => $contractor->id, 'service_category_id' => $serviceCategoryId]);
+        }
+        $candidates[] = self::ruleCandidate(['client_id' => $contractor->id, 'is_default_for_unlisted' => true]);
+
+        return self::firstMatchingRule($candidates, $branchId);
+    }
+
+    private static function ruleCandidate(array $target): array
+    {
+        return array_merge(
+            array_fill_keys(self::RULE_TARGET_COLUMNS, null),
+            ['is_default_for_unlisted' => false],
+            $target,
+        );
+    }
+
+    /**
+     * @return array{type:string, fixed_amount:int, percentage_value:float}|null
+     */
+    private static function firstMatchingRule(array $candidates, ?int $branchId): ?array
+    {
         foreach ($candidates as $conditions) {
             $query = PayrollRule::where('is_active', true)
                 ->where('is_default_for_unlisted', $conditions['is_default_for_unlisted'])
@@ -217,7 +290,7 @@ class PayrollCalculationService
                 })
                 ->orderByRaw('branch_id IS NULL');
 
-            foreach (['employee_id', 'service_id', 'service_category_id', 'position_id'] as $col) {
+            foreach (self::RULE_TARGET_COLUMNS as $col) {
                 if ($conditions[$col] === null) {
                     $query->whereNull($col);
                 } else {
@@ -239,17 +312,6 @@ class PayrollCalculationService
         return null;
     }
 
-    private static function resolveFixedOutsourceAmount(Employee $employee, WorkOrderItem $item, ?int $branchId): ?int
-    {
-        $rate = self::resolveRate($employee, $employee->position, $item, $branchId);
-
-        if ($rate && $rate['type'] === 'fixed') {
-            return (int) round($rate['fixed_amount'] * (float) $item->quantity);
-        }
-
-        return null;
-    }
-
     private static function applySelfEmployedCompensation(Employee $employee, int $amount, array $settings): int
     {
         if ($employee->type !== 'self_employed' || $amount <= 0) {
@@ -263,19 +325,27 @@ class PayrollCalculationService
         return (int) round($amount * (1 + $percent / 100));
     }
 
-    private static function row(Employee $employee, string $role, int $amount, WorkOrderItem $item): array
+    /**
+     * Строка будущего Payroll. Заполнена ровно одна из employee_id/client_id —
+     * этот же инвариант зафиксирован в схеме payrolls (см. миграцию
+     * 2027_01_31_000001) и в Payroll::payee().
+     */
+    private static function row(Employee|Client $payee, string $role, int $amount, WorkOrderItem $item): array
     {
         return [
-            'employee_id' => $employee->id,
+            'employee_id' => $payee instanceof Employee ? $payee->id : null,
+            'client_id' => $payee instanceof Client ? $payee->id : null,
             'role' => $role,
             'amount' => $amount,
             'work_order_item_id' => $item->id,
         ];
     }
 
-    private static function skipNote(Employee $employee, WorkOrderItem $item, string $reason): string
+    private static function skipNote(Employee|Client $payee, WorkOrderItem $item, string $reason): string
     {
-        $name = trim($employee->first_name.' '.$employee->last_name);
+        $name = $payee instanceof Employee
+            ? trim($payee->first_name.' '.$payee->last_name)
+            : $payee->name;
 
         return "{$name} — «{$item->name}»: {$reason}";
     }

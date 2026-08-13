@@ -11,6 +11,7 @@ const props = defineProps({
     positionRules: { type: Array, default: () => [] },
     personalRulesCount: { type: Number, default: 0 },
     positions: { type: Array, default: () => [] },
+    contractors: { type: Array, default: () => [] },
     serviceCategories: { type: Array, default: () => [] },
     services: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
@@ -43,6 +44,9 @@ const editingRule = ref(null);
 
 const ruleForm = useForm({
     position_id: '',
+    // Ставка адресуется либо должности, либо конкретному подрядчику —
+    // заполнено ровно одно поле (см. PayrollSettingsController::storeRule()).
+    client_id: '',
     target: 'category',
     // Одиночные поля — используются при РЕДАКТИРОВАНИИ существующей ставки
     // (та всегда ровно одна строка) и как фильтр по группе при выборе услуг.
@@ -64,6 +68,21 @@ const ruleForm = useForm({
 const selectedPosition = computed(() => props.positions.find(p => p.id === Number(ruleForm.position_id)));
 const isAdminPosition = computed(() => selectedPosition.value?.payroll_role === 'admin');
 
+// Кому адресована ставка: должности (штатные сотрудники) или подрядчику.
+// Переключение чистит «чужое» поле, чтобы на сервер не ушли оба сразу.
+const ruleTargetKind = ref('position');
+
+const setRuleTargetKind = (kind) => {
+    ruleTargetKind.value = kind;
+    if (kind === 'position') {
+        ruleForm.client_id = '';
+    } else {
+        ruleForm.position_id = '';
+        // У подрядчика нет должности, а значит и ограничения «администратору
+        // только процент» — тип ставки остаётся свободным.
+    }
+};
+
 const filteredServices = computed(() => {
     if (!ruleForm.service_category_id) return props.services;
     return props.services.filter(s => s.service_category_id === Number(ruleForm.service_category_id));
@@ -73,6 +92,8 @@ const openRuleModal = (rule = null) => {
     editingRule.value = rule;
     if (rule) {
         ruleForm.position_id = rule.position_id ?? '';
+        ruleForm.client_id = rule.client_id ?? '';
+        ruleTargetKind.value = rule.client_id ? 'contractor' : 'position';
         ruleForm.target = rule.is_default_for_unlisted ? 'default' : (rule.service_id ? 'service' : 'category');
         ruleForm.service_id = rule.service_id ?? '';
         ruleForm.service_category_id = rule.service_category_id ?? '';
@@ -87,6 +108,7 @@ const openRuleModal = (rule = null) => {
         ruleForm.reset();
         ruleForm.target = 'category';
         ruleForm.type = 'percentage';
+        ruleTargetKind.value = 'position';
     }
     isRuleModalOpen.value = true;
 };
@@ -311,7 +333,7 @@ const ruleValueLabel = (rule) => {
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность / Подрядчик</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Применяется к</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локация</th>
                                 <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Ставка</th>
@@ -321,10 +343,18 @@ const ruleValueLabel = (rule) => {
                         <tbody>
                             <tr v-for="rule in filteredPositionRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                 <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.position ? getLocalizedLabel(rule.position.name) : '—' }}</div>
-                                    <span v-if="rule.position" :class="[rule.position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', 'inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium']">
-                                        {{ rule.position.payroll_role === 'admin' ? 'Администратор' : 'Исполнитель' }}
-                                    </span>
+                                    <template v-if="rule.client">
+                                        <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.client.name }}</div>
+                                        <span class="inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                            <i class="ri-briefcase-line"></i> Подрядчик
+                                        </span>
+                                    </template>
+                                    <template v-else>
+                                        <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.position ? getLocalizedLabel(rule.position.name) : '—' }}</div>
+                                        <span v-if="rule.position" :class="[rule.position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', 'inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium']">
+                                            {{ rule.position.payroll_role === 'admin' ? 'Администратор' : 'Исполнитель' }}
+                                        </span>
+                                    </template>
                                 </td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ ruleTargetLabel(rule) }}</td>
                                 <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ rule.branch ? rule.branch.name : 'Все локации' }}</td>
@@ -365,12 +395,36 @@ const ruleValueLabel = (rule) => {
                             <span>{{ ruleForm.errors.target || ruleForm.errors.type }}</span>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Должность <span class="text-danger">*</span></label>
-                            <select v-model="ruleForm.position_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Кому назначается ставка <span class="text-danger">*</span></label>
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <label :class="[ruleTargetKind === 'position' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" :checked="ruleTargetKind === 'position'" @change="setRuleTargetKind('position')" class="sr-only" />
+                                    <span class="w-full"><i class="ri-user-line mr-1"></i> Должности</span>
+                                </label>
+                                <label :class="[ruleTargetKind === 'contractor' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700', 'relative flex cursor-pointer rounded-md border p-2.5 text-center text-xs font-medium']">
+                                    <input type="radio" :checked="ruleTargetKind === 'contractor'" @change="setRuleTargetKind('contractor')" class="sr-only" />
+                                    <span class="w-full"><i class="ri-briefcase-line mr-1"></i> Подрядчику</span>
+                                </label>
+                            </div>
+
+                            <select v-if="ruleTargetKind === 'position'" v-model="ruleForm.position_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="" disabled>Выберите должность</option>
                                 <option v-for="p in positions" :key="p.id" :value="p.id">{{ getLocalizedLabel(p.name) }} ({{ p.payroll_role === 'admin' ? 'Администратор' : 'Исполнитель' }})</option>
                             </select>
+                            <template v-else>
+                                <select v-model="ruleForm.client_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" disabled>Выберите подрядчика</option>
+                                    <option v-for="c in contractors" :key="c.id" :value="c.id">{{ c.name }}</option>
+                                </select>
+                                <p v-if="contractors.length === 0" class="text-xs text-gray-400 mt-1">
+                                    Подрядчиков пока нет. Подрядчик — это клиент с ролью «Подрядчик» в его карточке.
+                                </p>
+                                <p v-else class="text-xs text-gray-400 mt-1">
+                                    Ставка действует только на этого подрядчика: у подрядчиков нет должностей, поэтому общей ставки «на всех» не существует.
+                                </p>
+                            </template>
                             <p v-if="ruleForm.errors.position_id" class="text-xs text-danger mt-1">{{ ruleForm.errors.position_id }}</p>
+                            <p v-if="ruleForm.errors.client_id" class="text-xs text-danger mt-1">{{ ruleForm.errors.client_id }}</p>
                         </div>
 
                         <div>

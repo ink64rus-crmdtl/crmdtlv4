@@ -313,7 +313,6 @@ const deleteEmployee = (employee) => {
 const employeeTypes = {
     'staff': 'В штате',
     'self_employed': 'Самозанятый',
-    'outsource': 'Аутсорс / Подрядчик'
 };
 </script>
 

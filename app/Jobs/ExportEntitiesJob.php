@@ -137,7 +137,6 @@ class ExportEntitiesJob implements ShouldQueue
             $employeeTypes = [
                 'staff' => 'В штате',
                 'self_employed' => 'Самозанятый',
-                'outsource' => 'Аутсорс / Подрядчик'
             ];
             foreach ($employees as $emp) {
                 $posName = 'Без должности';

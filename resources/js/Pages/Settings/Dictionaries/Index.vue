@@ -262,7 +262,7 @@ const submitLookup = () => {
 };
 
 const deleteLookup = (lookup) => {
-    if (confirm(`Удалить запись "${lookup.value}"?`)) {
+    if (confirm(`Удалить запись "${lookup.label || lookup.value}"?`)) {
         lookupForm.delete(route('settings.lookups.destroy', lookup.id));
     }
 };
@@ -595,10 +595,13 @@ const getLocalizedLabel = (label) => {
                                     </thead>
                                     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
                                         <tr v-for="lookup in (lookups[activeTab] || [])" :key="lookup.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ lookup.value }}</td>
+                                            <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">
+                                                {{ lookup.label || lookup.value }}
+                                                <i v-if="lookup.is_system" class="ri-lock-line text-gray-400 ml-1" title="Системная роль: нельзя переименовать и нельзя удалить"></i>
+                                            </td>
                                             <td v-if="activeTab === 'client_role'" class="py-4 px-6 text-sm">
                                                 <span :class="[groupColorMeta(lookup.color).badge, 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
-                                                    {{ lookup.value }}
+                                                    {{ lookup.label || lookup.value }}
                                                 </span>
                                             </td>
                                             <td class="py-4 px-6 text-sm">
@@ -607,8 +610,11 @@ const getLocalizedLabel = (label) => {
                                                 </span>
                                             </td>
                                             <td class="py-4 px-6 text-sm text-right space-x-2">
-                                                <button @click="openLookupModal(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                <button @click="deleteLookup(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                                <template v-if="!lookup.is_system">
+                                                    <button @click="openLookupModal(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                                    <button @click="deleteLookup(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                                </template>
+                                                <span v-else class="text-xs text-gray-400" title="Системная роль — недоступна для правки и удаления даже администратору">Системная</span>
                                             </td>
                                         </tr>
                                     </tbody>

@@ -587,7 +587,7 @@ const deleteOrder = (order) => {
                                     <button 
                                         @click.stop="openModal(order)" 
                                         class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать шапку"
+                                        title="Редактировать форму"
                                     >
                                         <i class="ri-pencil-line"></i>
                                     </button>

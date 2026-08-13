@@ -47,7 +47,6 @@ const formatMoney = (cents) => {
 const employeeTypes = {
     'staff': 'В штате',
     'self_employed': 'Самозанятый',
-    'outsource': 'Аутсорс / Подрядчик'
 };
 
 const isModalOpen = ref(false);

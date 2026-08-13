@@ -22,6 +22,7 @@ use App\Services\LoyaltyGradeService;
 use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -32,7 +33,7 @@ class ClientController extends Controller
         $user = auth()->user();
 
         // Базовый запрос с подгрузкой связей
-        $query = Client::with(['branch' => fn ($q) => $q->withTrashed(), 'group']);
+        $query = Client::with(['branch' => fn ($q) => $q->withTrashed(), 'group', 'roles']);
         ClientSegmentService::withAggregates($query);
 
         // Фильтр по RFM-сегменту (Фаза 14.3) — не обычная колонка таблицы,
@@ -42,6 +43,14 @@ class ClientController extends Controller
         $segmentFilter = $requestParams['filters']['segment'] ?? null;
         if ($segmentFilter) {
             unset($requestParams['filters']['segment']);
+        }
+
+        // Фильтр по роли (многие-ко-многим, client_roles) — тоже не обычная
+        // колонка, colонки role на clients больше нет (см. миграцию
+        // 2027_01_30). Значение — id одной или нескольких Lookup-записей.
+        $roleFilter = $requestParams['filters']['role'] ?? null;
+        if ($roleFilter) {
+            unset($requestParams['filters']['role']);
         }
 
         // Применяем серверную фильтрацию и поиск
@@ -54,6 +63,11 @@ class ClientController extends Controller
 
         if ($segmentFilter) {
             ClientSegmentService::applyFilter($query, $segmentFilter);
+        }
+
+        if ($roleFilter) {
+            $roleIds = is_array($roleFilter) ? $roleFilter : [$roleFilter];
+            $query->whereHas('roles', fn ($q) => $q->whereIn('lookups.id', $roleIds));
         }
 
         if (! $request->has('sort_by')) {
@@ -164,7 +178,7 @@ class ClientController extends Controller
     public function show(Client $client): Response
     {
         // Загружаем автомобили вместе с марками и моделями
-        $client->load(['branch' => fn ($q) => $q->withTrashed(), 'group', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
+        $client->load(['branch' => fn ($q) => $q->withTrashed(), 'group', 'roles', 'vehicles.make', 'vehicles.vehicleModel', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $client->documents->each->append('is_stale');
 
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'client')->orderBy('sort_order')->get();
@@ -241,7 +255,8 @@ class ClientController extends Controller
             'client_group_id' => ['nullable', 'exists:client_groups,id'],
             'is_lead' => ['boolean'],
             'type' => ['required', 'string', 'in:b2c,b2b'],
-            'role' => ['nullable', 'string', 'max:255'],
+            'role_ids' => ['nullable', 'array'],
+            'role_ids.*' => ['integer', Rule::exists('lookups', 'id')->where('type', 'client_role')],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255'],
             'phone' => [$phoneRequired ? 'required' : 'nullable', 'string', 'max:255'],
@@ -266,7 +281,6 @@ class ClientController extends Controller
                 'client_group_locked' => ! empty($validated['client_group_id']),
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
-                'role' => $validated['role'] ?? null,
                 'name' => $validated['name'],
                 'alias' => $validated['alias'] ?? null,
                 'phone' => $validated['phone'] ?? null,
@@ -278,6 +292,8 @@ class ClientController extends Controller
                 'discount_percent' => $validated['discount_percent'] ?? 0,
                 'requisites' => $validated['requisites'] ?? null,
             ]);
+
+            $client->roles()->sync($validated['role_ids'] ?? []);
 
             if (! empty($validated['custom_fields'])) {
                 $this->saveCustomFields($client, $validated['custom_fields']);
@@ -298,7 +314,8 @@ class ClientController extends Controller
             'client_group_id' => ['nullable', 'exists:client_groups,id'],
             'is_lead' => ['boolean'],
             'type' => ['required', 'string', 'in:b2c,b2b'],
-            'role' => ['nullable', 'string', 'max:255'],
+            'role_ids' => ['nullable', 'array'],
+            'role_ids.*' => ['integer', Rule::exists('lookups', 'id')->where('type', 'client_role')],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255'],
             'phone' => [$phoneRequired ? 'required' : 'nullable', 'string', 'max:255'],
@@ -325,7 +342,6 @@ class ClientController extends Controller
                 'client_group_locked' => $groupChanged ? true : $client->client_group_locked,
                 'is_lead' => $validated['is_lead'] ?? false,
                 'type' => $validated['type'],
-                'role' => $validated['role'] ?? null,
                 'name' => $validated['name'],
                 'alias' => $validated['alias'] ?? null,
                 'phone' => $validated['phone'] ?? null,
@@ -337,6 +353,8 @@ class ClientController extends Controller
                 'discount_percent' => $validated['discount_percent'] ?? 0,
                 'requisites' => $validated['requisites'] ?? null,
             ]);
+
+            $client->roles()->sync($validated['role_ids'] ?? []);
 
             if (isset($validated['custom_fields'])) {
                 $this->saveCustomFields($client, $validated['custom_fields']);

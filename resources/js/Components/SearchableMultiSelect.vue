@@ -1,10 +1,18 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import axios from 'axios';
 
 // Обобщённый мультивыбор с поиском и чипсами — по образцу EmployeeMultiSelect.vue,
 // но для произвольных сущностей {id, label} (услуги, категории и т.п.), а не
 // только сотрудников. В отличие от EmployeeMultiSelect добавлен поиск по тексту —
 // для реально длинных растущих списков (см. CLAUDE.md про SearchableSelect).
+//
+// creatable — опциональный режим "добавить на лету", как у CreatableSelect.vue,
+// но для мультивыбора: если введённый текст не совпадает ни с одной опцией,
+// внизу списка появляется "Добавить «...»", создающая новую запись в
+// справочнике (settings.lookups.store, type=lookupType) и сразу выбирающая
+// её — родитель получает событие option-created и сам дополняет свой список
+// options (компонент не хранит источник правды по списку, только выбор).
 const props = defineProps({
     modelValue: {
         type: Array,
@@ -22,9 +30,19 @@ const props = defineProps({
         type: String,
         default: 'Выберите...',
     },
+    creatable: {
+        type: Boolean,
+        default: false,
+    },
+    lookupType: {
+        type: String,
+        default: null,
+    },
 });
 
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue', 'option-created']);
+
+const creating = ref(false);
 
 const isOpen = ref(false);
 const search = ref('');
@@ -45,6 +63,36 @@ const filteredOptions = computed(() => {
     const lower = search.value.toLowerCase();
     return props.options.filter(o => o.label.toLowerCase().includes(lower));
 });
+
+const showCreateOption = computed(() => {
+    if (!props.creatable || !search.value.trim()) return false;
+    const lower = search.value.trim().toLowerCase();
+    return !props.options.some(o => o.label.toLowerCase() === lower);
+});
+
+const createOption = async () => {
+    const value = search.value.trim();
+    if (!value || creating.value) return;
+
+    creating.value = true;
+    try {
+        const response = await axios.post(route('settings.lookups.store'), {
+            type: props.lookupType,
+            value,
+            is_active: true,
+        });
+        const created = response.data?.data;
+        if (created) {
+            emit('option-created', created);
+            emit('update:modelValue', [...props.modelValue, created.id]);
+            search.value = '';
+        }
+    } catch (error) {
+        console.error('Failed to add lookup value', error);
+    } finally {
+        creating.value = false;
+    }
+};
 
 // Позиционируем панель через fixed-координаты и телепортируем в <body>,
 // чтобы её не обрезали overflow-контейнеры и не перекрывали оверлеи с большим z-index.
@@ -176,7 +224,15 @@ onUnmounted(() => {
                             />
                             <span>{{ opt.label }}</span>
                         </label>
-                        <div v-if="!filteredOptions.length" class="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
+                        <div v-if="!filteredOptions.length && !showCreateOption" class="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
+                        <div
+                            v-if="showCreateOption"
+                            @click="createOption"
+                            class="flex items-center gap-2 px-3 py-1.5 text-xs text-primary hover:bg-primary/10 cursor-pointer transition-colors border-t border-gray-100 dark:border-gray-700 font-medium"
+                        >
+                            <i :class="creating ? 'ri-loader-4-line animate-spin' : 'ri-add-line'"></i>
+                            Добавить «{{ search.trim() }}»
+                        </div>
                     </div>
                 </div>
             </Transition>

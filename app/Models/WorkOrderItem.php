@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Scopes\BranchScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -54,11 +55,50 @@ class WorkOrderItem extends Model
         return $this->belongsTo(Employee::class);
     }
 
+    /**
+     * Штатные исполнители позиции. Живут в общей полиморфной таблице
+     * work_order_item_assignees вместе с подрядчиками (см. contractors()) —
+     * withPivotValue и фильтрует выборку по assignee_type, и проставляет его
+     * при attach()/sync(), поэтому обе связи можно использовать как обычные
+     * BelongsToMany, не думая о полиморфной колонке.
+     *
+     * withoutGlobalScope(BranchScope) — осознанно: уже назначенный исполнитель
+     * не имеет права молча пропасть из выборки из-за того, что в шапке выбрана
+     * другая локация. Иначе PayrollCalculationService не увидел бы его и
+     * НЕ НАЧИСЛИЛ БЫ ему деньги — тихая ошибка в расчёте вместо явной. Доступ
+     * к самой позиции уже ограничен BranchScope на WorkOrder, так что это не
+     * ослабление изоляции: кто видит заказ, тот видит и его исполнителей.
+     * По той же причине withTrashed() — уволенный сотрудник должен получить
+     * начисление за работу, которую успел выполнить до увольнения.
+     */
     public function employees(): BelongsToMany
     {
-        return $this->belongsToMany(Employee::class, 'work_order_item_employees')
+        return $this->belongsToMany(Employee::class, 'work_order_item_assignees', 'work_order_item_id', 'assignee_id')
+            ->withPivotValue('assignee_type', Employee::class)
             ->withTimestamps()
-            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override']);
+            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override'])
+            ->withoutGlobalScope(BranchScope::class)
+            ->withTrashed();
+    }
+
+    /**
+     * Подрядчики-исполнители позиции — Client с ролью «Подрядчик» (client_roles).
+     * Бизнес-правило: на одной позиции не может быть одновременно штатных
+     * исполнителей и подрядчиков (проверяется в WorkOrderController, на уровне
+     * схемы не выражается). Расчёт ЗП тем не менее обрабатывает обе коллекции
+     * независимо — если инвариант когда-то нарушат в обход контроллера, деньги
+     * посчитаются корректно для всех, а не потеряются.
+     *
+     * Про withoutGlobalScope/withTrashed — см. комментарий к employees().
+     */
+    public function contractors(): BelongsToMany
+    {
+        return $this->belongsToMany(Client::class, 'work_order_item_assignees', 'work_order_item_id', 'assignee_id')
+            ->withPivotValue('assignee_type', Client::class)
+            ->withTimestamps()
+            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override'])
+            ->withoutGlobalScope(BranchScope::class)
+            ->withTrashed();
     }
 
     /**
@@ -71,7 +111,9 @@ class WorkOrderItem extends Model
     {
         return $this->belongsToMany(Employee::class, 'work_order_item_admins')
             ->withTimestamps()
-            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override']);
+            ->withPivot(['share_percent', 'manual_amount_override', 'manual_percent_override'])
+            ->withoutGlobalScope(BranchScope::class)
+            ->withTrashed();
     }
 
     /**

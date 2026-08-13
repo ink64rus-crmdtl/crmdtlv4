@@ -10,6 +10,7 @@ import { useDebounceFn } from '@vueuse/core';
 
 const props = defineProps({
     employees: Object,
+    contractors: { type: Array, default: () => [] },
     filters: Object,
 });
 
@@ -115,6 +116,49 @@ const formatMoney = (cents) => {
                     </table>
                 </div>
                 <Pagination :meta="employees" />
+            </div>
+
+            <!-- Взаиморасчёты с подрядчиками — отдельным блоком: это клиенты
+                 (с ролью «Подрядчик»), а не сотрудники, у них своя карточка и
+                 нет должности/штрафов. Показываем только тех, с кем реально
+                 есть расчёты, поэтому список не нуждается в пагинации. -->
+            <div v-if="contractors.length > 0" class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                        <i class="ri-briefcase-line text-purple-600 dark:text-purple-400"></i> Взаиморасчёты с подрядчиками
+                    </h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Клиенты с ролью «Подрядчик», привлечённые как исполнители услуг.</p>
+                </div>
+                <div class="overflow-x-auto w-full">
+                    <table class="min-w-full text-left whitespace-nowrap">
+                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                            <tr>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Подрядчик</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Телефон</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Начислено</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Выплачено</th>
+                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">К выплате</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="contractor in contractors"
+                                :key="contractor.id"
+                                @click="router.visit(route('crm.clients.show', contractor.id))"
+                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer"
+                            >
+                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
+                                    {{ contractor.name }}
+                                    <span v-if="contractor.is_deleted" class="ml-1 text-xs font-normal text-gray-400">(удалён)</span>
+                                </td>
+                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ contractor.phone || '—' }}</td>
+                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(contractor.accrued_total) }}</td>
+                                <td class="py-4 px-6 text-sm text-success border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(contractor.paid_total) }}</td>
+                                <td class="py-4 px-6 text-sm font-bold border-b border-gray-100 dark:border-gray-700/50 text-right" :class="contractor.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(contractor.balance) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </AuthenticatedLayout>

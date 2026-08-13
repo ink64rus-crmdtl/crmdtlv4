@@ -16,6 +16,10 @@ const form = useForm({
     admin_override: 'inherit',
     admin_assignments: [],
     assignments: [],
+    // Подрядчики правятся отдельно от бригады: у них нет доли объёма работ
+    // (см. PayrollCalculationService — подрядчик вне общего пула), поэтому и
+    // колонки «Объём, %» у них нет.
+    contractor_assignments: [],
 });
 
 const adminEligibleEmployees = computed(() => props.employees.filter(e => e.position?.payroll_role === 'admin'));
@@ -43,12 +47,20 @@ watch(() => props.show, (isOpen) => {
             manual_amount_override: e.pivot?.manual_amount_override !== null && e.pivot?.manual_amount_override !== undefined ? e.pivot.manual_amount_override / 100 : null,
             manual_percent_override: e.pivot?.manual_percent_override !== null && e.pivot?.manual_percent_override !== undefined ? Number(e.pivot.manual_percent_override) : null,
         }));
+        form.contractor_assignments = (props.item.contractors || []).map(c => ({
+            client_id: c.id,
+            name: c.name,
+            manual_amount_override: c.pivot?.manual_amount_override !== null && c.pivot?.manual_amount_override !== undefined ? c.pivot.manual_amount_override / 100 : null,
+            manual_percent_override: c.pivot?.manual_percent_override !== null && c.pivot?.manual_percent_override !== undefined ? Number(c.pivot.manual_percent_override) : null,
+        }));
         form.clearErrors();
     }
 });
 
+// Все штатные исполнители позиции делят базу между собой — подрядчики сюда
+// не попадают, они в отдельном form.contractor_assignments и вне пула долей.
 const equalShare = computed(() => {
-    const count = form.assignments.filter(a => a.type !== 'outsource').length;
+    const count = form.assignments.length;
     return count > 0 ? Math.round((100 / count) * 100) / 100 : 0;
 });
 
@@ -57,18 +69,16 @@ const displayShare = (assignment) => assignment.share_percent === null || assign
     : assignment.share_percent;
 
 const totalShare = computed(() => {
-    return form.assignments
-        .filter(a => a.type !== 'outsource')
-        .reduce((sum, a) => sum + (Number(displayShare(a)) || 0), 0);
+    return form.assignments.reduce((sum, a) => sum + (Number(displayShare(a)) || 0), 0);
 });
 
 const shareIsValid = computed(() => totalShare.value <= 100.001);
 
 // Та же схема долевого распределения, что и у бригады исполнителей (equalShare/
 // totalShare/shareIsValid выше), но для администраторов позиции — своя копия
-// вместо параметризации: у админов нет типа "outsource" и своего списка на
-// главной таблице позиций (список правится прямо здесь через EmployeeMultiSelect,
-// см. updateAdminAssignments), так что фильтрация была бы лишней веткой.
+// вместо параметризации: у админов нет своего списка на главной таблице позиций
+// (список правится прямо здесь через EmployeeMultiSelect, см.
+// updateAdminAssignments), так что общий код лишь запутал бы.
 const adminEqualShare = computed(() => {
     const count = form.admin_assignments.length;
     return count > 0 ? Math.round((100 / count) * 100) / 100 : 0;
@@ -256,21 +266,18 @@ const submit = () => {
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                    <tr v-for="assignment in form.assignments" :key="assignment.employee_id" :class="assignment.type === 'outsource' ? 'bg-purple-50/40 dark:bg-purple-900/10' : 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40'">
+                                    <tr v-for="assignment in form.assignments" :key="assignment.employee_id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40">
                                         <td class="py-2 px-3 text-sm text-gray-800 dark:text-gray-200">
                                             {{ assignment.name }}
-                                            <span v-if="assignment.type === 'outsource'" class="block text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">Аутсорс</span>
-                                            <span v-else-if="assignment.type === 'self_employed'" class="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">Самозанятый</span>
+                                            <span v-if="assignment.type === 'self_employed'" class="block text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase">Самозанятый</span>
                                         </td>
                                         <td class="py-2 px-3">
                                             <input
-                                                v-if="assignment.type !== 'outsource'"
                                                 v-model.number="assignment.share_percent"
                                                 type="number" min="0" max="100" step="0.01"
                                                 :placeholder="String(equalShare)"
                                                 class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
                                             />
-                                            <span v-else class="text-xs text-gray-400 text-center block">—</span>
                                         </td>
                                         <td class="py-2 px-3">
                                             <input
@@ -283,14 +290,12 @@ const submit = () => {
                                         </td>
                                         <td class="py-2 px-3">
                                             <input
-                                                v-if="assignment.type !== 'outsource'"
                                                 v-model.number="assignment.manual_percent_override"
                                                 @input="onPercentInput(assignment)"
                                                 type="number" min="0" max="100" step="0.01"
                                                 placeholder="По ставке"
                                                 class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
                                             />
-                                            <span v-else class="text-xs text-gray-400 text-center block">—</span>
                                         </td>
                                         <td class="py-2 px-3 text-right">
                                             <button type="button" @click="resetAssignment(assignment)" title="Сбросить" class="text-gray-400 hover:text-danger transition-colors"><i class="ri-refresh-line"></i></button>
@@ -305,9 +310,56 @@ const submit = () => {
                         <p v-else class="text-xs text-success mt-2 flex items-center gap-1">
                             <i class="ri-check-line"></i> Распределение объёма корректно ({{ totalShare.toFixed(2) }}%). Пустые поля объёма считаются поровну.
                         </p>
-                        <p v-if="form.assignments.some(a => a.type === 'outsource')" class="text-xs text-gray-400 mt-1">Для подрядчиков (аутсорс) укажите фиксированную сумму — процент и доля к ним не применяются.</p>
                     </div>
-                    <p v-else class="text-sm text-gray-400 text-center py-4">На эту позицию пока не назначены исполнители.</p>
+
+                    <!-- Подрядчики: у них нет доли объёма — каждый получает свою сумму целиком -->
+                    <div v-if="form.contractor_assignments.length > 0" class="pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Подрядчики</label>
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+                            <table class="min-w-full text-left">
+                                <thead class="bg-gray-50/50 dark:bg-gray-800/50">
+                                    <tr>
+                                        <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Подрядчик</th>
+                                        <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase w-28">Сумма, ₽</th>
+                                        <th class="py-2 px-3 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase w-24">% от услуги</th>
+                                        <th class="py-2 px-3 w-8"></th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                    <tr v-for="assignment in form.contractor_assignments" :key="assignment.client_id" class="bg-purple-50/40 dark:bg-purple-900/10">
+                                        <td class="py-2 px-3 text-sm text-gray-800 dark:text-gray-200">
+                                            {{ assignment.name }}
+                                            <span class="block text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">Подрядчик</span>
+                                        </td>
+                                        <td class="py-2 px-3">
+                                            <input
+                                                v-model.number="assignment.manual_amount_override"
+                                                @input="onAmountInput(assignment)"
+                                                type="number" min="0" step="0.01"
+                                                placeholder="По ставке"
+                                                class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                            />
+                                        </td>
+                                        <td class="py-2 px-3">
+                                            <input
+                                                v-model.number="assignment.manual_percent_override"
+                                                @input="onPercentInput(assignment)"
+                                                type="number" min="0" max="100" step="0.01"
+                                                placeholder="По ставке"
+                                                class="w-full rounded border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-center text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                            />
+                                        </td>
+                                        <td class="py-2 px-3 text-right">
+                                            <button type="button" @click="resetAssignment(assignment)" title="Сбросить" class="text-gray-400 hover:text-danger transition-colors"><i class="ri-refresh-line"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2">Подрядчик не делит базу с бригадой — получает свою сумму целиком. Пустые поля означают «по настроенной ставке подрядчика».</p>
+                    </div>
+
+                    <p v-if="form.assignments.length === 0 && form.contractor_assignments.length === 0" class="text-sm text-gray-400 text-center py-4">На эту позицию пока не назначены исполнители.</p>
                 </div>
 
                 <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">

@@ -4,6 +4,7 @@ import PageHelper from '@/Components/PageHelper.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import Modal from '@/Components/Modal.vue';
 import EmployeeMultiSelect from '@/Components/EmployeeMultiSelect.vue';
+import AssigneeMultiSelect from '@/Components/AssigneeMultiSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import WorkOrderItemPayoutModal from '@/Components/WorkOrderItemPayoutModal.vue';
@@ -30,6 +31,7 @@ const props = defineProps({
     serviceCategories: Array,
     productCategories: Array,
     employees: Array,
+    contractors: { type: Array, default: () => [] },
     workOrderStatuses: { type: Array, default: () => [] },
     bonusRubPerPoint: { type: Number, default: 1 },
     linkedAppointment: { type: Object, default: () => null },
@@ -163,7 +165,7 @@ const paymentStatuses = {
     'paid': { label: 'Оплачен', class: 'bg-success/10 text-success' },
 };
 
-// Форма редактирования шапки
+// Форма (Tri-State Record Pattern) — редактирование основных полей заказа
 const form = useForm({
     branch_id: '',
     legal_entity_id: '',
@@ -358,8 +360,11 @@ const updateItemDetails = (item, fields) => {
     });
 };
 
-const updateItemEmployees = (item, employeeIds) => {
-    updateItemDetails(item, { employee_ids: employeeIds });
+// Исполнителем позиции может быть штатный сотрудник или подрядчик — тип
+// приходит из AssigneeMultiSelect вместе со списком id, потому что сервер
+// синхронизирует только связь соответствующего типа (см. WorkOrderController).
+const updateItemAssignees = (item, { type, ids }) => {
+    updateItemDetails(item, { employee_ids: ids, assignee_type: type });
 };
 
 // Скидка на отдельную позицию (сумма ₽ или %)
@@ -756,7 +761,7 @@ const formatMoney = (amount) => {
                         <i class="ri-check-double-line mr-1.5"></i> Завершить заказ
                     </button>
                     <button @click="openModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
-                        <i class="ri-pencil-line mr-1.5"></i> Редактировать шапку
+                        <i class="ri-pencil-line mr-1.5"></i> Редактировать форму
                     </button>
                 </div>
             </div>
@@ -960,14 +965,16 @@ const formatMoney = (amount) => {
                                                 </div>
                                             </td>
                                             <td class="py-3 px-3 text-sm">
-                                                <!-- Выбор Исполнителей на позицию, можно нескольких (Только для услуг) -->
-                                                <EmployeeMultiSelect
+                                                <!-- Исполнители позиции: штатные ИЛИ подрядчики, смешивать нельзя (только для услуг) -->
+                                                <AssigneeMultiSelect
                                                     v-if="item.itemable_type.includes('Service')"
                                                     class="max-w-[160px]"
-                                                    :model-value="(item.employees || []).map(e => e.id)"
-                                                    :options="employees"
+                                                    :employee-ids="(item.employees || []).map(e => e.id)"
+                                                    :contractor-ids="(item.contractors || []).map(c => c.id)"
+                                                    :employees="employees"
+                                                    :contractors="contractors"
                                                     :disabled="workOrder.status === 'completed'"
-                                                    @update:model-value="ids => updateItemEmployees(item, ids)"
+                                                    @update="payload => updateItemAssignees(item, payload)"
                                                 />
                                                 <span v-else class="text-xs text-gray-400 font-medium">Складское списание</span>
                                             </td>
@@ -1084,9 +1091,11 @@ const formatMoney = (amount) => {
                                         </div>
                                         <span class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(item.admin.amount) }}</span>
                                     </div>
-                                    <div v-for="w in item.workers" :key="w.employee_id" class="flex justify-between items-center px-4 py-2.5">
+                                    <!-- key составной: у подрядчика employee_id пуст, и по одному
+                                         только employee_id все подрядчики позиции слились бы в одну строку -->
+                                    <div v-for="w in item.workers" :key="`${w.employee_id || 'c'}-${w.client_id || ''}`" class="flex justify-between items-center px-4 py-2.5">
                                         <div class="flex items-center gap-2 text-sm">
-                                            <span v-if="w.type === 'outsource'" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Аутсорс</span>
+                                            <span v-if="w.type === 'contractor'" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"><i class="ri-briefcase-line"></i> Подрядчик</span>
                                             <span v-else-if="w.type === 'self_employed'" class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Самозанятый</span>
                                             <span v-else class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-success/10 text-success">Исполнитель</span>
                                             <span class="text-gray-700 dark:text-gray-300">{{ w.name }}</span>
@@ -1399,11 +1408,13 @@ const formatMoney = (amount) => {
 
                                 <!-- Исполнители (можно несколько) и скидка на позицию -->
                                 <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700/50">
-                                    <EmployeeMultiSelect
+                                    <AssigneeMultiSelect
                                         v-if="item.itemable_type.includes('Service')"
-                                        :model-value="(item.employees || []).map(e => e.id)"
-                                        :options="employees"
-                                        @update:model-value="ids => updateItemEmployees(item, ids)"
+                                        :employee-ids="(item.employees || []).map(e => e.id)"
+                                        :contractor-ids="(item.contractors || []).map(c => c.id)"
+                                        :employees="employees"
+                                        :contractors="contractors"
+                                        @update="payload => updateItemAssignees(item, payload)"
                                     />
 
                                     <div class="flex items-center gap-1.5 ml-auto">
