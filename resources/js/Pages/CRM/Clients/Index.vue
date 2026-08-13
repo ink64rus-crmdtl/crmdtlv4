@@ -9,6 +9,7 @@ import CreatableSelect from '@/Components/CreatableSelect.vue';
 import SearchableMultiSelect from '@/Components/SearchableMultiSelect.vue';
 import GroupColorPicker, { groupColorMeta } from '@/Components/GroupColorPicker.vue';
 import Modal from '@/Components/Modal.vue';
+import CompanySuggestInput from '@/Components/CompanySuggestInput.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -269,6 +270,19 @@ const currentCountrySchema = computed(() => {
 const signatorySchema = computed(() => {
     return props.countryConfig?.signatory_schema || [];
 });
+
+// Выбор варианта из подсказки DaData (см. CompanySuggestInput.vue) — заполняет
+// разом название, налоговые реквизиты и подписанта (director_name/position,
+// вкладка "Подписи"). Актуально только для B2B — поля показываются только там.
+const applyCompanySuggestion = (suggestion) => {
+    form.name = suggestion.name;
+    if (suggestion.inn) form.requisites.inn = suggestion.inn;
+    if (suggestion.kpp) form.requisites.kpp = suggestion.kpp;
+    if (suggestion.ogrn) form.requisites.ogrn = suggestion.ogrn;
+    if (suggestion.legal_address) form.requisites.legal_address = suggestion.legal_address;
+    if (suggestion.director_name) form.requisites.director_name = suggestion.director_name;
+    if (suggestion.director_position) form.requisites.director_position = suggestion.director_position;
+};
 
 const getLocalizedLabel = (label) => {
     if (!label) return '';
@@ -883,7 +897,17 @@ const formatMoney = (amount) => {
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя / Название <span class="text-danger">*</span></label>
+                                <!-- Живой поиск DaData — только для организаций (b2b) и только в РФ:
+                                     у физлиц (b2c) искать имя по базе ЕГРЮЛ/ЕГРИП бессмысленно. -->
+                                <CompanySuggestInput
+                                    v-if="form.type === 'b2b' && tenantCountry === 'RU'"
+                                    v-model="form.name"
+                                    required
+                                    placeholder="Начните вводить название или ИНН..."
+                                    @select="applyCompanySuggestion"
+                                />
                                 <input
+                                    v-else
                                     v-model="form.name"
                                     type="text"
                                     required
@@ -1051,6 +1075,14 @@ const formatMoney = (amount) => {
                                         rows="2"
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                     ></textarea>
+                                    <!-- Живой поиск и по ИНН тоже — тот же DaData-эндпоинт, что и у
+                                         названия, сам распознаёт цифровой запрос как ИНН. -->
+                                    <CompanySuggestInput
+                                        v-else-if="field.key === 'inn' && tenantCountry === 'RU'"
+                                        v-model="form.requisites[field.key]"
+                                        :placeholder="field.placeholder"
+                                        @select="applyCompanySuggestion"
+                                    />
                                     <input
                                         v-else
                                         v-model="form.requisites[field.key]"

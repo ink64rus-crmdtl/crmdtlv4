@@ -58,6 +58,10 @@ class GoodsReceiptController extends Controller
             // клиенту сразу нужна роль «Поставщик», иначе он не попадёт в
             // supplierOptions() и его придётся донастраивать отдельно.
             'supplierRoleId' => Lookup::where('type', 'client_role')->where('value', self::SUPPLIER_ROLE)->value('id'),
+            // Для CompanySuggestInput в модалке быстрого добавления поставщика —
+            // DaData знает только российские организации (см. CRM/Clients,
+            // Settings/LegalEntities — тот же принцип).
+            'tenantCountry' => config('tenant.country_code', 'RU'),
             'warehouses' => Warehouse::where('is_active', true)->get(['id', 'name']),
             'branches' => Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']),
             'products' => Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'accounting_type']),

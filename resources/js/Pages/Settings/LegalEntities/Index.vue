@@ -5,6 +5,7 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import CompanySuggestInput from '@/Components/CompanySuggestInput.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -168,6 +169,20 @@ const bankLabels = computed(() => {
         corr_account: 'Корр. счет',
     };
 });
+
+// Выбор варианта из подсказки DaData (см. CompanySuggestInput.vue) — заполняет
+// разом название, налоговые реквизиты (что нашлось в текущей requisite_schema)
+// и подписанта (director_name/position, вкладка "Подписи"), если это юрлицо
+// (для ИП DaData этих полей не отдаёт — сервис их и не проставляет).
+const applyCompanySuggestion = (suggestion) => {
+    form.name = suggestion.name;
+    if (suggestion.inn) form.requisites.inn = suggestion.inn;
+    if (suggestion.kpp) form.requisites.kpp = suggestion.kpp;
+    if (suggestion.ogrn) form.requisites.ogrn = suggestion.ogrn;
+    if (suggestion.legal_address) form.requisites.legal_address = suggestion.legal_address;
+    if (suggestion.director_name) form.requisites.director_name = suggestion.director_name;
+    if (suggestion.director_position) form.requisites.director_position = suggestion.director_position;
+};
 
 const openModal = (entity = null) => {
     if (entity) {
@@ -478,7 +493,17 @@ const deleteAccount = (account) => {
 
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Официальное название (ИП / ООО) <span class="text-danger">*</span></label>
+                                <!-- Живой поиск DaData — только для РФ: у DaData нет реестра организаций
+                                     других стран, для остальных юрисдикций остаётся обычный ручной ввод. -->
+                                <CompanySuggestInput
+                                    v-if="tenantCountry === 'RU'"
+                                    v-model="form.name"
+                                    required
+                                    placeholder="Начните вводить название или ИНН..."
+                                    @select="applyCompanySuggestion"
+                                />
                                 <input
+                                    v-else
                                     v-model="form.name"
                                     type="text"
                                     required
@@ -528,6 +553,16 @@ const deleteAccount = (account) => {
                                             rows="2"
                                             class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                         ></textarea>
+
+                                        <!-- Живой поиск и по ИНН тоже — тот же DaData-эндпоинт, что и у
+                                             названия, сам распознаёт цифровой запрос как ИНН. -->
+                                        <CompanySuggestInput
+                                            v-else-if="field.key === 'inn' && tenantCountry === 'RU'"
+                                            v-model="form.requisites[field.key]"
+                                            :required="field.required"
+                                            :placeholder="field.placeholder"
+                                            @select="applyCompanySuggestion"
+                                        />
 
                                         <input
                                             v-else

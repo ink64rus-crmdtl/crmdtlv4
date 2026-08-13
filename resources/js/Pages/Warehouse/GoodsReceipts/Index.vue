@@ -7,6 +7,7 @@ import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import Modal from '@/Components/Modal.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
+import CompanySuggestInput from '@/Components/CompanySuggestInput.vue';
 import PointBadge from '@/Components/PointBadge.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
@@ -17,6 +18,7 @@ const props = defineProps({
     filters: Object,
     suppliers: { type: Array, default: () => [] },
     supplierRoleId: { type: Number, default: null },
+    tenantCountry: { type: String, default: 'RU' },
     warehouses: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
     products: { type: Array, default: () => [] },
@@ -110,6 +112,7 @@ const quickSupplierForm = useForm({
     phone: '',
     phone_required: true,
     role_ids: [],
+    requisites: {},
 });
 
 const openQuickSupplierModal = () => {
@@ -117,7 +120,17 @@ const openQuickSupplierModal = () => {
     quickSupplierForm.branch_id = form.branch_id || (props.branches[0]?.id ?? '');
     quickSupplierForm.type = 'b2b';
     quickSupplierForm.role_ids = props.supplierRoleId ? [props.supplierRoleId] : [];
+    quickSupplierForm.requisites = {};
     isQuickSupplierModalOpen.value = true;
+};
+
+// Выбор варианта из подсказки DaData (см. CompanySuggestInput.vue) — тот же
+// приём, что в CRM/Clients/Index.vue, но только name+ИНН: эта модалка
+// сознательно минимальна (см. CLAUDE.md, "Пополняемые списки"), остальные
+// реквизиты (КПП/ОГРН/адрес/подписанты) заводятся потом в карточке клиента.
+const applyCompanySuggestion = (suggestion) => {
+    quickSupplierForm.name = suggestion.name;
+    if (suggestion.inn) quickSupplierForm.requisites.inn = suggestion.inn;
 };
 
 const closeQuickSupplierModal = () => {
@@ -268,7 +281,7 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Поставщик <span class="text-danger">*</span></label>
                                 <div class="flex gap-2 items-start">
-                                    <div class="flex-1"><SearchableSelect v-model="form.supplier_id" :options="supplierOptions" placeholder="Выберите поставщика..." /></div>
+                                    <div class="flex-1 min-w-0"><SearchableSelect v-model="form.supplier_id" :options="supplierOptions" placeholder="Выберите поставщика..." /></div>
                                     <button type="button" @click="openQuickSupplierModal" title="Добавить поставщика" class="shrink-0 inline-flex items-center justify-center rounded-md w-9 h-9 bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"><i class="ri-add-line text-lg"></i></button>
                                 </div>
                                 <span v-if="form.errors.supplier_id" class="text-xs text-danger mt-1 block">{{ form.errors.supplier_id }}</span>
@@ -380,8 +393,34 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название организации <span class="text-danger">*</span></label>
-                            <input v-model="quickSupplierForm.name" type="text" required placeholder="ООО «Поставщик»" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <!-- Живой поиск DaData — только для РФ (та же оговорка, что и в
+                                 Settings/LegalEntities/CRM/Clients: у DaData нет реестра других стран). -->
+                            <CompanySuggestInput
+                                v-if="tenantCountry === 'RU'"
+                                v-model="quickSupplierForm.name"
+                                required
+                                placeholder="Начните вводить название или ИНН..."
+                                @select="applyCompanySuggestion"
+                            />
+                            <input
+                                v-else
+                                v-model="quickSupplierForm.name"
+                                type="text"
+                                required
+                                placeholder="ООО «Поставщик»"
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                            />
                             <span v-if="quickSupplierForm.errors.name" class="text-xs text-danger mt-1 block">{{ quickSupplierForm.errors.name }}</span>
+                        </div>
+                        <div v-if="tenantCountry === 'RU'">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">ИНН</label>
+                            <CompanySuggestInput
+                                v-model="quickSupplierForm.requisites.inn"
+                                placeholder="Или начните вводить ИНН здесь..."
+                                @select="applyCompanySuggestion"
+                            />
+                            <span v-if="quickSupplierForm.errors['requisites.inn']" class="text-xs text-danger mt-1 block">{{ quickSupplierForm.errors['requisites.inn'] }}</span>
+                            <p class="text-[11px] text-gray-400 mt-1">Необязательно — остальные реквизиты (КПП, ОГРН, адрес) можно дозаполнить потом в карточке клиента.</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 flex items-center justify-between">

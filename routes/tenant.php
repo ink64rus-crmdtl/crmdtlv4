@@ -13,6 +13,7 @@ use App\Http\Controllers\Tenant\ClientController;
 use App\Http\Controllers\Tenant\CommunicationsController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
 use App\Http\Controllers\Tenant\CustomFieldController;
+use App\Http\Controllers\Tenant\DadataController;
 use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\DocumentController;
 use App\Http\Controllers\Tenant\DocumentTemplateController;
@@ -113,6 +114,10 @@ Route::middleware([
         Route::delete('/settings/legal-entities/{legalEntity}', [LegalEntityController::class, 'destroy'])->name('settings.legal-entities.destroy');
         Route::post('/settings/legal-entities/bulk-delete', [LegalEntityController::class, 'bulkDestroy'])->name('settings.legal-entities.bulk-destroy');
         Route::post('/settings/legal-entities/bulk-export', [LegalEntityController::class, 'bulkExport'])->name('settings.legal-entities.bulk-export');
+
+        // DaData: общий поиск организаций (не привязан к конкретному разделу —
+        // используется и юрлицами тенанта, и реквизитами B2B-клиентов)
+        Route::get('/dadata/party-suggest', [DadataController::class, 'suggestParty'])->name('dadata.party-suggest');
 
         // Настройки: Счета
         Route::get('/settings/accounts/bik-lookup', [AccountController::class, 'lookupBik'])->name('settings.accounts.bik-lookup');
