@@ -9,6 +9,7 @@ import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import Modal from '@/Components/Modal.vue';
+import DataTable from '@/Components/DataTable.vue';
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -21,6 +22,7 @@ import { appointmentCardLines, APPOINTMENT_FIELDS, DEFAULT_CARD_FIELDS, DEFAULT_
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -156,6 +158,13 @@ const activeColumns = computed(() => {
         .map(key => props.availableColumns.find(c => c.key === key))
         .filter(Boolean);
 });
+
+// client/vehicle/branch/employee (связи) — не сортируются простым orderBy.
+const SORTABLE_COLUMN_KEYS = ['start_at', 'status', 'comment'];
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+})));
 
 // Статусы, которые пользователь может выбрать вручную. "converted" выставляется
 // только конвертацией записи в заказ-наряд (Фаза 9.4), поэтому скрыт из ручного выбора.
@@ -335,17 +344,12 @@ const fetchFiltered = useDebounceFn(() => {
 }, 300);
 
 watch(search, () => fetchFiltered());
+
+const { sort, onSort } = useServerSort('operations.appointments.index', () => props.filters, () => ({ search: search.value }));
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.appointments.data.length > 0 && selectedIds.value.length === props.appointments.data.length,
-    set: (value) => {
-        selectedIds.value = value ? props.appointments.data.map(a => a.id) : [];
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные записи (${selectedIds.value.length})?`)) {
@@ -1141,99 +1145,83 @@ const toggleDefaultView = () => {
                     placeholder="Поиск по комментарию..."
                 />
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ col.label }}</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="appointment in appointments.data" :key="appointment.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="appointment.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <template v-if="col.key === 'start_at'">
-                                        <span class="font-medium">{{ appointment.start_at_display }}</span>
-                                        <span class="text-gray-400"> — {{ appointment.end_at_display?.split(' ')[1] }}</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'client'">
-                                        {{ appointment.client?.name || '—' }}
-                                        <div v-if="appointment.client?.phone" class="text-xs text-gray-400">{{ appointment.client.phone }}</div>
-                                    </template>
-                                    <template v-else-if="col.key === 'vehicle'">
-                                        <span v-if="appointment.vehicle">{{ appointment.vehicle.make?.name }} {{ appointment.vehicle.vehicle_model?.name }} <span v-if="appointment.vehicle.plate_number" class="text-gray-400">[{{ appointment.vehicle.plate_number }}]</span></span>
-                                        <span v-else class="text-gray-400">—</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'branch'">
-                                        {{ appointment.branch?.name || '—' }}
-                                    </template>
-                                    <template v-else-if="col.key === 'employee'">
-                                        <span v-if="appointment.employee">{{ appointment.employee.first_name }} {{ appointment.employee.last_name }}</span>
-                                        <span v-else-if="appointment.contractor" class="inline-flex items-center gap-1">
-                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"><i class="ri-briefcase-line"></i> Подрядчик</span>
-                                            {{ appointment.contractor.name }}
-                                        </span>
-                                        <span v-else class="text-gray-400">Не назначен</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'status'">
-                                        <StatusBadgeSelect
-                                            :model-value="appointment.status"
-                                            :options="appointment.status === 'converted' ? appointmentStatuses : selectableStatuses"
-                                            :disabled="appointment.status === 'converted'"
-                                            @update:model-value="v => changeStatus(appointment, v)"
-                                        />
-                                    </template>
-                                    <template v-else-if="col.key === 'comment'">
-                                        <span class="text-gray-500 dark:text-gray-400">{{ appointment.comment || '—' }}</span>
-                                    </template>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button
-                                        v-if="isConvertible(appointment)"
-                                        @click="convertAppointment(appointment)"
-                                        title="Клиент приехал — оформить заказ-наряд"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
-                                    >
-                                        <i class="ri-file-transfer-line"></i>
-                                    </button>
-                                    <button
-                                        v-else-if="appointment.work_order_id"
-                                        @click="router.visit(route('operations.work-orders.show', appointment.work_order_id))"
-                                        title="Перейти к заказ-наряду"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
-                                    >
-                                        <i class="ri-external-link-line"></i>
-                                    </button>
-                                    <button
-                                        @click="openModal(appointment)"
-                                        :disabled="appointment.status === 'converted'"
-                                        :title="appointment.status === 'converted' ? 'Запись оформлена в заказ-наряд — недоступна для правки' : 'Редактировать'"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white disabled:opacity-40 disabled:hover:bg-primary/10 disabled:hover:text-primary disabled:cursor-not-allowed"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button
-                                        @click="deleteAppointment(appointment)"
-                                        :disabled="appointment.status === 'converted' && !isAdmin"
-                                        :title="appointment.status === 'converted' ? (isAdmin ? 'Запись оформлена в заказ-наряд — удаление доступно администратору' : 'Запись оформлена в заказ-наряд — недоступна для удаления') : 'Удалить'"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-40 disabled:hover:bg-danger/10 disabled:hover:text-danger disabled:cursor-not-allowed"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="appointments.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Записи не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="appointments.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Записи не найдены."
+                    >
+                        <template #cell-start_at="{ row: appointment }">
+                            <span class="font-medium">{{ appointment.start_at_display }}</span>
+                            <span class="text-gray-400"> — {{ appointment.end_at_display?.split(' ')[1] }}</span>
+                        </template>
+                        <template #cell-client="{ row: appointment }">
+                            {{ appointment.client?.name || '—' }}
+                            <div v-if="appointment.client?.phone" class="text-xs text-gray-400">{{ appointment.client.phone }}</div>
+                        </template>
+                        <template #cell-vehicle="{ row: appointment }">
+                            <span v-if="appointment.vehicle">{{ appointment.vehicle.make?.name }} {{ appointment.vehicle.vehicle_model?.name }} <span v-if="appointment.vehicle.plate_number" class="text-gray-400">[{{ appointment.vehicle.plate_number }}]</span></span>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
+                        <template #cell-branch="{ row: appointment }">{{ appointment.branch?.name || '—' }}</template>
+                        <template #cell-employee="{ row: appointment }">
+                            <span v-if="appointment.employee">{{ appointment.employee.first_name }} {{ appointment.employee.last_name }}</span>
+                            <span v-else-if="appointment.contractor" class="inline-flex items-center gap-1">
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"><i class="ri-briefcase-line"></i> Подрядчик</span>
+                                {{ appointment.contractor.name }}
+                            </span>
+                            <span v-else class="text-gray-400">Не назначен</span>
+                        </template>
+                        <template #cell-status="{ row: appointment }">
+                            <StatusBadgeSelect
+                                :model-value="appointment.status"
+                                :options="appointment.status === 'converted' ? appointmentStatuses : selectableStatuses"
+                                :disabled="appointment.status === 'converted'"
+                                @update:model-value="v => changeStatus(appointment, v)"
+                            />
+                        </template>
+                        <template #cell-comment="{ row: appointment }">
+                            <span class="text-gray-500 dark:text-gray-400">{{ appointment.comment || '—' }}</span>
+                        </template>
+                        <template #actions="{ row: appointment }">
+                            <button
+                                v-if="isConvertible(appointment)"
+                                @click="convertAppointment(appointment)"
+                                title="Клиент приехал — оформить заказ-наряд"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
+                            >
+                                <i class="ri-file-transfer-line"></i>
+                            </button>
+                            <button
+                                v-else-if="appointment.work_order_id"
+                                @click="router.visit(route('operations.work-orders.show', appointment.work_order_id))"
+                                title="Перейти к заказ-наряду"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
+                            >
+                                <i class="ri-external-link-line"></i>
+                            </button>
+                            <button
+                                @click="openModal(appointment)"
+                                :disabled="appointment.status === 'converted'"
+                                :title="appointment.status === 'converted' ? 'Запись оформлена в заказ-наряд — недоступна для правки' : 'Редактировать'"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white disabled:opacity-40 disabled:hover:bg-primary/10 disabled:hover:text-primary disabled:cursor-not-allowed"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click="deleteAppointment(appointment)"
+                                :disabled="appointment.status === 'converted' && !isAdmin"
+                                :title="appointment.status === 'converted' ? (isAdmin ? 'Запись оформлена в заказ-наряд — удаление доступно администратору' : 'Запись оформлена в заказ-наряд — недоступна для удаления') : 'Удалить'"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-40 disabled:hover:bg-danger/10 disabled:hover:text-danger disabled:cursor-not-allowed"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="appointments" />
                 </template>

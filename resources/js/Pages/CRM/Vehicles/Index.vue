@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import PageHelper from '@/Components/PageHelper.vue';
+import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
@@ -11,6 +12,7 @@ import draggable from 'vuedraggable';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -64,6 +66,8 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('crm.vehicles.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
+
 const resetFilters = () => {
     Object.keys(filtersForm).forEach(key => {
         filtersForm[key] = '';
@@ -72,18 +76,8 @@ const resetFilters = () => {
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+// select-all/сброс выбора теперь считает сам DataTable (v-model="selectedIds").
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.vehicles.data.length > 0 && selectedIds.value.length === props.vehicles.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.vehicles.data.map(v => v.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные автомобили (${selectedIds.value.length})?`)) {
@@ -120,6 +114,13 @@ const activeColumns = computed(() => {
     const visibleKeys = props.listView?.visible_columns || [];
     return visibleKeys.map(key => props.availableColumns.find(c => c.key === key)).filter(Boolean);
 });
+
+// vehicle_info (составной: марка+модель+номер) и client (связь) — не сортируются простым orderBy.
+const SORTABLE_COLUMN_KEYS = ['plate_number', 'vin', 'year'];
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+})));
 
 const columnsForm = useForm({
     entity_type: 'vehicle',
@@ -368,101 +369,82 @@ const deleteVehicle = (vehicle) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                                    {{ col.label }}
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="vehicle in vehicles.data" :key="vehicle.id" @click="openPreview(vehicle)" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
-                                
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
-                                    <input type="checkbox" :value="vehicle.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="vehicles.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        row-clickable
+                        @row-click="openPreview"
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Автомобили не найдены."
+                    >
+                        <template #cell-vehicle_info="{ row: vehicle }">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 shrink-0">
+                                    <i class="ri-car-line"></i>
+                                </div>
+                                <div>
+                                    <div class="font-semibold group-hover:text-primary transition-colors">
+                                        {{ vehicle.make ? vehicle.make.name : '' }} {{ vehicle.vehicle_model ? vehicle.vehicle_model.name : '' }}
+                                    </div>
+                                    <div class="text-xs text-gray-500 font-normal mt-0.5">{{ vehicle.year ? vehicle.year + ' г.в.' : '' }}</div>
+                                </div>
+                            </div>
+                        </template>
 
-                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    
-                                    <template v-if="col.key === 'vehicle_info'">
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-8 h-8 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 shrink-0">
-                                                <i class="ri-car-line"></i>
-                                            </div>
-                                            <div>
-                                                <div class="font-semibold group-hover:text-primary transition-colors">
-                                                    {{ vehicle.make ? vehicle.make.name : '' }} {{ vehicle.vehicle_model ? vehicle.vehicle_model.name : '' }}
-                                                </div>
-                                                <div class="text-xs text-gray-500 font-normal mt-0.5">{{ vehicle.year ? vehicle.year + ' г.в.' : '' }}</div>
-                                            </div>
-                                        </div>
-                                    </template>
+                        <template #cell-client="{ row: vehicle }">
+                            <Link v-if="vehicle.client" :href="route('crm.clients.show', vehicle.client.id)" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-primary dark:hover:text-primary transition-colors" @click.stop>
+                                <i class="ri-user-line"></i> {{ vehicle.client.name }}
+                            </Link>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'client'">
-                                        <Link v-if="vehicle.client" :href="route('crm.clients.show', vehicle.client.id)" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-primary dark:hover:text-primary transition-colors" @click.stop>
-                                            <i class="ri-user-line"></i> {{ vehicle.client.name }}
-                                        </Link>
-                                        <span v-else class="text-gray-400">—</span>
-                                    </template>
+                        <template #cell-plate_number="{ row: vehicle }">
+                            <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-bold tracking-wide uppercase bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                                {{ vehicle.plate_number || '—' }}
+                            </span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'plate_number'">
-                                        <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-bold tracking-wide uppercase bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
-                                            {{ vehicle.plate_number || '—' }}
-                                        </span>
-                                    </template>
+                        <template #cell-vin="{ row: vehicle }">
+                            <span class="font-mono text-xs">{{ vehicle.vin || '—' }}</span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'vin'">
-                                        <span class="font-mono text-xs">{{ vehicle.vin || '—' }}</span>
-                                    </template>
+                        <template #cell-year="{ row: vehicle }">{{ vehicle.year || '—' }}</template>
 
-                                    <template v-else-if="col.key === 'year'">
-                                        {{ vehicle.year || '—' }}
-                                    </template>
+                        <!-- Кастомные поля — по одному динамическому слоту на определение (customFieldDefs),
+                             тот же fallback ("—" при отсутствии значения), что раньше был в v-else ветке. -->
+                        <template v-for="def in customFieldDefs" :key="def.key" #[`cell-${def.key}`]="{ row: vehicle }">
+                            {{ vehicle.custom_fields && vehicle.custom_fields[def.key] !== undefined && vehicle.custom_fields[def.key] !== null && vehicle.custom_fields[def.key] !== '' ? vehicle.custom_fields[def.key] : '—' }}
+                        </template>
 
-                                    <template v-else>
-                                        <!-- Кастомные поля -->
-                                        {{ vehicle.custom_fields && vehicle.custom_fields[col.key] !== undefined && vehicle.custom_fields[col.key] !== null && vehicle.custom_fields[col.key] !== '' ? vehicle.custom_fields[col.key] : '—' }}
-                                    </template>
-
-                                </td>
-
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <Link 
-                                        :href="route('crm.vehicles.show', vehicle.id)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
-                                        title="Карточка"
-                                        @click.stop
-                                    >
-                                        <i class="ri-eye-line"></i>
-                                    </Link>
-                                    <button 
-                                        @click.stop="openModal(vehicle)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать форму"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click.stop="deleteVehicle(vehicle)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="vehicles.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Автомобили не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                        <template #actions="{ row: vehicle }">
+                            <Link
+                                :href="route('crm.vehicles.show', vehicle.id)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
+                                title="Карточка"
+                                @click.stop
+                            >
+                                <i class="ri-eye-line"></i>
+                            </Link>
+                            <button
+                                @click.stop="openModal(vehicle)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать форму"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click.stop="deleteVehicle(vehicle)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="vehicles" />
             </div>

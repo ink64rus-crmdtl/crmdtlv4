@@ -4,9 +4,12 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import HRNav from '@/Components/HRNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
+import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     employees: Object,
@@ -24,6 +27,10 @@ const fetchFiltered = useDebounceFn(() => {
 
 watch(search, () => fetchFiltered());
 
+const { sort, onSort } = useServerSort('hr.payroll.index', () => props.filters, () => ({ search: search.value }));
+
+const { sort: contractorSort, onSort: onContractorSort, sortedRows: sortedContractors } = useClientSort(() => props.contractors);
+
 const getLocalizedLabel = (label) => {
     if (!label) return '';
     if (typeof label === 'string') {
@@ -35,6 +42,28 @@ const getLocalizedLabel = (label) => {
 const formatMoney = (cents) => {
     return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format((cents || 0) / 100);
 };
+
+// accrued/paid/deductions/balance — агрегаты, считаются в PHP уже ПОСЛЕ
+// серверной пагинации/сортировки Employee, сортировать их через orderBy
+// нельзя (сортировка отразила бы только текущую страницу).
+const employeeColumns = [
+    { key: 'name', label: 'Сотрудник', sortable: true, sortKey: 'last_name' },
+    { key: 'position', label: 'Должность' },
+    { key: 'accrued', label: 'Начислено', align: 'right' },
+    { key: 'paid', label: 'Выплачено', align: 'right' },
+    { key: 'deductions', label: 'Штрафы', align: 'right' },
+    { key: 'balance', label: 'К выплате', align: 'right' },
+];
+
+// Подрядчики — не пагинированный PHP-массив (см. contractorSettlements()),
+// поэтому сортировка полностью на клиенте и доступна по любой колонке.
+const contractorColumns = [
+    { key: 'name', label: 'Подрядчик', sortable: true },
+    { key: 'phone', label: 'Телефон', sortable: true },
+    { key: 'accrued', label: 'Начислено', align: 'right', sortable: true, sortKey: 'accrued_total' },
+    { key: 'paid', label: 'Выплачено', align: 'right', sortable: true, sortKey: 'paid_total' },
+    { key: 'balance', label: 'К выплате', align: 'right', sortable: true },
+];
 </script>
 
 <template>
@@ -78,42 +107,32 @@ const formatMoney = (cents) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Сотрудник</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Начислено</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Выплачено</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Штрафы</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">К выплате</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="employee in employees.data"
-                                :key="employee.id"
-                                @click="router.visit(route('hr.employees.show', employee.id))"
-                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer"
-                            >
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ employee.last_name }} {{ employee.first_name }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ employee.position ? getLocalizedLabel(employee.position.name) : '—' }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(employee.accrued_total) }}</td>
-                                <td class="py-4 px-6 text-sm text-success border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(employee.paid_total) }}</td>
-                                <td class="py-4 px-6 text-sm text-danger border-b border-gray-100 dark:border-gray-700/50 text-right">{{ employee.deductions_total > 0 ? '− ' + formatMoney(employee.deductions_total) : '—' }}</td>
-                                <td class="py-4 px-6 text-sm font-bold border-b border-gray-100 dark:border-gray-700/50 text-right" :class="employee.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(employee.balance) }}</td>
-                            </tr>
-                            <tr v-if="employees.data.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Активных сотрудников не найдено.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="employeeColumns"
+                        :rows="employees.data"
+                        row-clickable
+                        @row-click="employee => router.visit(route('hr.employees.show', employee.id))"
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Активных сотрудников не найдено."
+                    >
+                        <template #cell-name="{ row: employee }">
+                            <span class="font-semibold text-gray-800 dark:text-gray-200">{{ employee.last_name }} {{ employee.first_name }}</span>
+                        </template>
+                        <template #cell-position="{ row: employee }">
+                            {{ employee.position ? getLocalizedLabel(employee.position.name) : '—' }}
+                        </template>
+                        <template #cell-accrued="{ row: employee }">{{ formatMoney(employee.accrued_total) }}</template>
+                        <template #cell-paid="{ row: employee }">
+                            <span class="text-success">{{ formatMoney(employee.paid_total) }}</span>
+                        </template>
+                        <template #cell-deductions="{ row: employee }">
+                            <span class="text-danger">{{ employee.deductions_total > 0 ? '− ' + formatMoney(employee.deductions_total) : '—' }}</span>
+                        </template>
+                        <template #cell-balance="{ row: employee }">
+                            <span class="font-bold" :class="employee.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(employee.balance) }}</span>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="employees" />
             </div>
@@ -130,34 +149,27 @@ const formatMoney = (cents) => {
                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Клиенты с ролью «Подрядчик», привлечённые как исполнители услуг.</p>
                 </div>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Подрядчик</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Телефон</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Начислено</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Выплачено</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">К выплате</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="contractor in contractors"
-                                :key="contractor.id"
-                                @click="router.visit(route('crm.clients.show', contractor.id))"
-                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer"
-                            >
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ contractor.name }}
-                                    <span v-if="contractor.is_deleted" class="ml-1 text-xs font-normal text-gray-400">(удалён)</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ contractor.phone || '—' }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(contractor.accrued_total) }}</td>
-                                <td class="py-4 px-6 text-sm text-success border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(contractor.paid_total) }}</td>
-                                <td class="py-4 px-6 text-sm font-bold border-b border-gray-100 dark:border-gray-700/50 text-right" :class="contractor.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(contractor.balance) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="contractorColumns"
+                        :rows="sortedContractors"
+                        row-clickable
+                        @row-click="contractor => router.visit(route('crm.clients.show', contractor.id))"
+                        :sort="contractorSort"
+                        @sort="onContractorSort"
+                    >
+                        <template #cell-name="{ row: contractor }">
+                            <span class="font-semibold text-gray-800 dark:text-gray-200">{{ contractor.name }}</span>
+                            <span v-if="contractor.is_deleted" class="ml-1 text-xs font-normal text-gray-400">(удалён)</span>
+                        </template>
+                        <template #cell-phone="{ row: contractor }">{{ contractor.phone || '—' }}</template>
+                        <template #cell-accrued="{ row: contractor }">{{ formatMoney(contractor.accrued_total) }}</template>
+                        <template #cell-paid="{ row: contractor }">
+                            <span class="text-success">{{ formatMoney(contractor.paid_total) }}</span>
+                        </template>
+                        <template #cell-balance="{ row: contractor }">
+                            <span class="font-bold" :class="contractor.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(contractor.balance) }}</span>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
         </div>

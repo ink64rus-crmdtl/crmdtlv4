@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import WarehouseNav from '@/Components/WarehouseNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
@@ -10,6 +11,7 @@ import Offcanvas from '@/Components/Offcanvas.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -31,6 +33,17 @@ const activeColumns = computed(() => {
         .map(key => props.availableColumns.find(c => c.key === key))
         .filter(Boolean);
 });
+
+// Сортировка — только реальные колонки products (белый список зеркалит
+// ProductController::index()). category — связь, name — переводимый JSON
+// (сортировка по сырому JSON дала бы бессмысленный порядок) — не sortable.
+const SORTABLE_COLUMN_KEYS = ['sku', 'unit', 'accounting_type', 'status'];
+const SORT_KEY_MAP = { status: 'is_active' };
+const dataTableColumns = computed(() => activeColumns.value.map(col => (
+    SORTABLE_COLUMN_KEYS.includes(col.key)
+        ? { ...col, sortable: true, sortKey: SORT_KEY_MAP[col.key] }
+        : col
+)));
 
 const form = useForm({
     product_category_id: '',
@@ -67,6 +80,8 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('warehouse.products.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
+
 const resetFilters = () => {
     filtersForm.product_category_id = '';
     filtersForm.accounting_type = '';
@@ -75,18 +90,8 @@ const resetFilters = () => {
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+// select-all/сброс выбора теперь считает сам DataTable (v-model="selectedIds").
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.products.data.length > 0 && selectedIds.value.length === props.products.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.products.data.map(p => p.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные товары (${selectedIds.value.length})?`)) {
@@ -243,63 +248,47 @@ const submitCategory = () => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ col.label }}</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="product in products.data" :key="product.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="product.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <template v-if="col.key === 'category'">
-                                        <span v-if="product.category" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
-                                            <i class="ri-folder-line"></i> {{ getLocalizedLabel(product.category.name) }}
-                                        </span>
-                                        <span v-else class="text-gray-400 text-xs">—</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'sku'">
-                                        <span class="font-mono text-xs">{{ product.sku || '—' }}</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'name'">
-                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(product.name) }}</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'unit'">
-                                        {{ product.unit }}
-                                    </template>
-                                    <template v-else-if="col.key === 'accounting_type'">
-                                        <span v-if="product.accounting_type === 'average'" class="inline-flex items-center gap-1 text-xs font-medium text-info"><i class="ri-scales-3-line"></i> Средневзвешенный</span>
-                                        <span v-else class="inline-flex items-center gap-1 text-xs font-medium text-warning"><i class="ri-stack-line"></i> Партионный (FIFO)</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'status'">
-                                        <span :class="[product.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                            {{ product.is_active ? 'Активно' : 'Неактивно' }}
-                                        </span>
-                                    </template>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button @click="openModal(product)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button @click="deleteProduct(product)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="products.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Товары не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="products.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        empty-message="Товары не найдены."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-category="{ row: product }">
+                            <span v-if="product.category" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                <i class="ri-folder-line"></i> {{ getLocalizedLabel(product.category.name) }}
+                            </span>
+                            <span v-else class="text-gray-400 text-xs">—</span>
+                        </template>
+                        <template #cell-sku="{ row: product }">
+                            <span class="font-mono text-xs">{{ product.sku || '—' }}</span>
+                        </template>
+                        <template #cell-name="{ row: product }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(product.name) }}</span>
+                        </template>
+                        <template #cell-unit="{ row: product }">{{ product.unit }}</template>
+                        <template #cell-accounting_type="{ row: product }">
+                            <span v-if="product.accounting_type === 'average'" class="inline-flex items-center gap-1 text-xs font-medium text-info"><i class="ri-scales-3-line"></i> Средневзвешенный</span>
+                            <span v-else class="inline-flex items-center gap-1 text-xs font-medium text-warning"><i class="ri-stack-line"></i> Партионный (FIFO)</span>
+                        </template>
+                        <template #cell-status="{ row: product }">
+                            <span :class="[product.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                {{ product.is_active ? 'Активно' : 'Неактивно' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: product }">
+                            <button @click="openModal(product)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button @click="deleteProduct(product)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="products" />
             </div>

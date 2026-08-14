@@ -53,7 +53,7 @@ class GoodsReceiptController extends Controller
             // что withSum() у WorkOrderController::index() для paid_amount.
             ->addSelect($this->debtSubqueries());
 
-        $query = QueryFilterService::apply($query, $request->all(), ['supplier_document_number', 'supplier.name']);
+        $query = QueryFilterService::apply($query, $request->all(), ['supplier_document_number', 'supplier.name'], allowedSorts: ['receipt_date', 'status', 'payment_status']);
 
         if ($request->filled('filters.payment_status')) {
             $query->where('payment_status', $request->input('filters.payment_status'));

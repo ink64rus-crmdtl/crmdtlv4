@@ -6,9 +6,11 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import CompanySuggestInput from '@/Components/CompanySuggestInput.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -114,21 +116,22 @@ const fetchFiltered = useDebounceFn(() => {
 }, 300);
 
 watch(search, () => fetchFiltered());
+
+const { sort, onSort } = useServerSort('settings.legal-entities.index', () => props.filters, () => ({ search: search.value }));
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
 
-const selectAll = computed({
-    get: () => props.legalEntities.data.length > 0 && selectedIds.value.length === props.legalEntities.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.legalEntities.data.map(e => e.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
+// jurisdiction (единая для тенанта, не своя колонка), branches/accounts (связи) — не сортируются.
+const legalEntityColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'jurisdiction', label: 'Юрисдикция' },
+    { key: 'tax_id', label: 'Налоговый номер', sortable: true },
+    { key: 'branches', label: 'Локации' },
+    { key: 'accounts', label: 'Расчетные счета' },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные юридические лица (${selectedIds.value.length})?`)) {
@@ -362,85 +365,68 @@ const deleteAccount = (account) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрисдикция</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Налоговый номер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локации</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Расчетные счета</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="entity in legalEntities.data" :key="entity.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="entity.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">
-                                    <div class="flex items-center gap-2">
-                                        <i class="ri-bank-line text-primary"></i>
-                                        {{ entity.name }}
-                                    </div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
-                                        {{ countryConfig?.name || tenantCountry }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entity.tax_id || '—' }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="flex flex-wrap gap-1" v-if="entity.branches && entity.branches.length > 0">
-                                        <span v-for="b in entity.branches" :key="b.id" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
-                                            <i class="ri-store-2-line"></i> {{ b.name }}
-                                        </span>
-                                    </div>
-                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">—</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span class="inline-flex items-center gap-1.5 font-medium text-xs text-gray-600 dark:text-gray-400">
-                                        <i class="ri-wallet-3-line"></i> {{ entity.accounts?.length || 0 }} сч.
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span
-                                        :class="[
-                                            entity.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
-                                            'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
-                                        ]"
-                                    >
-                                        {{ entity.is_active ? 'Активно' : 'Неактивно' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button 
-                                        @click="openModal(entity)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click="deleteEntity(entity)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="legalEntities.data.length === 0">
-                                <td colspan="8" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Юридические лица еще не добавлены. Нажмите "Добавить юрлицо".
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="legalEntityColumns"
+                        :rows="legalEntities.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message='Юридические лица еще не добавлены. Нажмите "Добавить юрлицо".'
+                    >
+                        <template #cell-name="{ row: entity }">
+                            <div class="flex items-center gap-2">
+                                <i class="ri-bank-line text-primary"></i>
+                                {{ entity.name }}
+                            </div>
+                        </template>
+                        <template #cell-jurisdiction>
+                            <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                {{ countryConfig?.name || tenantCountry }}
+                            </span>
+                        </template>
+                        <template #cell-tax_id="{ row: entity }">{{ entity.tax_id || '—' }}</template>
+                        <template #cell-branches="{ row: entity }">
+                            <div class="flex flex-wrap gap-1" v-if="entity.branches && entity.branches.length > 0">
+                                <span v-for="b in entity.branches" :key="b.id" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                    <i class="ri-store-2-line"></i> {{ b.name }}
+                                </span>
+                            </div>
+                            <span v-else class="text-xs text-gray-400 dark:text-gray-500">—</span>
+                        </template>
+                        <template #cell-accounts="{ row: entity }">
+                            <span class="inline-flex items-center gap-1.5 font-medium text-xs text-gray-600 dark:text-gray-400">
+                                <i class="ri-wallet-3-line"></i> {{ entity.accounts?.length || 0 }} сч.
+                            </span>
+                        </template>
+                        <template #cell-status="{ row: entity }">
+                            <span
+                                :class="[
+                                    entity.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
+                                    'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
+                                ]"
+                            >
+                                {{ entity.is_active ? 'Активно' : 'Неактивно' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: entity }">
+                            <button
+                                @click="openModal(entity)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click="deleteEntity(entity)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="legalEntities" />
             </div>

@@ -3,9 +3,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import FinanceNav from '@/Components/FinanceNav.vue';
 import Pagination from '@/Components/Pagination.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { reactive, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 
 const props = defineProps({
     snapshots: Object,
@@ -25,9 +27,22 @@ const fetchFiltered = useDebounceFn(() => {
 
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('finance.snapshots.index', () => props.filters, () => ({ filters: filtersForm }));
+
 const formatMoney = (amount) => {
     return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format((amount || 0) / 100);
 };
+
+// account (связь) и transfers (составная ячейка in+out) — не сортируются простым orderBy.
+const snapshotColumns = [
+    { key: 'date', label: 'Дата', sortable: true, sortKey: 'snapshot_date' },
+    { key: 'account', label: 'Счет' },
+    { key: 'opening_balance', label: 'Остаток на начало', align: 'right', sortable: true },
+    { key: 'income', label: 'Приход', align: 'right', sortable: true, sortKey: 'income_total' },
+    { key: 'expense', label: 'Расход', align: 'right', sortable: true, sortKey: 'expense_total' },
+    { key: 'transfers', label: 'Переводы вх./исх.', align: 'right' },
+    { key: 'closing_balance', label: 'Остаток на конец', align: 'right', sortable: true },
+];
 </script>
 
 <template>
@@ -59,41 +74,30 @@ const formatMoney = (amount) => {
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Дата</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Счет</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Остаток на начало</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Приход</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Расход</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Переводы вх./исх.</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Остаток на конец</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="s in snapshots.data" :key="s.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ new Date(s.snapshot_date).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric'}) }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 font-medium">
-                                    {{ s.account ? s.account.name : '—' }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(s.opening_balance) }}</td>
-                                <td class="py-4 px-6 text-sm text-success border-b border-gray-100 dark:border-gray-700/50 text-right">+{{ formatMoney(s.income_total) }}</td>
-                                <td class="py-4 px-6 text-sm text-danger border-b border-gray-100 dark:border-gray-700/50 text-right">−{{ formatMoney(s.expense_total) }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-500 border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                    +{{ formatMoney(s.transfer_in_total) }} / −{{ formatMoney(s.transfer_out_total) }}
-                                </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(s.closing_balance) }}</td>
-                            </tr>
-                            <tr v-if="snapshots.data.length === 0">
-                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Снэпшотов пока нет. Они появляются автоматически каждую ночь в 00:00, либо после ручного запуска <code>php artisan tenants:run snapshots:accounts</code>.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable :columns="snapshotColumns" :rows="snapshots.data" :sort="sort" @sort="onSort">
+                        <template #cell-date="{ row: s }">
+                            {{ new Date(s.snapshot_date).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric'}) }}
+                        </template>
+                        <template #cell-account="{ row: s }">
+                            <span class="font-medium">{{ s.account ? s.account.name : '—' }}</span>
+                        </template>
+                        <template #cell-opening_balance="{ row: s }">{{ formatMoney(s.opening_balance) }}</template>
+                        <template #cell-income="{ row: s }">
+                            <span class="text-success">+{{ formatMoney(s.income_total) }}</span>
+                        </template>
+                        <template #cell-expense="{ row: s }">
+                            <span class="text-danger">−{{ formatMoney(s.expense_total) }}</span>
+                        </template>
+                        <template #cell-transfers="{ row: s }">
+                            <span class="text-gray-500">+{{ formatMoney(s.transfer_in_total) }} / −{{ formatMoney(s.transfer_out_total) }}</span>
+                        </template>
+                        <template #cell-closing_balance="{ row: s }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(s.closing_balance) }}</span>
+                        </template>
+                        <template #empty>
+                            Снэпшотов пока нет. Они появляются автоматически каждую ночь в 00:00, либо после ручного запуска <code>php artisan tenants:run snapshots:accounts</code>.
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="snapshots" />
             </div>

@@ -6,10 +6,12 @@ import Pagination from '@/Components/Pagination.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import CalendarColorPicker from '@/Components/CalendarColorPicker.vue';
 import HRNav from '@/Components/HRNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -67,6 +69,8 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('hr.employees.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
+
 const resetFilters = () => {
     Object.keys(filtersForm).forEach(key => {
         filtersForm[key] = '';
@@ -76,17 +80,6 @@ const resetFilters = () => {
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.employees.data.length > 0 && selectedIds.value.length === props.employees.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.employees.data.map(e => e.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранных сотрудников (${selectedIds.value.length})? Это также удалит их доступ в CRM.`)) {
@@ -123,6 +116,15 @@ const activeColumns = computed(() => {
     const visibleKeys = props.listView?.visible_columns || [];
     return visibleKeys.map(key => props.availableColumns.find(c => c.key === key)).filter(Boolean);
 });
+
+// position_type (составной), branch (связь) и crm_access (вычисляемое) — не сортируются простым orderBy.
+const SORTABLE_COLUMN_KEYS = ['employee_name', 'phone', 'personal_email', 'birth_date', 'hire_date', 'termination_date'];
+const SORT_KEY_MAP = { employee_name: 'last_name' };
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+    sortKey: SORT_KEY_MAP[col.key],
+})));
 
 const columnsForm = useForm({
     entity_type: 'employee',
@@ -367,124 +369,91 @@ const employeeTypes = {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                                    {{ col.label }}
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Клик по строке открывает Offcanvas Быстрого просмотра -->
-                            <tr v-for="employee in employees.data" :key="employee.id" @click="openPreview(employee)" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
-                                
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
-                                    <input type="checkbox" :value="employee.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="employees.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        row-clickable
+                        @row-click="openPreview"
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Сотрудники не найдены."
+                    >
+                        <template #cell-employee_name="{ row: employee }">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                                    {{ employee.first_name.charAt(0) }}
+                                </div>
+                                <div>
+                                    <div class="text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors font-semibold">{{ employee.last_name }} {{ employee.first_name }} {{ employee.middle_name || '' }}</div>
+                                    <div class="text-xs text-gray-500 font-normal mt-0.5">{{ employee.phone || 'Нет телефона' }}</div>
+                                </div>
+                            </div>
+                        </template>
 
-                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    
-                                    <template v-if="col.key === 'employee_name'">
-                                        <div class="flex items-center gap-3">
-                                            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
-                                                {{ employee.first_name.charAt(0) }}
-                                            </div>
-                                            <div>
-                                                <div class="text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors font-semibold">{{ employee.last_name }} {{ employee.first_name }} {{ employee.middle_name || '' }}</div>
-                                                <div class="text-xs text-gray-500 font-normal mt-0.5">{{ employee.phone || 'Нет телефона' }}</div>
-                                            </div>
-                                        </div>
-                                    </template>
+                        <template #cell-position_type="{ row: employee }">
+                            <div class="font-medium">{{ employee.position ? getLocalizedLabel(employee.position.name) : 'Без должности' }}</div>
+                            <div class="text-xs text-gray-500 mt-0.5">{{ employeeTypes[employee.type] }}</div>
+                        </template>
 
-                                    <template v-else-if="col.key === 'position_type'">
-                                        <div class="font-medium">{{ employee.position ? getLocalizedLabel(employee.position.name) : 'Без должности' }}</div>
-                                        <div class="text-xs text-gray-500 mt-0.5">{{ employeeTypes[employee.type] }}</div>
-                                    </template>
+                        <template #cell-branch="{ row: employee }">
+                            <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                <i class="ri-store-2-line"></i> {{ employee.branch ? employee.branch.name : '—' }}
+                            </span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'branch'">
-                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
-                                            <i class="ri-store-2-line"></i> {{ employee.branch ? employee.branch.name : '—' }}
-                                        </span>
-                                    </template>
+                        <template #cell-crm_access="{ row: employee }">
+                            <div v-if="employee.user_id" class="flex flex-col items-start gap-1">
+                                <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-success/10 text-success">
+                                    <i class="ri-shield-keyhole-line"></i> Есть доступ
+                                </span>
+                                <span class="text-xs text-gray-500 font-medium">
+                                    Роль: {{ employee.user?.roles && employee.user.roles.length > 0 ? employee.user.roles[0].name : 'Нет роли' }}
+                                </span>
+                            </div>
+                            <span v-else class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                Нет доступа
+                            </span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'crm_access'">
-                                        <div v-if="employee.user_id" class="flex flex-col items-start gap-1">
-                                            <span class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-success/10 text-success">
-                                                <i class="ri-shield-keyhole-line"></i> Есть доступ
-                                            </span>
-                                            <span class="text-xs text-gray-500 font-medium">
-                                                Роль: {{ employee.user?.roles && employee.user.roles.length > 0 ? employee.user.roles[0].name : 'Нет роли' }}
-                                            </span>
-                                        </div>
-                                        <span v-else class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                                            Нет доступа
-                                        </span>
-                                    </template>
+                        <template #cell-phone="{ row: employee }">{{ employee.phone || '—' }}</template>
+                        <template #cell-personal_email="{ row: employee }">{{ employee.personal_email || '—' }}</template>
+                        <template #cell-birth_date="{ row: employee }">{{ employee.birth_date || '—' }}</template>
+                        <template #cell-hire_date="{ row: employee }">{{ employee.hire_date || '—' }}</template>
+                        <template #cell-termination_date="{ row: employee }">{{ employee.termination_date || '—' }}</template>
 
-                                    <template v-else-if="col.key === 'phone'">
-                                        {{ employee.phone || '—' }}
-                                    </template>
+                        <!-- Кастомные поля — по одному динамическому слоту на определение (customFieldDefs) -->
+                        <template v-for="def in customFieldDefs" :key="def.key" #[`cell-${def.key}`]="{ row: employee }">
+                            {{ employee.custom_fields && employee.custom_fields[def.key] !== undefined && employee.custom_fields[def.key] !== null && employee.custom_fields[def.key] !== '' ? employee.custom_fields[def.key] : '—' }}
+                        </template>
 
-                                    <template v-else-if="col.key === 'personal_email'">
-                                        {{ employee.personal_email || '—' }}
-                                    </template>
-
-                                    <template v-else-if="col.key === 'birth_date'">
-                                        {{ employee.birth_date || '—' }}
-                                    </template>
-
-                                    <template v-else-if="col.key === 'hire_date'">
-                                        {{ employee.hire_date || '—' }}
-                                    </template>
-
-                                    <template v-else-if="col.key === 'termination_date'">
-                                        {{ employee.termination_date || '—' }}
-                                    </template>
-
-                                    <template v-else>
-                                        <!-- Кастомные поля -->
-                                        {{ employee.custom_fields && employee.custom_fields[col.key] !== undefined && employee.custom_fields[col.key] !== null && employee.custom_fields[col.key] !== '' ? employee.custom_fields[col.key] : '—' }}
-                                    </template>
-
-                                </td>
-
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <Link 
-                                        :href="route('hr.employees.show', employee.id)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
-                                        title="Карточка"
-                                        @click.stop
-                                    >
-                                        <i class="ri-eye-line"></i>
-                                    </Link>
-                                    <button 
-                                        @click.stop="openModal(employee)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать форму"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click.stop="deleteEmployee(employee)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="employees.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Сотрудники не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                        <template #actions="{ row: employee }">
+                            <Link
+                                :href="route('hr.employees.show', employee.id)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
+                                title="Карточка"
+                                @click.stop
+                            >
+                                <i class="ri-eye-line"></i>
+                            </Link>
+                            <button
+                                @click.stop="openModal(employee)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать форму"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click.stop="deleteEmployee(employee)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="employees" />
             </div>

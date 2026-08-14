@@ -32,6 +32,7 @@ class PayrollController extends Controller
             $query,
             $request->all(),
             ['first_name', 'last_name', 'phone'],
+            allowedSorts: ['last_name', 'first_name', 'phone']
         );
 
         if (! $request->has('sort_by')) {

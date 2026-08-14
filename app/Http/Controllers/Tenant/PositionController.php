@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
 use App\Models\Position;
 use App\Services\QueryFilterService;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -15,14 +15,15 @@ class PositionController extends Controller
     public function index(): Response
     {
         $query = Position::query();
-        
+
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
-            ['name']
+            ['name'],
+            allowedSorts: ['payroll_role', 'is_active']
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 

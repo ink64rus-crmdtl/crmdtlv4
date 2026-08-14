@@ -22,7 +22,8 @@ class LegalEntityController extends Controller
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
-            ['name', 'tax_id']
+            ['name', 'tax_id'],
+            allowedSorts: ['name', 'tax_id', 'is_active']
         );
 
         if (! request()->has('sort_by')) {

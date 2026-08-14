@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\TransactionCategory;
-use App\Models\ListView;
-use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
+use App\Models\ListView;
+use App\Models\TransactionCategory;
+use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -16,14 +16,15 @@ class TransactionCategoryController extends Controller
     public function index(): Response
     {
         $query = TransactionCategory::query();
-        
+
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
-            ['name']
+            ['name'],
+            allowedSorts: ['type', 'is_active']
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('type')->orderBy('id', 'desc');
         }
 
@@ -86,6 +87,7 @@ class TransactionCategoryController extends Controller
     public function destroy(TransactionCategory $category)
     {
         $category->delete();
+
         return redirect()->back()->with('success', 'Статья удалена');
     }
 

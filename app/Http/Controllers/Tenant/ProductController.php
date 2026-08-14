@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
+use App\Models\ListView;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Warehouse;
-use App\Models\ListView;
 use App\Services\QueryFilterService;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -18,19 +18,20 @@ class ProductController extends Controller
     public function index(Request $request): Response
     {
         $query = Product::with(['category', 'preferredWarehouse']);
-        
+
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
-            ['name', 'sku']
+            ['name', 'sku'],
+            allowedSorts: ['sku', 'unit', 'accounting_type', 'is_active']
         );
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
-        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+        if (($request->wantsJson() || $request->ajax()) && ! $request->hasHeader('X-Inertia')) {
             return response()->json($query->paginate(15));
         }
 
@@ -116,6 +117,7 @@ class ProductController extends Controller
     public function destroy(Product $product)
     {
         $product->delete();
+
         return redirect()->back()->with('success', 'Товар удален');
     }
 

@@ -2,14 +2,29 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import WarehouseNav from '@/Components/WarehouseNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     suppliers: { type: Array, default: () => [] },
 });
 
 const formatMoney = (cents) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format((cents || 0) / 100);
+
+const supplierColumns = [
+    { key: 'name', label: 'Поставщик', sortable: true },
+    { key: 'phone', label: 'Телефон', sortable: true },
+    { key: 'receipts_count', label: 'Накладных', align: 'right', sortable: true },
+    { key: 'accrued_total', label: 'Оприходовано', align: 'right', sortable: true },
+    { key: 'paid_total', label: 'Оплачено', align: 'right', sortable: true },
+    { key: 'balance', label: 'Остаток', align: 'right', sortable: true },
+];
+
+// Страница без пагинации (весь список поставщиков-должников загружен целиком) —
+// сортировка клиентская, не серверная. См. useClientSort.js.
+const { sort, onSort, sortedRows } = useClientSort(() => props.suppliers);
 
 const totalBalance = computed(() => props.suppliers.reduce((sum, s) => sum + s.balance, 0));
 const suppliersInDebt = computed(() => props.suppliers.filter(s => s.balance > 0).length);
@@ -72,39 +87,28 @@ const suppliersInDebt = computed(() => props.suppliers.filter(s => s.balance > 0
                     </Link>
                 </div>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Поставщик</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Телефон</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Накладных</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Оприходовано</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Оплачено</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Остаток</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="supplier in suppliers"
-                                :key="supplier.id"
-                                @click="router.visit(route('crm.clients.show', supplier.id))"
-                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer"
-                            >
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ supplier.name }}
-                                    <span v-if="supplier.is_deleted" class="ml-1 text-xs font-normal text-gray-400">(удалён)</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ supplier.phone || '—' }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ supplier.receipts_count }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(supplier.accrued_total) }}</td>
-                                <td class="py-4 px-6 text-sm text-success border-b border-gray-100 dark:border-gray-700/50 text-right">{{ formatMoney(supplier.paid_total) }}</td>
-                                <td class="py-4 px-6 text-sm font-bold border-b border-gray-100 dark:border-gray-700/50 text-right" :class="supplier.balance > 0 ? 'text-danger' : 'text-gray-400'">{{ formatMoney(supplier.balance) }}</td>
-                            </tr>
-                            <tr v-if="suppliers.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Пока нет ни одной приходной накладной.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="supplierColumns"
+                        :rows="sortedRows"
+                        row-clickable
+                        @row-click="supplier => router.visit(route('crm.clients.show', supplier.id))"
+                        empty-message="Пока нет ни одной приходной накладной."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-name="{ row: supplier }">
+                            <span class="font-semibold text-gray-800 dark:text-gray-200">{{ supplier.name }}</span>
+                            <span v-if="supplier.is_deleted" class="ml-1 text-xs font-normal text-gray-400">(удалён)</span>
+                        </template>
+                        <template #cell-phone="{ row: supplier }">{{ supplier.phone || '—' }}</template>
+                        <template #cell-accrued_total="{ row: supplier }">{{ formatMoney(supplier.accrued_total) }}</template>
+                        <template #cell-paid_total="{ row: supplier }">
+                            <span class="text-success">{{ formatMoney(supplier.paid_total) }}</span>
+                        </template>
+                        <template #cell-balance="{ row: supplier }">
+                            <span class="font-bold" :class="supplier.balance > 0 ? 'text-danger' : 'text-gray-400'">{{ formatMoney(supplier.balance) }}</span>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
         </div>

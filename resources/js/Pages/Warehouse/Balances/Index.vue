@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import WarehouseNav from '@/Components/WarehouseNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
@@ -10,6 +11,7 @@ import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -28,6 +30,18 @@ const activeColumns = computed(() => {
         .map(key => props.availableColumns.find(c => c.key === key))
         .filter(Boolean);
 });
+
+// Числовые колонки — выравнивание по правому краю (и в шапке, и в ячейках).
+const RIGHT_ALIGNED_COLUMNS = ['quantity', 'avg_cost', 'total_value'];
+// Сортировка — только реальные колонки stock_balances (белый список зеркалит
+// StockBalanceController::index()). total_value — вычисляемый аксессор
+// (quantity * avg_cost), не сортируется простым orderBy.
+const SORTABLE_COLUMN_KEYS = ['quantity', 'avg_cost'];
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    align: RIGHT_ALIGNED_COLUMNS.includes(col.key) ? 'right' : undefined,
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+})));
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -50,6 +64,8 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('warehouse.balances.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
+
 const resetFilters = () => {
     filtersForm.warehouse_id = '';
     filtersForm.product_category_id = '';
@@ -58,18 +74,8 @@ const resetFilters = () => {
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+// select-all/сброс выбора теперь считает сам DataTable (v-model="selectedIds").
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.balances.data.length > 0 && selectedIds.value.length === props.balances.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.balances.data.map(b => b.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkExport = async () => {
     try {
@@ -149,53 +155,35 @@ const formatMoney = (amount) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', ['quantity','avg_cost','total_value'].includes(col.key) ? 'text-right' : '']">{{ col.label }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="balance in balances.data" :key="balance.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="balance.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td v-for="col in activeColumns" :key="col.key" :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', ['quantity','avg_cost','total_value'].includes(col.key) ? 'text-right' : '']">
-                                    <template v-if="col.key === 'warehouse'">
-                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
-                                            <i class="ri-building-4-line"></i> {{ balance.warehouse ? balance.warehouse.name : '—' }}
-                                        </span>
-                                    </template>
-                                    <template v-else-if="col.key === 'category'">
-                                        {{ balance.product && balance.product.category ? getLocalizedLabel(balance.product.category.name) : '—' }}
-                                    </template>
-                                    <template v-else-if="col.key === 'product'">
-                                        <div class="font-bold text-gray-800 dark:text-gray-200">{{ balance.product ? getLocalizedLabel(balance.product.name) : '—' }}</div>
-                                        <div class="text-xs text-gray-500 font-mono mt-0.5">{{ balance.product ? balance.product.sku : '' }}</div>
-                                    </template>
-                                    <template v-else-if="col.key === 'quantity'">
-                                        <span :class="[balance.quantity <= 0 ? 'text-danger' : 'text-gray-800 dark:text-gray-200', 'font-bold']">
-                                            {{ parseFloat(balance.quantity) }} {{ balance.product ? balance.product.unit : '' }}
-                                        </span>
-                                    </template>
-                                    <template v-else-if="col.key === 'avg_cost'">
-                                        {{ formatMoney(balance.avg_cost) }}
-                                    </template>
-                                    <template v-else-if="col.key === 'total_value'">
-                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(balance.quantity * balance.avg_cost) }}</span>
-                                    </template>
-                                </td>
-                            </tr>
-                            <tr v-if="balances.data.length === 0">
-                                <td :colspan="activeColumns.length + 1" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Остатки не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="balances.data"
+                        selectable
+                        v-model="selectedIds"
+                        empty-message="Остатки не найдены."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-warehouse="{ row: balance }">
+                            <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                <i class="ri-building-4-line"></i> {{ balance.warehouse ? balance.warehouse.name : '—' }}
+                            </span>
+                        </template>
+                        <template #cell-category="{ row: balance }">{{ balance.product && balance.product.category ? getLocalizedLabel(balance.product.category.name) : '—' }}</template>
+                        <template #cell-product="{ row: balance }">
+                            <div class="font-bold text-gray-800 dark:text-gray-200">{{ balance.product ? getLocalizedLabel(balance.product.name) : '—' }}</div>
+                            <div class="text-xs text-gray-500 font-mono mt-0.5">{{ balance.product ? balance.product.sku : '' }}</div>
+                        </template>
+                        <template #cell-quantity="{ row: balance }">
+                            <span :class="[balance.quantity <= 0 ? 'text-danger' : 'text-gray-800 dark:text-gray-200', 'font-bold']">
+                                {{ parseFloat(balance.quantity) }} {{ balance.product ? balance.product.unit : '' }}
+                            </span>
+                        </template>
+                        <template #cell-avg_cost="{ row: balance }">{{ formatMoney(balance.avg_cost) }}</template>
+                        <template #cell-total_value="{ row: balance }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(balance.quantity * balance.avg_cost) }}</span>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="balances" />
             </div>

@@ -7,9 +7,11 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -33,6 +35,18 @@ const activeColumns = computed(() => {
         .map(key => props.availableColumns.find(c => c.key === key))
         .filter(Boolean);
 });
+// Сортировка — только по реальным колонкам таблицы transactions (белый список
+// зеркалит TransactionController::index()). branch/account/category — связи,
+// не сортируются простым orderBy.
+const SORT_KEY_MAP = { date: 'transaction_date', reconciled: 'is_reconciled' };
+const SORTABLE_COLUMN_KEYS = ['date', 'type', 'amount', 'comment', 'reconciled'];
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    align: col.key === 'amount' ? 'right' : (col.key === 'reconciled' ? 'center' : undefined),
+    cellClass: col.key === 'amount' ? 'font-bold' : undefined,
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+    sortKey: SORT_KEY_MAP[col.key],
+})));
 const editingTransaction = ref(null);
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -162,6 +176,8 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('finance.transactions.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
+
 const resetFilters = () => {
     filtersForm.account_id = '';
     filtersForm.branch_id = '';
@@ -173,17 +189,6 @@ const resetFilters = () => {
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.transactions.data.length > 0 && selectedIds.value.length === props.transactions.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.transactions.data.map(t => t.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkExport = async () => {
     try {
@@ -311,81 +316,67 @@ const totalBalance = computed(() => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', col.key === 'amount' ? 'text-right' : (col.key === 'reconciled' ? 'text-center' : '')]">{{ col.label }}</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="tx in transactions.data" :key="tx.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="tx.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td v-for="col in activeColumns" :key="col.key" :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', col.key === 'amount' ? 'text-right font-bold' : (col.key === 'reconciled' ? 'text-center' : '')]">
-                                    <template v-if="col.key === 'date'">
-                                        {{ new Date(tx.transaction_date).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric'}) }}
-                                        <i v-if="tx.edited_at" class="ri-edit-2-line text-gray-400 ml-1" :title="`Отредактировано ${new Date(tx.edited_at).toLocaleString('ru-RU')}${tx.editor ? ' — ' + tx.editor.name : ''}`"></i>
-                                    </template>
-                                    <template v-else-if="col.key === 'type'">
-                                        <span :class="[transactionTypes[tx.type]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                            <i :class="transactionTypes[tx.type]?.icon"></i> {{ transactionTypes[tx.type]?.label || tx.type }}
-                                        </span>
-                                    </template>
-                                    <template v-else-if="col.key === 'branch'">
-                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300" :title="tx.branch && tx.branch.deleted_at ? 'Локация удалена из системы' : ''">
-                                            <i class="ri-store-2-line"></i> {{ tx.branch ? tx.branch.name : '—' }}<span v-if="tx.branch && tx.branch.deleted_at" class="opacity-70">(удалена)</span>
-                                        </span>
-                                    </template>
-                                    <template v-else-if="col.key === 'account'">
-                                        <span class="font-medium">{{ tx.account ? tx.account.name : '—' }}</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'category'">
-                                        {{ tx.category ? getLocalizedLabel(tx.category.name) : '—' }}
-                                    </template>
-                                    <template v-else-if="col.key === 'amount'">
-                                        <span :class="tx.type === 'income' ? 'text-success' : (tx.type === 'expense' ? 'text-danger' : 'text-gray-800 dark:text-gray-200')">
-                                            {{ tx.type === 'income' ? '+' : (tx.type === 'expense' ? '-' : '') }}{{ formatMoney(tx.amount) }}
-                                        </span>
-                                    </template>
-                                    <template v-else-if="col.key === 'comment'">
-                                        <div v-if="tx.payable_type === 'App\\Models\\WorkOrder'">
-                                            <Link :href="route('operations.work-orders.show', tx.payable_id)" class="text-primary hover:underline font-medium block">
-                                                Заказ-наряд #{{ String(tx.payable_id).padStart(6, '0') }}
-                                            </Link>
-                                        </div>
-                                        <div class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" :title="tx.comment">{{ tx.comment || '—' }}</div>
-                                    </template>
-                                    <template v-else-if="col.key === 'reconciled'">
-                                        <button
-                                            @click="toggleReconciled(tx)"
-                                            :class="[tx.is_reconciled ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500', 'inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors hover:opacity-80']"
-                                            :title="tx.is_reconciled ? `Сверено ${tx.reconciled_at ? new Date(tx.reconciled_at).toLocaleString('ru-RU') : ''}${tx.reconciler ? ' — ' + tx.reconciler.name : ''} (клик — снять отметку)` : 'Отметить как сверенное с банковской выпиской'"
-                                        >
-                                            <i class="ri-bank-line"></i>
-                                        </button>
-                                    </template>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-right border-b border-gray-100 dark:border-gray-700/50 space-x-1">
-                                    <button @click="openEditModal(tx)" class="text-primary hover:text-primary-600 transition-colors p-1" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button @click="deleteTransaction(tx)" class="text-danger hover:text-danger-600 transition-colors p-1" title="Отменить транзакцию">
-                                        <i class="ri-arrow-go-back-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="transactions.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Операции не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="transactions.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        empty-message="Операции не найдены."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-date="{ row: tx }">
+                            {{ new Date(tx.transaction_date).toLocaleDateString('ru-RU', {day: 'numeric', month: 'short', year: 'numeric'}) }}
+                            <i v-if="tx.edited_at" class="ri-edit-2-line text-gray-400 ml-1" :title="`Отредактировано ${new Date(tx.edited_at).toLocaleString('ru-RU')}${tx.editor ? ' — ' + tx.editor.name : ''}`"></i>
+                        </template>
+                        <template #cell-type="{ row: tx }">
+                            <span :class="[transactionTypes[tx.type]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                <i :class="transactionTypes[tx.type]?.icon"></i> {{ transactionTypes[tx.type]?.label || tx.type }}
+                            </span>
+                        </template>
+                        <template #cell-branch="{ row: tx }">
+                            <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300" :title="tx.branch && tx.branch.deleted_at ? 'Локация удалена из системы' : ''">
+                                <i class="ri-store-2-line"></i> {{ tx.branch ? tx.branch.name : '—' }}<span v-if="tx.branch && tx.branch.deleted_at" class="opacity-70">(удалена)</span>
+                            </span>
+                        </template>
+                        <template #cell-account="{ row: tx }">
+                            <span class="font-medium">{{ tx.account ? tx.account.name : '—' }}</span>
+                        </template>
+                        <template #cell-category="{ row: tx }">
+                            {{ tx.category ? getLocalizedLabel(tx.category.name) : '—' }}
+                        </template>
+                        <template #cell-amount="{ row: tx }">
+                            <span :class="tx.type === 'income' ? 'text-success' : (tx.type === 'expense' ? 'text-danger' : 'text-gray-800 dark:text-gray-200')">
+                                {{ tx.type === 'income' ? '+' : (tx.type === 'expense' ? '-' : '') }}{{ formatMoney(tx.amount) }}
+                            </span>
+                        </template>
+                        <template #cell-comment="{ row: tx }">
+                            <div v-if="tx.payable_type === 'App\\Models\\WorkOrder'">
+                                <Link :href="route('operations.work-orders.show', tx.payable_id)" class="text-primary hover:underline font-medium block">
+                                    Заказ-наряд #{{ String(tx.payable_id).padStart(6, '0') }}
+                                </Link>
+                            </div>
+                            <div class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" :title="tx.comment">{{ tx.comment || '—' }}</div>
+                        </template>
+                        <template #cell-reconciled="{ row: tx }">
+                            <button
+                                @click="toggleReconciled(tx)"
+                                :class="[tx.is_reconciled ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500', 'inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors hover:opacity-80']"
+                                :title="tx.is_reconciled ? `Сверено ${tx.reconciled_at ? new Date(tx.reconciled_at).toLocaleString('ru-RU') : ''}${tx.reconciler ? ' — ' + tx.reconciler.name : ''} (клик — снять отметку)` : 'Отметить как сверенное с банковской выпиской'"
+                            >
+                                <i class="ri-bank-line"></i>
+                            </button>
+                        </template>
+                        <template #actions="{ row: tx }">
+                            <button @click="openEditModal(tx)" class="text-primary hover:text-primary-600 transition-colors p-1" title="Редактировать">
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button @click="deleteTransaction(tx)" class="text-danger hover:text-danger-600 transition-colors p-1" title="Отменить транзакцию">
+                                <i class="ri-arrow-go-back-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="transactions" />
             </div>

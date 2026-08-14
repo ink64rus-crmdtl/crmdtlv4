@@ -4,8 +4,10 @@ import DocumentTemplateEditor from '@/Components/DocumentTemplateEditor.vue';
 import Modal from '@/Components/Modal.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import { useClientSort } from '@/Composables/useClientSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -134,6 +136,17 @@ const importTemplate = (template) => {
         onFinish: () => { importingId.value = null; },
     });
 };
+
+// numbering — составной (number_prefix + number_reset_yearly) — не сортируется.
+const templateColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'entity_type', label: 'Сущность', sortable: true },
+    { key: 'source', label: 'Источник', sortable: true, sortKey: 'format' },
+    { key: 'numbering', label: 'Нумерация' },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
+
+const { sort, onSort, sortedRows: sortedTemplates } = useClientSort(() => props.templates);
 </script>
 
 <template>
@@ -171,43 +184,33 @@ const importTemplate = (template) => {
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Сущность</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Источник</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Нумерация</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="template in templates" :key="template.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">{{ template.name }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entityTypes[template.entity_type] || template.entity_type }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span v-if="template.format === 'docx'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info"><i class="ri-file-word-2-line"></i> {{ template.source_file_name || 'Word' }}</span>
-                                    <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"><i class="ri-code-line"></i> HTML</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ template.number_prefix || '—' }}{{ template.number_reset_yearly ? ' / год' : '' }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[template.is_active ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ template.is_active ? 'Активен' : 'Выключен' }}</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button @click="openModal(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button @click="deleteTemplate(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="templates.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Шаблонов ещё нет. Нажмите "Добавить шаблон".</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="templateColumns"
+                        :rows="sortedTemplates"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message='Шаблонов ещё нет. Нажмите "Добавить шаблон".'
+                    >
+                        <template #cell-name="{ row: template }">{{ template.name }}</template>
+                        <template #cell-entity_type="{ row: template }">{{ entityTypes[template.entity_type] || template.entity_type }}</template>
+                        <template #cell-source="{ row: template }">
+                            <span v-if="template.format === 'docx'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info"><i class="ri-file-word-2-line"></i> {{ template.source_file_name || 'Word' }}</span>
+                            <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"><i class="ri-code-line"></i> HTML</span>
+                        </template>
+                        <template #cell-numbering="{ row: template }">{{ template.number_prefix || '—' }}{{ template.number_reset_yearly ? ' / год' : '' }}</template>
+                        <template #cell-status="{ row: template }">
+                            <span :class="[template.is_active ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ template.is_active ? 'Активен' : 'Выключен' }}</span>
+                        </template>
+                        <template #actions="{ row: template }">
+                            <button @click="openModal(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button @click="deleteTemplate(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
         </div>

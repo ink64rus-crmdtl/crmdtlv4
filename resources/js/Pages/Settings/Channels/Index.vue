@@ -2,8 +2,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, onBeforeUnmount } from 'vue';
+import { useClientSort } from '@/Composables/useClientSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -36,6 +38,17 @@ const statusClasses = {
 };
 
 const isMessenger = (provider) => provider === 'wappi_pro';
+
+// branch (связь) — не сортируется простым orderBy.
+const channelColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'type', label: 'Тип', sortable: true },
+    { key: 'provider', label: 'Провайдер', sortable: true },
+    { key: 'branch', label: 'Локация' },
+    { key: 'status', label: 'Статус', sortable: true },
+];
+
+const { sort, onSort, sortedRows: sortedChannels } = useClientSort(() => props.channels);
 
 // --- Форма добавления/редактирования канала ---
 const isModalOpen = ref(false);
@@ -194,50 +207,40 @@ onBeforeUnmount(() => {
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Провайдер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локация</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="channel in channels" :key="channel.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ channel.name }}
-                                    <div v-if="channel.phone_number" class="text-xs text-gray-400 font-normal">{{ channel.phone_number }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ messengerTypeLabels[channel.messenger_type] || channel.messenger_type }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ providerLabels[channel.provider] || channel.provider }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ channel.branch ? channel.branch.name : 'Все локации' }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span v-if="isMessenger(channel.provider) && !channel.external_profile_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger" title="Не удалось создать профиль у провайдера">Ошибка настройки</span>
-                                    <span v-else :class="[statusClasses[channel.status] || 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ statusLabels[channel.status] || channel.status }}</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button v-if="isMessenger(channel.provider) && !channel.external_profile_id" @click="retryProvision(channel)" :disabled="retryingId === channel.id" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-50" title="Повторить попытку">
-                                        <i :class="['ri-refresh-line', { 'animate-spin': retryingId === channel.id }]"></i>
-                                    </button>
-                                    <button v-else-if="isMessenger(channel.provider) && channel.status !== 'connected'" @click="openQrModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white" title="Подключить">
-                                        <i class="ri-qr-code-line"></i>
-                                    </button>
-                                    <button @click="openModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button @click="deleteChannel(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="channels.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Каналы ещё не подключены. Нажмите "Добавить канал".</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="channelColumns"
+                        :rows="sortedChannels"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message='Каналы ещё не подключены. Нажмите "Добавить канал".'
+                    >
+                        <template #cell-name="{ row: channel }">
+                            {{ channel.name }}
+                            <div v-if="channel.phone_number" class="text-xs text-gray-400 font-normal">{{ channel.phone_number }}</div>
+                        </template>
+                        <template #cell-type="{ row: channel }">{{ messengerTypeLabels[channel.messenger_type] || channel.messenger_type }}</template>
+                        <template #cell-provider="{ row: channel }">{{ providerLabels[channel.provider] || channel.provider }}</template>
+                        <template #cell-branch="{ row: channel }">{{ channel.branch ? channel.branch.name : 'Все локации' }}</template>
+                        <template #cell-status="{ row: channel }">
+                            <span v-if="isMessenger(channel.provider) && !channel.external_profile_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger" title="Не удалось создать профиль у провайдера">Ошибка настройки</span>
+                            <span v-else :class="[statusClasses[channel.status] || 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ statusLabels[channel.status] || channel.status }}</span>
+                        </template>
+                        <template #actions="{ row: channel }">
+                            <button v-if="isMessenger(channel.provider) && !channel.external_profile_id" @click="retryProvision(channel)" :disabled="retryingId === channel.id" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-50" title="Повторить попытку">
+                                <i :class="['ri-refresh-line', { 'animate-spin': retryingId === channel.id }]"></i>
+                            </button>
+                            <button v-else-if="isMessenger(channel.provider) && channel.status !== 'connected'" @click="openQrModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white" title="Подключить">
+                                <i class="ri-qr-code-line"></i>
+                            </button>
+                            <button @click="openModal(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button @click="deleteChannel(channel)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
         </div>

@@ -47,7 +47,8 @@ class AppointmentController extends Controller
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
-            ['comment']
+            ['comment'],
+            allowedSorts: ['start_at', 'status', 'comment']
         );
 
         if (! $request->has('sort_by')) {

@@ -6,9 +6,11 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Modal from '@/Components/Modal.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -51,6 +53,8 @@ const fetchFiltered = useDebounceFn(() => {
 }, 300);
 
 watch(search, () => fetchFiltered());
+
+const { sort, onSort } = useServerSort('operations.services.index', () => props.filters, () => ({ search: search.value }));
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
@@ -115,6 +119,20 @@ const matrixLookups = computed(() => props.lookups?.[props.pricingBasis] || []);
 const matrixActive = computed(() => props.pricingBasis !== 'none' && matrixLookups.value.length > 0);
 const matrixBasisLabel = computed(() => props.pricingBasis === 'vehicle_body' ? 'Тип кузова' : 'Класс авто');
 const totalColumns = computed(() => 7 + (matrixActive.value ? matrixLookups.value.length + 1 : 1));
+
+// Плоский режим (!matrixActive) мигрирован на DataTable.vue. Матричный режим
+// (rowspan/colspan-заголовок, динамическая колонка цены на каждое значение
+// справочника) DataTable не поддерживает (один заголовочный ряд) — остаётся
+// raw-таблицей ниже, см. docs/table-refactor/baseline/operations-services.md.
+// category/business_direction (связи) и name (translatable, JSON) — не сортируются простым orderBy.
+const flatColumns = [
+    { key: 'category', label: 'Категория' },
+    { key: 'business_direction', label: 'Направление' },
+    { key: 'name', label: 'Название услуги' },
+    { key: 'price', label: 'Базовая цена', align: 'right', sortable: true },
+    { key: 'duration_minutes', label: 'Нормо-время', align: 'right', sortable: true },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
 
 const openModal = (service = null) => {
     editingService.value = service;
@@ -243,42 +261,72 @@ const submitCategory = () => {
                         </button>
                     </template>
                 </DataTableToolbar>
-                <div class="overflow-x-auto w-full">
+                <!-- Плоский режим (без матрицы цен по кузову/классу) — DataTable.vue -->
+                <div v-if="!matrixActive" class="overflow-x-auto w-full">
+                    <DataTable
+                        :columns="flatColumns"
+                        :rows="services.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Услуги еще не добавлены."
+                    >
+                        <template #cell-category="{ row: service }">
+                            <span v-if="service.category" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                <i class="ri-folder-line"></i> {{ getLocalizedLabel(service.category.name) }}
+                            </span>
+                            <span v-else class="text-gray-400 text-xs">—</span>
+                        </template>
+                        <template #cell-business_direction="{ row: service }">
+                            <span v-if="service.business_direction" class="inline-flex items-center gap-1.5 bg-info/10 text-info px-2 py-0.5 rounded text-xs font-medium">
+                                <i class="ri-node-tree"></i> {{ service.business_direction.name }}
+                            </span>
+                            <span v-else class="text-gray-400 text-xs">—</span>
+                        </template>
+                        <template #cell-name="{ row: service }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(service.name) }}</span>
+                        </template>
+                        <template #cell-price="{ row: service }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(service.price) }}</span>
+                        </template>
+                        <template #cell-duration_minutes="{ row: service }">{{ service.duration_minutes }} мин</template>
+                        <template #cell-status="{ row: service }">
+                            <span :class="[service.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                {{ service.is_active ? 'Активно' : 'Неактивно' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: service }">
+                            <button @click="openModal(service)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
+                            <button @click="deleteService(service)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                        </template>
+                    </DataTable>
+                </div>
+
+                <!-- Матричный режим (динамическая колонка цены на каждое значение справочника, rowspan/colspan-заголовок) —
+                     DataTable.vue не поддерживает многострочный thead, остаётся raw-таблицей. -->
+                <div v-else class="overflow-x-auto w-full">
                     <table class="min-w-full text-left whitespace-nowrap">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr v-if="!matrixActive">
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
+                            <tr>
+                                <th rowspan="2" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center align-bottom">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Категория</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Направление</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название услуги</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Базовая цена</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Нормо-время</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                                <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Категория</th>
+                                <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Направление</th>
+                                <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Название услуги</th>
+                                <th :colspan="matrixLookups.length + 1" class="py-2 px-6 text-xs font-bold text-info uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-center bg-info/5">
+                                    Цена: {{ matrixBasisLabel }}
+                                </th>
+                                <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right align-bottom">Нормо-время</th>
+                                <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Статус</th>
+                                <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right align-bottom">Действия</th>
                             </tr>
-                            <!-- Динамические колонки цены: одна на каждое значение активного справочника (Настройки → CRM → База ценообразования) -->
-                            <template v-else>
-                                <tr>
-                                    <th rowspan="2" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center align-bottom">
-                                        <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                    </th>
-                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Категория</th>
-                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Направление</th>
-                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Название услуги</th>
-                                    <th :colspan="matrixLookups.length + 1" class="py-2 px-6 text-xs font-bold text-info uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-center bg-info/5">
-                                        Цена: {{ matrixBasisLabel }}
-                                    </th>
-                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right align-bottom">Нормо-время</th>
-                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 align-bottom">Статус</th>
-                                    <th rowspan="2" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right align-bottom">Действия</th>
-                                </tr>
-                                <tr>
-                                    <th class="py-2 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right" title="Используется, если для конкретного значения цена не задана">База</th>
-                                    <th v-for="lookup in matrixLookups" :key="lookup.id" class="py-2 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">{{ lookup.value }}</th>
-                                </tr>
-                            </template>
+                            <tr>
+                                <th class="py-2 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right" title="Используется, если для конкретного значения цена не задана">База</th>
+                                <th v-for="lookup in matrixLookups" :key="lookup.id" class="py-2 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">{{ lookup.value }}</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <tr v-for="service in services.data" :key="service.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
@@ -300,18 +348,13 @@ const submitCategory = () => {
                                 <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
                                     {{ getLocalizedLabel(service.name) }}
                                 </td>
-                                <td v-if="!matrixActive" class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                <td class="py-4 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
                                     {{ formatMoney(service.price) }}
                                 </td>
-                                <template v-else>
-                                    <td class="py-4 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                        {{ formatMoney(service.price) }}
-                                    </td>
-                                    <td v-for="lookup in matrixLookups" :key="lookup.id" class="py-4 px-4 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right">
-                                        <span v-if="service.prices && service.prices[lookup.value] !== undefined" class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(service.prices[lookup.value]) }}</span>
-                                        <span v-else class="text-gray-400" title="Цена не задана — используется базовая">= база</span>
-                                    </td>
-                                </template>
+                                <td v-for="lookup in matrixLookups" :key="lookup.id" class="py-4 px-4 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                    <span v-if="service.prices && service.prices[lookup.value] !== undefined" class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(service.prices[lookup.value]) }}</span>
+                                    <span v-else class="text-gray-400" title="Цена не задана — используется базовая">= база</span>
+                                </td>
                                 <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">
                                     {{ service.duration_minutes }} мин
                                 </td>

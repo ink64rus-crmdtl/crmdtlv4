@@ -15,9 +15,9 @@ class AccountSnapshotController extends Controller
     {
         $query = AccountDailySnapshot::with('account');
 
-        $query = QueryFilterService::apply($query, $request->all(), []);
+        $query = QueryFilterService::apply($query, $request->all(), [], allowedSorts: ['snapshot_date', 'opening_balance', 'income_total', 'expense_total', 'closing_balance']);
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('snapshot_date', 'desc')->orderBy('account_id');
         }
 

@@ -6,9 +6,11 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -27,6 +29,15 @@ const activeColumns = computed(() => {
         .map(key => props.availableColumns.find(c => c.key === key))
         .filter(Boolean);
 });
+// name — переводимый JSON (spatie/laravel-translatable), сортировка по сырому
+// значению дала бы бессмысленный порядок — не sortable.
+const SORTABLE_COLUMN_KEYS = ['type', 'status'];
+const SORT_KEY_MAP = { status: 'is_active' };
+const dataTableColumns = computed(() => activeColumns.value.map(col => (
+    SORTABLE_COLUMN_KEYS.includes(col.key)
+        ? { ...col, sortable: true, sortKey: SORT_KEY_MAP[col.key] }
+        : col
+)));
 
 const form = useForm({
     name: '',
@@ -46,19 +57,10 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 // ------------------------------------
 
+const { sort, onSort } = useServerSort('finance.categories.index', () => props.filters, () => ({ search: search.value }));
+
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.categories.data.length > 0 && selectedIds.value.length === props.categories.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.categories.data.map(c => c.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные статьи (${selectedIds.value.length})?`)) {
@@ -183,51 +185,37 @@ const deleteCategory = (category) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">{{ col.label }}</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="category in categories.data" :key="category.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="category.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <template v-if="col.key === 'type'">
-                                        <span v-if="category.type === 'income'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success"><i class="ri-arrow-right-down-line"></i> Доход</span>
-                                        <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger"><i class="ri-arrow-right-up-line"></i> Расход</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'name'">
-                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(category.name) }}</span>
-                                    </template>
-                                    <template v-else-if="col.key === 'status'">
-                                        <span :class="[category.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                            {{ category.is_active ? 'Активно' : 'Неактивно' }}
-                                        </span>
-                                    </template>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button @click="openModal(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button @click="deleteCategory(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="categories.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Статьи не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="categories.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        empty-message="Статьи не найдены."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-type="{ row: category }">
+                            <span v-if="category.type === 'income'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success"><i class="ri-arrow-right-down-line"></i> Доход</span>
+                            <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger"><i class="ri-arrow-right-up-line"></i> Расход</span>
+                        </template>
+                        <template #cell-name="{ row: category }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(category.name) }}</span>
+                        </template>
+                        <template #cell-status="{ row: category }">
+                            <span :class="[category.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                {{ category.is_active ? 'Активно' : 'Неактивно' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: category }">
+                            <button @click="openModal(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button @click="deleteCategory(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="categories" />
             </div>

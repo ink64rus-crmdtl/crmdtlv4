@@ -2,8 +2,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     templates: { type: Array, default: () => [] },
@@ -16,6 +18,16 @@ const localizedBody = (template) => {
     if (typeof body === 'string') return body;
     return body['ru'] || body['en'] || Object.values(body)[0] || '';
 };
+
+// text (JSON-переводимое тело) — не сортируется.
+const messageTemplateColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'trigger', label: 'Триггер', sortable: true, sortKey: 'event_trigger' },
+    { key: 'text', label: 'Текст' },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
+
+const { sort, onSort, sortedRows: sortedTemplates } = useClientSort(() => props.templates);
 
 const isModalOpen = ref(false);
 const editingTemplate = ref(null);
@@ -91,41 +103,34 @@ const deleteTemplate = (template) => {
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Триггер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Текст</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="template in templates" :key="template.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">{{ template.name }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span v-if="template.event_trigger" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">{{ triggers[template.event_trigger] || template.event_trigger }}</span>
-                                    <span v-else class="text-gray-400">Вручную</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 max-w-md truncate" :title="localizedBody(template)">{{ localizedBody(template) }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[template.is_active ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ template.is_active ? 'Активен' : 'Выключен' }}</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button @click="openModal(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button @click="deleteTemplate(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="templates.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Шаблонов ещё нет. Нажмите "Добавить шаблон".</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="messageTemplateColumns"
+                        :rows="sortedTemplates"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message='Шаблонов ещё нет. Нажмите "Добавить шаблон".'
+                    >
+                        <template #cell-name="{ row: template }">{{ template.name }}</template>
+                        <template #cell-trigger="{ row: template }">
+                            <span v-if="template.event_trigger" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">{{ triggers[template.event_trigger] || template.event_trigger }}</span>
+                            <span v-else class="text-gray-400">Вручную</span>
+                        </template>
+                        <template #cell-text="{ row: template }">
+                            <span class="block max-w-md truncate" :title="localizedBody(template)">{{ localizedBody(template) }}</span>
+                        </template>
+                        <template #cell-status="{ row: template }">
+                            <span :class="[template.is_active ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ template.is_active ? 'Активен' : 'Выключен' }}</span>
+                        </template>
+                        <template #actions="{ row: template }">
+                            <button @click="openModal(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button @click="deleteTemplate(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
         </div>

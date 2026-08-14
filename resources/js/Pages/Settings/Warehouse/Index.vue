@@ -4,8 +4,10 @@ import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import Modal from '@/Components/Modal.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     warehouseMode: String,
@@ -102,6 +104,15 @@ const submitWarehouse = () => {
         });
     }
 };
+
+const warehouseColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'type', label: 'Тип', sortable: true, sortKey: 'owner_type' },
+    { key: 'is_default', label: 'По умолчанию', sortable: true },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
+
+const { sort, onSort, sortedRows: sortedWarehouses } = useClientSort(() => props.warehouses);
 
 const deleteWarehouse = (warehouse) => {
     if (confirm(`Удалить склад "${warehouse.name}"?`)) {
@@ -242,53 +253,44 @@ const deleteWarehouse = (warehouse) => {
             <!-- Content Card: список складов -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">По умолчанию</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                            <tr v-for="warehouse in warehouses" :key="warehouse.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ warehouse.name }}</td>
-                                <td class="py-4 px-6 text-sm">
-                                    <span v-if="warehouse.owner_type === 'company'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info">
-                                        <i class="ri-building-4-line"></i> Компания
-                                    </span>
-                                    <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                                        <i class="ri-store-3-line"></i> {{ branchName(warehouse.owner_id) }}
-                                    </span>
-                                    <i
-                                        v-if="isOwnerTypeUnusedInMode(warehouse.owner_type)"
-                                        class="ri-error-warning-line text-warning ml-1"
-                                        :title="`Не используется в текущем режиме склада («${warehouseModeLabels[warehouseMode]}»)`"
-                                    ></i>
-                                </td>
-                                <td class="py-4 px-6 text-sm">
-                                    <i v-if="warehouse.is_default" class="ri-star-fill text-warning" title="Склад по умолчанию в своей области"></i>
-                                    <span v-else class="text-gray-300 dark:text-gray-600">—</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm">
-                                    <span :class="[warehouse.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                        {{ warehouse.is_active ? 'Активен' : 'Неактивен' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-right space-x-2">
-                                    <button @click="openWarehouseModal(warehouse)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                    <button @click="deleteWarehouse(warehouse)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                </td>
-                            </tr>
-                            <tr v-if="warehouses.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Складов пока нет. Пока не добавите хотя бы один, оприходовать товар будет не на что.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="warehouseColumns"
+                        :rows="sortedWarehouses"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Складов пока нет. Пока не добавите хотя бы один, оприходовать товар будет не на что."
+                    >
+                        <template #cell-name="{ row: warehouse }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ warehouse.name }}</span>
+                        </template>
+                        <template #cell-type="{ row: warehouse }">
+                            <span v-if="warehouse.owner_type === 'company'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info">
+                                <i class="ri-building-4-line"></i> Компания
+                            </span>
+                            <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                <i class="ri-store-3-line"></i> {{ branchName(warehouse.owner_id) }}
+                            </span>
+                            <i
+                                v-if="isOwnerTypeUnusedInMode(warehouse.owner_type)"
+                                class="ri-error-warning-line text-warning ml-1"
+                                :title="`Не используется в текущем режиме склада («${warehouseModeLabels[warehouseMode]}»)`"
+                            ></i>
+                        </template>
+                        <template #cell-is_default="{ row: warehouse }">
+                            <i v-if="warehouse.is_default" class="ri-star-fill text-warning" title="Склад по умолчанию в своей области"></i>
+                            <span v-else class="text-gray-300 dark:text-gray-600">—</span>
+                        </template>
+                        <template #cell-status="{ row: warehouse }">
+                            <span :class="[warehouse.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                {{ warehouse.is_active ? 'Активен' : 'Неактивен' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: warehouse }">
+                            <button @click="openWarehouseModal(warehouse)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                            <button @click="deleteWarehouse(warehouse)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
 

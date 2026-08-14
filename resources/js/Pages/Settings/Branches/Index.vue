@@ -3,12 +3,14 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
+import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import WorkingHoursEditor from '@/Components/WorkingHoursEditor.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -72,21 +74,22 @@ const fetchFiltered = useDebounceFn(() => {
 }, 300);
 
 watch(search, () => fetchFiltered());
+
+const { sort, onSort } = useServerSort('settings.branches.index', () => props.filters, () => ({ search: search.value }));
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+// select-all/сброс выбора теперь считает сам DataTable (v-model="selectedIds").
 const selectedIds = ref([]);
 
-const selectAll = computed({
-    get: () => props.branchesList.data.length > 0 && selectedIds.value.length === props.branchesList.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.branchesList.data.map(b => b.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
+// legal_entities (связь) — не сортируется простым orderBy.
+const branchColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'legal_entities', label: 'Юрлицо' },
+    { key: 'address', label: 'Адрес', sortable: true },
+    { key: 'phone', label: 'Телефон', sortable: true },
+    { key: 'is_active', label: 'Статус', sortable: true },
+];
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные локации (${selectedIds.value.length})?`)) {
@@ -245,78 +248,60 @@ const deleteBranch = (branch) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрлицо</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Адрес</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Телефон</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="branch in branchesList.data" :key="branch.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="branch.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">
-                                    <div class="flex items-center gap-2">
-                                        <img v-if="branch.logo_url" :src="branch.logo_url" alt="" class="w-6 h-6 rounded object-cover shrink-0" />
-                                        <i v-else class="ri-store-2-line text-primary"></i>
-                                        {{ branch.name }}
-                                    </div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <div v-if="branch.legal_entities && branch.legal_entities.length > 0" class="flex flex-wrap gap-1">
-                                        <span v-for="le in branch.legal_entities" :key="le.id" class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                            <i class="ri-bank-line"></i> {{ le.name }}
-                                        </span>
-                                    </div>
-                                    <span v-else class="text-gray-400 dark:text-gray-500 text-xs" title="Настраивается со стороны юрлица — см. Настройки → Юридические лица">Без юрлица</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ branch.city ? branch.city + ', ' : '' }}{{ branch.address || '—' }}
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ branch.phone || '—' }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span
-                                        :class="[
-                                            branch.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
-                                            'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
-                                        ]"
-                                    >
-                                        {{ branch.is_active ? 'Активно' : 'Неактивно' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button 
-                                        @click="openModal(branch)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click="deleteBranch(branch)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="branchesList.data.length === 0">
-                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Локации не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="branchColumns"
+                        :rows="branchesList.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Локации не найдены."
+                    >
+                        <template #cell-name="{ row: branch }">
+                            <div class="flex items-center gap-2">
+                                <img v-if="branch.logo_url" :src="branch.logo_url" alt="" class="w-6 h-6 rounded object-cover shrink-0" />
+                                <i v-else class="ri-store-2-line text-primary"></i>
+                                {{ branch.name }}
+                            </div>
+                        </template>
+                        <template #cell-legal_entities="{ row: branch }">
+                            <div v-if="branch.legal_entities && branch.legal_entities.length > 0" class="flex flex-wrap gap-1">
+                                <span v-for="le in branch.legal_entities" :key="le.id" class="inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                    <i class="ri-bank-line"></i> {{ le.name }}
+                                </span>
+                            </div>
+                            <span v-else class="text-gray-400 dark:text-gray-500 text-xs" title="Настраивается со стороны юрлица — см. Настройки → Юридические лица">Без юрлица</span>
+                        </template>
+                        <template #cell-address="{ row: branch }">{{ branch.city ? branch.city + ', ' : '' }}{{ branch.address || '—' }}</template>
+                        <template #cell-phone="{ row: branch }">{{ branch.phone || '—' }}</template>
+                        <template #cell-is_active="{ row: branch }">
+                            <span
+                                :class="[
+                                    branch.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
+                                    'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
+                                ]"
+                            >
+                                {{ branch.is_active ? 'Активно' : 'Неактивно' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: branch }">
+                            <button
+                                @click="openModal(branch)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click="deleteBranch(branch)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="branchesList" />
             </div>

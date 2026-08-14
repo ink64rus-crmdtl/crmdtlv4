@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\BusinessDirection;
-use App\Models\Branch;
-use App\Services\QueryFilterService;
 use App\Jobs\ExportEntitiesJob;
+use App\Models\Branch;
+use App\Models\BusinessDirection;
+use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -17,19 +17,20 @@ class BusinessDirectionController extends Controller
     public function index(): Response
     {
         $query = BusinessDirection::with('branches');
-        
+
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
-            ['name']
+            ['name'],
+            allowedSorts: ['name', 'is_active']
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         $businessDirections = $query->paginate(15)->withQueryString();
-        
+
         $branches = Branch::forSelect()->get(['id', 'name']);
 
         return Inertia::render('Settings/BusinessDirections/Index', [
@@ -54,7 +55,7 @@ class BusinessDirectionController extends Controller
                 'is_active' => $validated['is_active'] ?? true,
             ]);
 
-            if (!empty($validated['branch_ids'])) {
+            if (! empty($validated['branch_ids'])) {
                 $businessDirection->branches()->sync($validated['branch_ids']);
             }
         });

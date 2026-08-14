@@ -5,9 +5,11 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -39,21 +41,12 @@ const fetchFiltered = useDebounceFn(() => {
 }, 300);
 
 watch(search, () => fetchFiltered());
+
+const { sort, onSort } = useServerSort('settings.custom-fields.index', () => props.filters, () => ({ search: search.value }));
 // ------------------------------------
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.customFields.data.length > 0 && selectedIds.value.length === props.customFields.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.customFields.data.map(f => f.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные поля (${selectedIds.value.length})? Это действие скроет их из интерфейса.`)) {
@@ -101,6 +94,14 @@ const getLabel = (labelObj) => {
     if (!labelObj) return '—';
     return labelObj['ru'] || Object.values(labelObj)[0] || '—';
 };
+
+// name (JSON label) и settings (составная) — не сортируются простым orderBy.
+const fieldColumns = [
+    { key: 'entity_type', label: 'Раздел', sortable: true },
+    { key: 'name', label: 'Название поля' },
+    { key: 'type', label: 'Тип', sortable: true },
+    { key: 'settings', label: 'Настройки' },
+];
 
 const openModal = (field = null) => {
     editingField.value = field;
@@ -205,65 +206,50 @@ const deleteField = (field) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Раздел</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название поля</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Настройки</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                            <tr v-for="field in customFields.data" :key="field.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="field.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                                    {{ entityTypes[field.entity_type] || field.entity_type }}
-                                </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">
-                                    {{ getLabel(field.label) }}
-                                    <div class="text-xs font-normal text-gray-500 mt-0.5">{{ field.key }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm">
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
-                                        {{ fieldTypes[field.type] || field.type }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm space-x-2">
-                                    <span v-if="field.is_required" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger border border-danger/20" title="Обязательное">Обяз.</span>
-                                    <span v-if="field.is_filterable" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info border border-info/20" title="Можно фильтровать">Фильтр</span>
-                                    <span v-if="field.is_visible_in_list" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success border border-success/20" title="Видно в таблице">В списке</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-right space-x-2">
-                                    <button 
-                                        @click="openModal(field)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click="deleteField(field)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="customFields.data.length === 0">
-                                <td colspan="6" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Кастомные поля еще не созданы. Нажмите "Добавить поле".
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="fieldColumns"
+                        :rows="customFields.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message='Кастомные поля еще не созданы. Нажмите "Добавить поле".'
+                    >
+                        <template #cell-entity_type="{ row: field }">
+                            <span class="font-semibold text-gray-800 dark:text-gray-200">{{ entityTypes[field.entity_type] || field.entity_type }}</span>
+                        </template>
+                        <template #cell-name="{ row: field }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLabel(field.label) }}</span>
+                            <div class="text-xs font-normal text-gray-500 mt-0.5">{{ field.key }}</div>
+                        </template>
+                        <template #cell-type="{ row: field }">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                                {{ fieldTypes[field.type] || field.type }}
+                            </span>
+                        </template>
+                        <template #cell-settings="{ row: field }">
+                            <span v-if="field.is_required" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger border border-danger/20" title="Обязательное">Обяз.</span>
+                            <span v-if="field.is_filterable" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info border border-info/20" title="Можно фильтровать">Фильтр</span>
+                            <span v-if="field.is_visible_in_list" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success border border-success/20" title="Видно в таблице">В списке</span>
+                        </template>
+                        <template #actions="{ row: field }">
+                            <button
+                                @click="openModal(field)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click="deleteField(field)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="customFields" />
             </div>

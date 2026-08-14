@@ -5,9 +5,11 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -37,19 +39,10 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 // ------------------------------------
 
+const { sort, onSort } = useServerSort('settings.business-directions.index', () => props.filters, () => ({ search: search.value }));
+
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.businessDirections.data.length > 0 && selectedIds.value.length === props.businessDirections.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.businessDirections.data.map(d => d.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные направления (${selectedIds.value.length})?`)) {
@@ -77,6 +70,12 @@ const bulkExport = async () => {
     }
 };
 // ----------------------------------------
+
+const directionColumns = [
+    { key: 'name', label: 'Название', sortable: true },
+    { key: 'branches', label: 'Локации' },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
 
 const openModal = (direction = null) => {
     editingDirection.value = direction;
@@ -174,71 +173,57 @@ const deleteDirection = (direction) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локации</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="direction in businessDirections.data" :key="direction.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
-                                    <input type="checkbox" :value="direction.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 font-semibold">
-                                    <div class="flex items-center gap-2">
-                                        <i class="ri-node-tree text-primary"></i>
-                                        {{ direction.name }}
-                                    </div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="flex flex-wrap gap-1.5" v-if="direction.branches && direction.branches.length > 0">
-                                        <span v-for="b in direction.branches" :key="b.id" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
-                                            <i class="ri-store-2-line"></i> {{ b.name }}
-                                        </span>
-                                    </div>
-                                    <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех локациях</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    <span
-                                        :class="[
-                                            direction.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
-                                            'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
-                                        ]"
-                                    >
-                                        {{ direction.is_active ? 'Активно' : 'Неактивно' }}
-                                    </span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button 
-                                        @click="openModal(direction)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button 
-                                        @click="deleteDirection(direction)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="businessDirections.data.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Направления не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="directionColumns"
+                        :rows="businessDirections.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        empty-message="Направления не найдены."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-name="{ row: direction }">
+                            <div class="flex items-center gap-2">
+                                <i class="ri-node-tree text-primary"></i>
+                                {{ direction.name }}
+                            </div>
+                        </template>
+                        <template #cell-branches="{ row: direction }">
+                            <div class="flex flex-wrap gap-1.5" v-if="direction.branches && direction.branches.length > 0">
+                                <span v-for="b in direction.branches" :key="b.id" class="inline-flex items-center gap-1 py-0.5 px-2 rounded bg-gray-100 dark:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
+                                    <i class="ri-store-2-line"></i> {{ b.name }}
+                                </span>
+                            </div>
+                            <span v-else class="text-xs text-gray-400 dark:text-gray-500">Во всех локациях</span>
+                        </template>
+                        <template #cell-status="{ row: direction }">
+                            <span
+                                :class="[
+                                    direction.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger',
+                                    'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium'
+                                ]"
+                            >
+                                {{ direction.is_active ? 'Активно' : 'Неактивно' }}
+                            </span>
+                        </template>
+                        <template #actions="{ row: direction }">
+                            <button
+                                @click="openModal(direction)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click="deleteDirection(direction)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="businessDirections" />
             </div>

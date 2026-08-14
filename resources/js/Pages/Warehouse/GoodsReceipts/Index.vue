@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import WarehouseNav from '@/Components/WarehouseNav.vue';
+import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
@@ -12,6 +13,7 @@ import PointBadge from '@/Components/PointBadge.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 
 const props = defineProps({
     receipts: Object,
@@ -306,11 +308,25 @@ const fetchFiltered = useDebounceFn(() => {
 watch(search, () => fetchFiltered());
 watch(filtersForm, () => fetchFiltered(), { deep: true });
 
+const { sort, onSort } = useServerSort('warehouse.goods-receipts.index', () => props.filters, () => ({ search: search.value, filters: filtersForm.value }));
+
 const resetFilters = () => {
     filtersForm.value = { supplier_id: '', warehouse_id: '', branch_id: '', status: '', payment_status: '' };
 };
 
 const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v => v !== '' && v !== null));
+
+// Сортировка — только реальные колонки goods_receipts (белый список зеркалит
+// GoodsReceiptController::index()). supplier/warehouse_branch — связи,
+// items_count — агрегат (count позиций), простым orderBy не сортируются.
+const receiptColumns = [
+    { key: 'receipt', label: 'Накладная', sortable: true, sortKey: 'receipt_date' },
+    { key: 'supplier', label: 'Поставщик' },
+    { key: 'warehouse_branch', label: 'Склад / Локация' },
+    { key: 'items_count', label: 'Позиций', align: 'right' },
+    { key: 'status', label: 'Статус', sortable: true },
+    { key: 'payment', label: 'Оплата', sortable: true, sortKey: 'payment_status' },
+];
 </script>
 
 <template>
@@ -361,62 +377,47 @@ const hasActiveFilters = computed(() => Object.values(filtersForm.value).some(v 
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Накладная</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Поставщик</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Склад / Локация</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Позиций</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Оплата</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="receipt in receipts.data"
-                                :key="receipt.id"
-                                @click="openPreview(receipt)"
-                                class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group"
-                            >
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-bold text-gray-800 dark:text-gray-200 font-mono">№{{ String(receipt.id).padStart(6, '0') }}</div>
-                                    <div class="text-xs text-gray-500 mt-0.5">
-                                        {{ new Date(receipt.receipt_date).toLocaleDateString('ru-RU') }}
-                                        <span v-if="receipt.supplier_document_number"> · их №{{ receipt.supplier_document_number }}</span>
-                                    </div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">{{ receipt.supplier?.name || '—' }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <div class="font-medium text-gray-800 dark:text-gray-200"><i class="ri-building-4-line text-gray-400"></i> {{ receipt.warehouse?.name || '—' }}</div>
-                                    <div class="text-xs text-gray-500 mt-0.5"><i class="ri-store-2-line"></i> {{ receipt.branch?.name || '—' }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ receipt.items_count }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[statusMeta[receipt.status]?.class, 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ statusMeta[receipt.status]?.label || receipt.status }}</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <span :class="[paymentStatuses[receipt.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ paymentStatuses[receipt.payment_status]?.label || receipt.payment_status }}</span>
-                                    <div v-if="remainingAmount(receipt) > 0" class="text-[11px] text-danger mt-0.5">Остаток: {{ formatMoney(remainingAmount(receipt)) }}</div>
-                                </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <Link :href="route('warehouse.goods-receipts.show', receipt.id)" @click.stop class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-info/10 text-info hover:bg-info hover:text-white transition-colors" title="Открыть накладную">
-                                        <i class="ri-folder-open-line"></i>
-                                    </Link>
-                                    <button v-if="remainingAmount(receipt) > 0" @click.stop="openPaymentModal(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-success/10 text-success hover:bg-success hover:text-white transition-colors" title="Принять оплату">
-                                        <i class="ri-money-dollar-circle-line"></i>
-                                    </button>
-                                    <button v-if="receipt.status === 'posted'" @click.stop="cancelReceipt(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-danger/10 text-danger hover:bg-danger hover:text-white transition-colors" title="Отменить накладную">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="receipts.data.length === 0">
-                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Накладных пока нет.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="receiptColumns"
+                        :rows="receipts.data"
+                        has-actions
+                        row-clickable
+                        @row-click="openPreview"
+                        empty-message="Накладных пока нет."
+                        :sort="sort"
+                        @sort="onSort"
+                    >
+                        <template #cell-receipt="{ row: receipt }">
+                            <div class="font-bold text-gray-800 dark:text-gray-200 font-mono">№{{ String(receipt.id).padStart(6, '0') }}</div>
+                            <div class="text-xs text-gray-500 mt-0.5">
+                                {{ new Date(receipt.receipt_date).toLocaleDateString('ru-RU') }}
+                                <span v-if="receipt.supplier_document_number"> · их №{{ receipt.supplier_document_number }}</span>
+                            </div>
+                        </template>
+                        <template #cell-supplier="{ row: receipt }">{{ receipt.supplier?.name || '—' }}</template>
+                        <template #cell-warehouse_branch="{ row: receipt }">
+                            <div class="font-medium text-gray-800 dark:text-gray-200"><i class="ri-building-4-line text-gray-400"></i> {{ receipt.warehouse?.name || '—' }}</div>
+                            <div class="text-xs text-gray-500 mt-0.5"><i class="ri-store-2-line"></i> {{ receipt.branch?.name || '—' }}</div>
+                        </template>
+                        <template #cell-status="{ row: receipt }">
+                            <span :class="[statusMeta[receipt.status]?.class, 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ statusMeta[receipt.status]?.label || receipt.status }}</span>
+                        </template>
+                        <template #cell-payment="{ row: receipt }">
+                            <span :class="[paymentStatuses[receipt.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center py-0.5 px-2 rounded text-xs font-medium']">{{ paymentStatuses[receipt.payment_status]?.label || receipt.payment_status }}</span>
+                            <div v-if="remainingAmount(receipt) > 0" class="text-[11px] text-danger mt-0.5">Остаток: {{ formatMoney(remainingAmount(receipt)) }}</div>
+                        </template>
+                        <template #actions="{ row: receipt }">
+                            <Link :href="route('warehouse.goods-receipts.show', receipt.id)" @click.stop class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-info/10 text-info hover:bg-info hover:text-white transition-colors" title="Открыть накладную">
+                                <i class="ri-folder-open-line"></i>
+                            </Link>
+                            <button v-if="remainingAmount(receipt) > 0" @click.stop="openPaymentModal(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-success/10 text-success hover:bg-success hover:text-white transition-colors" title="Принять оплату">
+                                <i class="ri-money-dollar-circle-line"></i>
+                            </button>
+                            <button v-if="receipt.status === 'posted'" @click.stop="cancelReceipt(receipt)" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-danger/10 text-danger hover:bg-danger hover:text-white transition-colors" title="Отменить накладную">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="receipts" />
             </div>

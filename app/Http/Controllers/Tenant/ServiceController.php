@@ -3,42 +3,42 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
+use App\Models\BusinessDirection;
+use App\Models\Lookup;
 use App\Models\Service;
 use App\Models\ServiceCategory;
-use App\Models\BusinessDirection;
 use App\Models\Setting;
-use App\Models\Lookup;
 use App\Services\QueryFilterService;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Inertia\Response;
 
 class ServiceController extends Controller
 {
     public function index(Request $request)
     {
         $query = Service::with(['category', 'businessDirection']);
-        
+
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
-            ['name']
+            ['name'],
+            allowedSorts: ['price', 'duration_minutes', 'is_active']
         );
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
-        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+        if (($request->wantsJson() || $request->ajax()) && ! $request->hasHeader('X-Inertia')) {
             return response()->json($query->paginate(15));
         }
 
         $services = $query->paginate(15)->withQueryString();
         $categories = ServiceCategory::orderBy('id')->get();
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
-        
+
         $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
         $lookups = Lookup::whereIn('type', ['vehicle_body', 'vehicle_class'])->where('is_active', true)->get()->groupBy('type');
 
@@ -110,6 +110,7 @@ class ServiceController extends Controller
     public function destroy(Service $service)
     {
         $service->delete();
+
         return redirect()->back()->with('success', 'Услуга удалена');
     }
 

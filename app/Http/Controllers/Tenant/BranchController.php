@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
 use App\Models\Branch;
 use App\Services\QueryFilterService;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,10 +19,11 @@ class BranchController extends Controller
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
-            ['name', 'city', 'address', 'phone']
+            ['name', 'city', 'address', 'phone'],
+            allowedSorts: ['name', 'address', 'phone', 'is_active']
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
@@ -87,7 +88,7 @@ class BranchController extends Controller
             'remove_logo' => ['nullable', 'boolean'],
         ]);
 
-        $removeLogo = !empty($validated['remove_logo']);
+        $removeLogo = ! empty($validated['remove_logo']);
         unset($validated['logo'], $validated['remove_logo']);
         $branch->update($validated);
 
@@ -130,6 +131,7 @@ class BranchController extends Controller
         }
 
         session()->save();
+
         return redirect()->back();
     }
 
@@ -172,7 +174,7 @@ class BranchController extends Controller
     {
         $media = $branch->getFirstMedia('logo');
 
-        if (!$media) {
+        if (! $media) {
             abort(404);
         }
 

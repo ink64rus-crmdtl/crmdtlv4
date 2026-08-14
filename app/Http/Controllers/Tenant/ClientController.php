@@ -58,7 +58,8 @@ class ClientController extends Controller
             $query,
             $requestParams,
             ['name', 'phone', 'email', 'alias', 'vehicles.plate_number'],
-            'client'
+            'client',
+            allowedSorts: ['name', 'phone', 'phone_2', 'email', 'type', 'source', 'balance', 'bonus_points', 'discount_percent']
         );
 
         if ($segmentFilter) {

@@ -5,9 +5,11 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import CreatableSelect from '@/Components/CreatableSelect.vue';
 import Modal from '@/Components/Modal.vue';
 import GroupColorPicker, { groupColorMeta } from '@/Components/GroupColorPicker.vue';
+import DataTable from '@/Components/DataTable.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
+import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     makes: { type: Array, default: () => [] },
@@ -148,6 +150,54 @@ const pricingImpactFor = (tabKey) => {
     if (tabKey !== 'vehicle_body' && tabKey !== 'vehicle_class') return null;
     return props.pricingBasis === tabKey;
 };
+
+// models_count — вычисляемое (длина связи), не сортируется.
+const makeColumns = [
+    { key: 'name', label: 'Марка', sortable: true },
+    { key: 'models_count', label: 'Кол-во моделей' },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
+const { sort: makeSort, onSort: onMakeSort, sortedRows: sortedMakes } = useClientSort(() => props.makes);
+
+const modelColumns = [
+    { key: 'make_name', label: 'Марка', sortable: true },
+    { key: 'model_name', label: 'Модель', sortable: true },
+    { key: 'body_type', label: 'Тип кузова', sortable: true },
+    { key: 'category', label: 'Категория / Класс', sortable: true },
+    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
+];
+
+// Модели вложены под марками в исходных данных (makes[].models[]) — DataTable
+// принимает только плоский список строк, поэтому разворачиваем в flatMap,
+// пробрасывая родительскую марку в каждую строку модели. make_name/model_name —
+// плоские дубли make.name/model.name специально для useClientSort (тот сравнивает
+// только верхнеуровневые ключи, вложенный row.make.name ему не виден).
+const modelRows = computed(() => props.makes.flatMap(make => (make.models || []).map(model => ({ ...model, make, make_name: make.name, model_name: model.name }))));
+const { sort: modelSort, onSort: onModelSort, sortedRows: sortedModelRows } = useClientSort(modelRows);
+
+// name (JSON-переводимое поле) и business_direction (связь) — не сортируются.
+const serviceCategoryColumns = [
+    { key: 'name', label: 'Название' },
+    { key: 'business_direction', label: 'Направление бизнеса' },
+];
+
+// name (JSON-переводимое поле) — единственная колонка, сортировать нечем.
+const productCategoryColumns = [
+    { key: 'name', label: 'Название' },
+];
+
+// Один и тот же блок обслуживает много типов lookup (Источники клиентов,
+// Роли клиентов, Типы кузова и т.д.) — колонка "Цвет" существует только для
+// client_role, поэтому набор колонок зависит от activeTab, не статичен.
+const lookupColumns = computed(() => {
+    const cols = [{ key: 'value', label: 'Значение', sortable: true }];
+    if (activeTab.value === 'client_role') {
+        cols.push({ key: 'color', label: 'Цвет', sortable: true });
+    }
+    cols.push({ key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' });
+    return cols;
+});
+const { sort: lookupSort, onSort: onLookupSort, sortedRows: sortedLookupRows } = useClientSort(() => props.lookups[activeTab.value] || []);
 
 const openMakeModal = (make = null) => {
     editingMake.value = make;
@@ -412,31 +462,21 @@ const getLocalizedLabel = (label) => {
                                 </button>
                             </div>
                             <div class="overflow-x-auto w-full">
-                                <table class="min-w-full text-left whitespace-nowrap">
-                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                                        <tr>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Марка</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Кол-во моделей</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="make in makes" :key="make.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ make.name }}</td>
-                                            <td class="py-4 px-6 text-sm">{{ make.models?.length || 0 }} шт.</td>
-                                            <td class="py-4 px-6 text-sm">
-                                                <span :class="[make.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                                    {{ make.is_active ? 'Активно' : 'Неактивно' }}
-                                                </span>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm text-right space-x-2">
-                                                <button @click="openMakeModal(make)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                <button @click="deleteMake(make)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                                <DataTable :columns="makeColumns" :rows="sortedMakes" has-actions :sort="makeSort" @sort="onMakeSort">
+                                    <template #cell-name="{ row: make }">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ make.name }}</span>
+                                    </template>
+                                    <template #cell-models_count="{ row: make }">{{ make.models?.length || 0 }} шт.</template>
+                                    <template #cell-status="{ row: make }">
+                                        <span :class="[make.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                            {{ make.is_active ? 'Активно' : 'Неактивно' }}
+                                        </span>
+                                    </template>
+                                    <template #actions="{ row: make }">
+                                        <button @click="openMakeModal(make)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                        <button @click="deleteMake(make)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                    </template>
+                                </DataTable>
                             </div>
                         </div>
 
@@ -449,37 +489,25 @@ const getLocalizedLabel = (label) => {
                                 </button>
                             </div>
                             <div class="overflow-x-auto w-full">
-                                <table class="min-w-full text-left whitespace-nowrap">
-                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                                        <tr>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Марка</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Модель</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип кузова</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Категория / Класс</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <template v-for="make in makes" :key="'m_'+make.id">
-                                            <tr v-for="model in make.models" :key="model.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                                <td class="py-3 px-6 text-sm font-semibold text-gray-700 dark:text-gray-300">{{ make.name }}</td>
-                                                <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ model.name }}</td>
-                                                <td class="py-3 px-6 text-sm">{{ model.body_type || '—' }}</td>
-                                                <td class="py-3 px-6 text-sm">{{ model.category || '—' }}</td>
-                                                <td class="py-3 px-6 text-sm">
-                                                    <span :class="[model.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                                        {{ model.is_active ? 'Активно' : 'Неактивно' }}
-                                                    </span>
-                                                </td>
-                                                <td class="py-3 px-6 text-sm text-right space-x-2">
-                                                    <button @click="openModelModal(model, make.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                    <button @click="deleteModel(model)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                                </td>
-                                            </tr>
-                                        </template>
-                                    </tbody>
-                                </table>
+                                <DataTable :columns="modelColumns" :rows="sortedModelRows" row-key="id" has-actions :sort="modelSort" @sort="onModelSort">
+                                    <template #cell-make_name="{ row: model }">
+                                        <span class="font-semibold text-gray-700 dark:text-gray-300">{{ model.make.name }}</span>
+                                    </template>
+                                    <template #cell-model_name="{ row: model }">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ model.name }}</span>
+                                    </template>
+                                    <template #cell-body_type="{ row: model }">{{ model.body_type || '—' }}</template>
+                                    <template #cell-category="{ row: model }">{{ model.category || '—' }}</template>
+                                    <template #cell-status="{ row: model }">
+                                        <span :class="[model.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                            {{ model.is_active ? 'Активно' : 'Неактивно' }}
+                                        </span>
+                                    </template>
+                                    <template #actions="{ row: model }">
+                                        <button @click="openModelModal(model, model.make.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                        <button @click="deleteModel(model)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                    </template>
+                                </DataTable>
                             </div>
                         </div>
 
@@ -492,30 +520,21 @@ const getLocalizedLabel = (label) => {
                                 </button>
                             </div>
                             <div class="overflow-x-auto w-full">
-                                <table class="min-w-full text-left whitespace-nowrap">
-                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                                        <tr>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Направление бизнеса</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="cat in serviceCategories" :key="cat.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
-                                            <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300">
-                                                <span v-if="cat.business_direction" class="inline-flex items-center gap-1.5 bg-info/10 text-info px-2.5 py-1 rounded text-xs font-medium">
-                                                    <i class="ri-node-tree"></i> {{ cat.business_direction.name }}
-                                                </span>
-                                                <span v-else class="text-xs text-gray-400 font-medium">Общая категория</span>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm text-right space-x-2">
-                                                <button @click="openCategoryModal('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                <button @click="deleteCategory('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                                <DataTable :columns="serviceCategoryColumns" :rows="serviceCategories" has-actions>
+                                    <template #cell-name="{ row: cat }">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</span>
+                                    </template>
+                                    <template #cell-business_direction="{ row: cat }">
+                                        <span v-if="cat.business_direction" class="inline-flex items-center gap-1.5 bg-info/10 text-info px-2.5 py-1 rounded text-xs font-medium">
+                                            <i class="ri-node-tree"></i> {{ cat.business_direction.name }}
+                                        </span>
+                                        <span v-else class="text-xs text-gray-400 font-medium">Общая категория</span>
+                                    </template>
+                                    <template #actions="{ row: cat }">
+                                        <button @click="openCategoryModal('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                        <button @click="deleteCategory('service', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                    </template>
+                                </DataTable>
                             </div>
                         </div>
 
@@ -528,23 +547,15 @@ const getLocalizedLabel = (label) => {
                                 </button>
                             </div>
                             <div class="overflow-x-auto w-full">
-                                <table class="min-w-full text-left whitespace-nowrap">
-                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                                        <tr>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="cat in productCategories" :key="cat.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</td>
-                                            <td class="py-4 px-6 text-sm text-right space-x-2">
-                                                <button @click="openCategoryModal('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                <button @click="deleteCategory('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                                <DataTable :columns="productCategoryColumns" :rows="productCategories" has-actions>
+                                    <template #cell-name="{ row: cat }">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(cat.name) }}</span>
+                                    </template>
+                                    <template #actions="{ row: cat }">
+                                        <button @click="openCategoryModal('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                        <button @click="deleteCategory('product', cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                    </template>
+                                </DataTable>
                             </div>
                         </div>
 
@@ -584,41 +595,31 @@ const getLocalizedLabel = (label) => {
                                 <Link v-if="!pricingImpactFor(activeTab)" :href="route('settings.crm.index')" class="text-primary hover:underline font-medium">Настройки → CRM</Link>.
                             </div>
                             <div class="overflow-x-auto w-full">
-                                <table class="min-w-full text-left whitespace-nowrap">
-                                    <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                                        <tr>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Значение</th>
-                                            <th v-if="activeTab === 'client_role'" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Цвет</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                            <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-600 dark:text-gray-300">
-                                        <tr v-for="lookup in (lookups[activeTab] || [])" :key="lookup.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                            <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200">
-                                                {{ lookup.label || lookup.value }}
-                                                <i v-if="lookup.is_system" class="ri-lock-line text-gray-400 ml-1" title="Системная роль: нельзя переименовать и нельзя удалить"></i>
-                                            </td>
-                                            <td v-if="activeTab === 'client_role'" class="py-4 px-6 text-sm">
-                                                <span :class="[groupColorMeta(lookup.color).badge, 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
-                                                    {{ lookup.label || lookup.value }}
-                                                </span>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm">
-                                                <span :class="[lookup.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
-                                                    {{ lookup.is_active ? 'Активно' : 'Неактивно' }}
-                                                </span>
-                                            </td>
-                                            <td class="py-4 px-6 text-sm text-right space-x-2">
-                                                <template v-if="!lookup.is_system">
-                                                    <button @click="openLookupModal(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
-                                                    <button @click="deleteLookup(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
-                                                </template>
-                                                <span v-else class="text-xs text-gray-400" title="Системная роль — недоступна для правки и удаления даже администратору">Системная</span>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                                <DataTable :columns="lookupColumns" :rows="sortedLookupRows" has-actions :sort="lookupSort" @sort="onLookupSort">
+                                    <template #cell-value="{ row: lookup }">
+                                        <span class="font-bold text-gray-800 dark:text-gray-200">
+                                            {{ lookup.label || lookup.value }}
+                                            <i v-if="lookup.is_system" class="ri-lock-line text-gray-400 ml-1" title="Системная роль: нельзя переименовать и нельзя удалить"></i>
+                                        </span>
+                                    </template>
+                                    <template #cell-color="{ row: lookup }">
+                                        <span :class="[groupColorMeta(lookup.color).badge, 'inline-flex items-center px-2.5 py-1 rounded text-xs font-bold uppercase']">
+                                            {{ lookup.label || lookup.value }}
+                                        </span>
+                                    </template>
+                                    <template #cell-status="{ row: lookup }">
+                                        <span :class="[lookup.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
+                                            {{ lookup.is_active ? 'Активно' : 'Неактивно' }}
+                                        </span>
+                                    </template>
+                                    <template #actions="{ row: lookup }">
+                                        <template v-if="!lookup.is_system">
+                                            <button @click="openLookupModal(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"><i class="ri-pencil-line"></i></button>
+                                            <button @click="deleteLookup(lookup)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white"><i class="ri-delete-bin-line"></i></button>
+                                        </template>
+                                        <span v-else class="text-xs text-gray-400" title="Системная роль — недоступна для правки и удаления даже администратору">Системная</span>
+                                    </template>
+                                </DataTable>
                             </div>
                         </div>
 

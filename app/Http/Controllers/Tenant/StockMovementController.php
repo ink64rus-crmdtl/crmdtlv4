@@ -39,7 +39,8 @@ class StockMovementController extends Controller
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
-            [] // Глобальный поиск обработан выше
+            [], // Глобальный поиск обработан выше
+            allowedSorts: ['created_at', 'type', 'quantity', 'cost_price']
         );
 
         if (! $request->has('sort_by')) {

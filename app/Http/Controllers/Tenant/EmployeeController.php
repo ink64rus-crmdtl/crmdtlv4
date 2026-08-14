@@ -3,31 +3,32 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\Employee;
-use App\Models\User;
-use App\Models\Role;
-use App\Models\Branch;
-use App\Models\Position;
-use App\Models\LegalEntity;
-use App\Models\BusinessDirection;
-use App\Models\Warehouse;
+use App\Jobs\ExportEntitiesJob;
 use App\Models\Account;
+use App\Models\Branch;
+use App\Models\BusinessDirection;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
+use App\Models\Employee;
+use App\Models\LegalEntity;
 use App\Models\ListView;
-use App\Models\PayrollRule;
 use App\Models\Payroll;
+use App\Models\PayrollRule;
+use App\Models\Position;
+use App\Models\Role;
 use App\Models\Service;
 use App\Models\ServiceCategory;
+use App\Models\User;
+use App\Models\Warehouse;
+use App\Services\ActivityLogger;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
-use App\Services\ActivityLogger;
-use App\Jobs\ExportEntitiesJob;
+use App\Support\CalendarPalette;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -36,29 +37,30 @@ class EmployeeController extends Controller
     public function index(): Response
     {
         $user = auth()->user();
-        
+
         $query = Employee::with(['user.roles', 'branch' => fn ($q) => $q->withTrashed(), 'position']);
-        
+
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
-            $query, 
-            request()->all(), 
-            ['first_name', 'last_name', 'phone', 'personal_email'], 
-            'employee'
+            $query,
+            request()->all(),
+            ['first_name', 'last_name', 'phone', 'personal_email'],
+            'employee',
+            allowedSorts: ['last_name', 'phone', 'personal_email', 'birth_date', 'hire_date', 'termination_date']
         );
 
         // Сортировка по умолчанию
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         // Пагинация вместо ->get()
         $employees = $query->paginate(15)->withQueryString();
-        
+
         $branches = Branch::forSelect()->get(['id', 'name']);
         $positions = Position::where('is_active', true)->get(['id', 'name']);
         $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
-        
+
         $scopes = [
             'branches' => $branches,
             'legalEntities' => LegalEntity::where('is_active', true)->get(['id', 'name']),
@@ -85,7 +87,7 @@ class EmployeeController extends Controller
         $tenantCountry = config('tenant.country_code', 'RU');
 
         // --- ДИНАМИЧЕСКИЕ ТАБЛИЦЫ И ПРАВА ДОСТУПА ---
-        
+
         // 1. Формируем базовый список всех возможных колонок
         $baseColumns = [
             ['key' => 'employee_name', 'label' => 'Сотрудник', 'type' => 'system', 'is_default' => true],
@@ -119,12 +121,12 @@ class EmployeeController extends Controller
         $employees->getCollection()->transform(function ($employee) use ($cfValues, $customFields) {
             $employeeData = $employee->toArray();
             $employeeData['custom_fields'] = [];
-            
+
             foreach ($customFields as $def) {
                 $val = $cfValues->where('entity_id', $employee->id)->where('custom_field_definition_id', $def->id)->first();
                 $employeeData['custom_fields'][$def->key] = $val ? ($val->value_text ?? $val->value_number ?? $val->value_date ?? $val->value) : null;
             }
-            
+
             return $employeeData;
         });
 
@@ -132,7 +134,7 @@ class EmployeeController extends Controller
         $allFieldKeys = array_column($baseColumns, 'key');
         $visibleKeys = FieldPermissionService::visibleFields($user, 'employee', $allFieldKeys);
 
-        $availableColumns = array_values(array_filter($baseColumns, function($col) use ($visibleKeys) {
+        $availableColumns = array_values(array_filter($baseColumns, function ($col) use ($visibleKeys) {
             return in_array($col['key'], $visibleKeys);
         }));
 
@@ -141,9 +143,9 @@ class EmployeeController extends Controller
             ->where('user_id', $user->id)
             ->first();
 
-        $visibleColumns = $listView 
-            ? $listView->visible_columns 
-            : array_values(array_map(fn($c) => $c['key'], array_filter($availableColumns, fn($c) => $c['is_default'])));
+        $visibleColumns = $listView
+            ? $listView->visible_columns
+            : array_values(array_map(fn ($c) => $c['key'], array_filter($availableColumns, fn ($c) => $c['is_default'])));
 
         return Inertia::render('HR/Employees/Index', [
             'employees' => $employees,
@@ -165,10 +167,10 @@ class EmployeeController extends Controller
     public function show(Employee $employee): Response
     {
         $employee->load(['user.roles', 'branch' => fn ($q) => $q->withTrashed(), 'position', 'secondaryPosition']);
-        
+
         $resolvedScopes = [];
         $userScopes = [];
-        
+
         if ($employee->user_id) {
             $user = $employee->user;
             $resolvedScopes = [
@@ -178,7 +180,7 @@ class EmployeeController extends Controller
                 'warehouses' => $user->warehouses()->get(['warehouses.id', 'warehouses.name']),
                 'accounts' => $user->accounts()->get(['accounts.id', 'accounts.name']),
             ];
-            
+
             $userScopes[$employee->user_id] = [
                 'branches' => $user->branches()->pluck('branches.id')->toArray(),
                 'legal_entities' => $user->legalEntities()->pluck('legal_entities.id')->toArray(),
@@ -192,7 +194,7 @@ class EmployeeController extends Controller
         $branches = Branch::forSelect()->get(['id', 'name']);
         $positions = Position::where('is_active', true)->get(['id', 'name']);
         $roles = Role::where('name', '!=', 'admin')->get(['id', 'name']);
-        
+
         $scopes = [
             'branches' => $branches,
             'legalEntities' => LegalEntity::where('is_active', true)->get(['id', 'name']),
@@ -280,7 +282,7 @@ class EmployeeController extends Controller
                 'max:255',
                 Rule::unique('employees')->where(function ($query) use ($request) {
                     return $query->where('branch_id', $request->branch_id)->whereNull('deleted_at');
-                })
+                }),
             ],
             'personal_email' => ['nullable', 'email', 'max:255'],
             'birth_date' => ['nullable', 'date'],
@@ -293,7 +295,7 @@ class EmployeeController extends Controller
             'hire_date' => ['nullable', 'date'],
             'termination_date' => ['nullable', 'date'],
             'is_active' => ['boolean'],
-            'calendar_color' => ['nullable', 'string', Rule::in(\App\Support\CalendarPalette::COLORS)],
+            'calendar_color' => ['nullable', 'string', Rule::in(CalendarPalette::COLORS)],
             'passport_data' => ['nullable', 'array'],
 
             // CRM Access
@@ -316,9 +318,9 @@ class EmployeeController extends Controller
         DB::transaction(function () use ($validated) {
             $userId = null;
 
-            if (!empty($validated['has_crm_access'])) {
+            if (! empty($validated['has_crm_access'])) {
                 $user = User::create([
-                    'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                    'name' => trim($validated['first_name'].' '.$validated['last_name']),
                     'email' => $validated['email'],
                     'password' => Hash::make($validated['password']),
                 ]);
@@ -326,7 +328,7 @@ class EmployeeController extends Controller
                 $role = Role::findById($validated['role_id']);
                 $user->assignRole($role);
 
-                if (!empty($validated['scopes'])) {
+                if (! empty($validated['scopes'])) {
                     $user->branches()->sync($validated['scopes']['branches'] ?? []);
                     $user->legalEntities()->sync($validated['scopes']['legal_entities'] ?? []);
                     $user->businessDirections()->sync($validated['scopes']['business_directions'] ?? []);
@@ -379,7 +381,7 @@ class EmployeeController extends Controller
                 'max:255',
                 Rule::unique('employees')->ignore($employee->id)->where(function ($query) use ($request) {
                     return $query->where('branch_id', $request->branch_id)->whereNull('deleted_at');
-                })
+                }),
             ],
             'personal_email' => ['nullable', 'email', 'max:255'],
             'birth_date' => ['nullable', 'date'],
@@ -392,12 +394,12 @@ class EmployeeController extends Controller
             'hire_date' => ['nullable', 'date'],
             'termination_date' => ['nullable', 'date'],
             'is_active' => ['boolean'],
-            'calendar_color' => ['nullable', 'string', Rule::in(\App\Support\CalendarPalette::COLORS)],
+            'calendar_color' => ['nullable', 'string', Rule::in(CalendarPalette::COLORS)],
             'passport_data' => ['nullable', 'array'],
 
             // CRM Access
             'has_crm_access' => ['boolean'],
-            'email' => ['exclude_if:has_crm_access,false', 'required', 'email', 'unique:users,email,' . $employee->user_id],
+            'email' => ['exclude_if:has_crm_access,false', 'required', 'email', 'unique:users,email,'.$employee->user_id],
             'password' => ['nullable', Password::defaults()],
             'role_id' => ['exclude_if:has_crm_access,false', 'required', 'exists:roles,id'],
 
@@ -415,15 +417,15 @@ class EmployeeController extends Controller
         DB::transaction(function () use ($validated, $employee) {
             $userId = $employee->user_id;
 
-            if (!empty($validated['has_crm_access'])) {
+            if (! empty($validated['has_crm_access'])) {
                 if ($userId) {
                     // Обновляем существующего пользователя
                     $user = User::find($userId);
                     $userData = [
-                        'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                        'name' => trim($validated['first_name'].' '.$validated['last_name']),
                         'email' => $validated['email'],
                     ];
-                    if (!empty($validated['password'])) {
+                    if (! empty($validated['password'])) {
                         $userData['password'] = Hash::make($validated['password']);
                     }
                     $user->update($userData);
@@ -433,7 +435,7 @@ class EmployeeController extends Controller
                 } else {
                     // Создаем нового пользователя
                     $user = User::create([
-                        'name' => trim($validated['first_name'] . ' ' . $validated['last_name']),
+                        'name' => trim($validated['first_name'].' '.$validated['last_name']),
                         'email' => $validated['email'],
                         'password' => Hash::make($validated['password']),
                     ]);
@@ -442,7 +444,7 @@ class EmployeeController extends Controller
                     $userId = $user->id;
                 }
 
-                if (!empty($validated['scopes'])) {
+                if (! empty($validated['scopes'])) {
                     $user->branches()->sync($validated['scopes']['branches'] ?? []);
                     $user->legalEntities()->sync($validated['scopes']['legal_entities'] ?? []);
                     $user->businessDirections()->sync($validated['scopes']['business_directions'] ?? []);

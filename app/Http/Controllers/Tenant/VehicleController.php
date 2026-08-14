@@ -3,21 +3,21 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
-use App\Models\Vehicle;
-use App\Models\Client;
+use App\Jobs\ExportEntitiesJob;
 use App\Models\Branch;
-use App\Models\VehicleMake;
-use App\Models\VehicleModel;
+use App\Models\Client;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
 use App\Models\ListView;
-use App\Models\Setting;
-use App\Models\WorkOrder;
 use App\Models\Lookup;
+use App\Models\Setting;
+use App\Models\Vehicle;
+use App\Models\VehicleMake;
+use App\Models\VehicleModel;
+use App\Models\WorkOrder;
+use App\Services\ActivityLogger;
 use App\Services\FieldPermissionService;
 use App\Services\QueryFilterService;
-use App\Services\ActivityLogger;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -28,34 +28,36 @@ class VehicleController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        
+
         // Получаем автомобили, владельцы которых доступны в текущей точке (BranchScope на клиенте)
         $query = Vehicle::whereHas('client')->with(['client', 'make', 'vehicleModel']);
-        
+
         // Применяем серверную фильтрацию и поиск
         $query = QueryFilterService::apply(
-            $query, 
-            $request->all(), 
-            ['plate_number', 'vin'], 
-            'vehicle'
+            $query,
+            $request->all(),
+            ['plate_number', 'vin'],
+            'vehicle',
+            allowedSorts: ['plate_number', 'vin', 'year']
         );
 
         // Сортировка по умолчанию, если не задана иная
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
         // Если AJAX-запрос для SearchableSelect, возвращаем только пагинированные данные (Исключаем Inertia)
-        if (($request->wantsJson() || $request->ajax()) && !$request->hasHeader('X-Inertia')) {
+        if (($request->wantsJson() || $request->ajax()) && ! $request->hasHeader('X-Inertia')) {
             if ($request->filled('client_id')) {
                 $query->where('client_id', $request->client_id);
             }
+
             return response()->json($query->paginate(15));
         }
 
         // Пагинация вместо ->get()
         $vehicles = $query->paginate(15)->withQueryString();
-        
+
         // Список клиентов для выпадающего списка при создании авто
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone', 'alias']);
 
@@ -71,7 +73,7 @@ class VehicleController extends Controller
         $tenantCountry = config('tenant.country_code', 'RU');
 
         // --- ДИНАМИЧЕСКИЕ ТАБЛИЦЫ И КАСТОМНЫЕ ПОЛЯ ---
-        
+
         // 1. Формируем базовый список системных колонок
         $baseColumns = [
             ['key' => 'vehicle_info', 'label' => 'Автомобиль', 'type' => 'system', 'is_default' => true],
@@ -101,12 +103,12 @@ class VehicleController extends Controller
         $vehicles->getCollection()->transform(function ($vehicle) use ($cfValues, $customFieldDefs) {
             $vehicleData = $vehicle->toArray();
             $vehicleData['custom_fields'] = [];
-            
+
             foreach ($customFieldDefs as $def) {
                 $val = $cfValues->where('entity_id', $vehicle->id)->where('custom_field_definition_id', $def->id)->first();
                 $vehicleData['custom_fields'][$def->key] = $val ? ($val->value_text ?? $val->value_number ?? $val->value_date ?? $val->value) : null;
             }
-            
+
             return $vehicleData;
         });
 
@@ -114,7 +116,7 @@ class VehicleController extends Controller
         $allFieldKeys = array_column($baseColumns, 'key');
         $visibleKeys = FieldPermissionService::visibleFields($user, 'vehicle', $allFieldKeys);
 
-        $availableColumns = array_values(array_filter($baseColumns, function($col) use ($visibleKeys) {
+        $availableColumns = array_values(array_filter($baseColumns, function ($col) use ($visibleKeys) {
             return in_array($col['key'], $visibleKeys);
         }));
 
@@ -123,9 +125,9 @@ class VehicleController extends Controller
             ->where('user_id', $user->id)
             ->first();
 
-        $visibleColumns = $listView 
-            ? $listView->visible_columns 
-            : array_values(array_map(fn($c) => $c['key'], array_filter($availableColumns, fn($c) => $c['is_default'])));
+        $visibleColumns = $listView
+            ? $listView->visible_columns
+            : array_values(array_map(fn ($c) => $c['key'], array_filter($availableColumns, fn ($c) => $c['is_default'])));
 
         return Inertia::render('CRM/Vehicles/Index', [
             'vehicles' => $vehicles,
@@ -147,10 +149,10 @@ class VehicleController extends Controller
     public function show(Vehicle $vehicle): Response
     {
         $vehicle->load(['client', 'make', 'vehicleModel']);
-        
+
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'vehicle')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'vehicle')->where('entity_id', $vehicle->id)->get();
-        
+
         $customFieldsData = [];
         foreach ($customFieldDefs as $def) {
             $val = $cfValues->where('custom_field_definition_id', $def->id)->first();
@@ -216,7 +218,7 @@ class VehicleController extends Controller
             'vehicle_model_id' => ['required', 'exists:vehicle_models,id'],
             'plate_number' => $plateRules,
             'vin' => ['nullable', 'string', 'max:255'],
-            'year' => ['nullable', 'integer', 'min:1900', 'max:' . (date('Y') + 1)],
+            'year' => ['nullable', 'integer', 'min:1900', 'max:'.(date('Y') + 1)],
             'custom_fields' => ['nullable', 'array'],
         ], [
             'plate_number.regex' => 'Госномер не соответствует формату выбранной страны.',
@@ -228,11 +230,11 @@ class VehicleController extends Controller
                 'vehicle_make_id' => $validated['vehicle_make_id'],
                 'vehicle_model_id' => $validated['vehicle_model_id'],
                 'plate_number' => $validated['plate_number'] ? mb_strtoupper(str_replace(' ', '', $validated['plate_number'])) : null,
-                'vin' => !empty($validated['vin']) ? mb_strtoupper($validated['vin']) : null,
+                'vin' => ! empty($validated['vin']) ? mb_strtoupper($validated['vin']) : null,
                 'year' => $validated['year'] ?? null,
             ]);
 
-            if (!empty($validated['custom_fields'])) {
+            if (! empty($validated['custom_fields'])) {
                 $this->saveCustomFields($vehicle, $validated['custom_fields']);
             }
 
@@ -264,7 +266,7 @@ class VehicleController extends Controller
             'vehicle_model_id' => ['required', 'exists:vehicle_models,id'],
             'plate_number' => $plateRules,
             'vin' => ['nullable', 'string', 'max:255'],
-            'year' => ['nullable', 'integer', 'min:1900', 'max:' . (date('Y') + 1)],
+            'year' => ['nullable', 'integer', 'min:1900', 'max:'.(date('Y') + 1)],
             'custom_fields' => ['nullable', 'array'],
         ], [
             'plate_number.regex' => 'Госномер не соответствует формату выбранной страны.',
@@ -276,7 +278,7 @@ class VehicleController extends Controller
                 'vehicle_make_id' => $validated['vehicle_make_id'],
                 'vehicle_model_id' => $validated['vehicle_model_id'],
                 'plate_number' => $validated['plate_number'] ? mb_strtoupper(str_replace(' ', '', $validated['plate_number'])) : null,
-                'vin' => !empty($validated['vin']) ? mb_strtoupper($validated['vin']) : null,
+                'vin' => ! empty($validated['vin']) ? mb_strtoupper($validated['vin']) : null,
                 'year' => $validated['year'] ?? null,
             ]);
 
@@ -304,6 +306,7 @@ class VehicleController extends Controller
     public function destroy(Vehicle $vehicle)
     {
         $vehicle->delete();
+
         return redirect()->back()->with('success', 'Автомобиль удален');
     }
 
@@ -335,10 +338,10 @@ class VehicleController extends Controller
     {
         foreach ($customFieldsData as $key => $value) {
             $def = CustomFieldDefinition::where('entity_type', 'vehicle')->where('key', $key)->first();
-            
+
             if ($def) {
                 $valData = ['value' => null, 'value_text' => null, 'value_number' => null, 'value_date' => null];
-                
+
                 if ($def->type === 'number') {
                     $valData['value_number'] = $value;
                 } elseif ($def->type === 'date') {

@@ -5,6 +5,7 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import SearchableMultiSelect from '@/Components/SearchableMultiSelect.vue';
+import DataTable from '@/Components/DataTable.vue';
 
 const props = defineProps({
     generalSettings: Object,
@@ -183,6 +184,17 @@ const ruleValueLabel = (rule) => {
         ? `${(rule.fixed_amount / 100).toLocaleString('ru-RU')} ₽`
         : `${rule.percentage_value}%`;
 };
+
+// Все 4 колонки — производные (relation-lookup или составной рендер из
+// нескольких полей правила), ни одна не мапится 1:1 на скалярную колонку
+// таблицы payroll_rules — сортировка сознательно не добавлена, как и у
+// матричного режима Services/Index.vue.
+const ruleColumns = [
+    { key: 'target_entity', label: 'Должность / Подрядчик' },
+    { key: 'applies_to', label: 'Применяется к' },
+    { key: 'branch', label: 'Локация' },
+    { key: 'rate', label: 'Ставка', align: 'right' },
+];
 </script>
 
 <template>
@@ -330,52 +342,43 @@ const ruleValueLabel = (rule) => {
                 </div>
 
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Должность / Подрядчик</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Применяется к</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Локация</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Ставка</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="rule in filteredPositionRules" :key="rule.id" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <template v-if="rule.client">
-                                        <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.client.name }}</div>
-                                        <span class="inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                            <i class="ri-briefcase-line"></i> Подрядчик
-                                        </span>
-                                    </template>
-                                    <template v-else>
-                                        <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.position ? getLocalizedLabel(rule.position.name) : '—' }}</div>
-                                        <span v-if="rule.position" :class="[rule.position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', 'inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium']">
-                                            {{ rule.position.payroll_role === 'admin' ? 'Администратор' : 'Исполнитель' }}
-                                        </span>
-                                    </template>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ ruleTargetLabel(rule) }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ rule.branch ? rule.branch.name : 'Все локации' }}</td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">{{ ruleValueLabel(rule) }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <button @click="openRuleModal(rule)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
-                                    <button @click="deleteRule(rule)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
-                                </td>
-                            </tr>
-                            <tr v-if="positionRules.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Ставки ещё не настроены. Нажмите "Добавить ставку".
-                                </td>
-                            </tr>
-                            <tr v-else-if="filteredPositionRules.length === 0">
-                                <td colspan="5" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Ничего не найдено по выбранным фильтрам. <button @click="resetTableFilters" class="text-primary hover:underline">Сбросить фильтры</button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="ruleColumns"
+                        :rows="filteredPositionRules"
+                        has-actions
+                    >
+                        <template #cell-target_entity="{ row: rule }">
+                            <template v-if="rule.client">
+                                <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.client.name }}</div>
+                                <span class="inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                    <i class="ri-briefcase-line"></i> Подрядчик
+                                </span>
+                            </template>
+                            <template v-else>
+                                <div class="font-semibold text-gray-800 dark:text-gray-200">{{ rule.position ? getLocalizedLabel(rule.position.name) : '—' }}</div>
+                                <span v-if="rule.position" :class="[rule.position.payroll_role === 'admin' ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300', 'inline-flex mt-1 items-center gap-1 py-0.5 px-1.5 rounded text-[10px] font-medium']">
+                                    {{ rule.position.payroll_role === 'admin' ? 'Администратор' : 'Исполнитель' }}
+                                </span>
+                            </template>
+                        </template>
+                        <template #cell-applies_to="{ row: rule }">{{ ruleTargetLabel(rule) }}</template>
+                        <template #cell-branch="{ row: rule }">{{ rule.branch ? rule.branch.name : 'Все локации' }}</template>
+                        <template #cell-rate="{ row: rule }">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ ruleValueLabel(rule) }}</span>
+                        </template>
+                        <template #actions="{ row: rule }">
+                            <button @click="openRuleModal(rule)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
+                            <button @click="deleteRule(rule)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                        </template>
+                        <template #empty>
+                            <template v-if="positionRules.length === 0">
+                                Ставки ещё не настроены. Нажмите "Добавить ставку".
+                            </template>
+                            <template v-else>
+                                Ничего не найдено по выбранным фильтрам. <button @click="resetTableFilters" class="text-primary hover:underline">Сбросить фильтры</button>
+                            </template>
+                        </template>
+                    </DataTable>
                 </div>
             </div>
         </div>

@@ -3,19 +3,17 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
+use App\Models\ListView;
 use App\Models\Transaction;
 use App\Models\TransactionCategory;
-use App\Models\Account;
-use App\Models\Branch;
-use App\Models\ListView;
 use App\Services\FinanceService;
-use App\Services\QueryFilterService;
 use App\Services\PeriodClosureService;
-use App\Jobs\ExportEntitiesJob;
+use App\Services\QueryFilterService;
+use Exception;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Exception;
 
 class TransactionController extends Controller
 {
@@ -25,22 +23,23 @@ class TransactionController extends Controller
 
         // Кастомный поиск по комментарию
         if ($request->filled('search')) {
-            $searchTerm = '%' . $request->search . '%';
+            $searchTerm = '%'.$request->search.'%';
             $query->where('comment', 'LIKE', $searchTerm);
         }
 
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
-            []
+            [],
+            allowedSorts: ['transaction_date', 'type', 'amount', 'comment', 'is_reconciled']
         );
 
-        if (!$request->has('sort_by')) {
+        if (! $request->has('sort_by')) {
             $query->orderBy('transaction_date', 'desc')->orderBy('id', 'desc');
         }
 
         $transactions = $query->paginate(15)->withQueryString();
-        
+
         // Справочники для фильтров и создания
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.balance']);
         $branches = auth()->user()->availableBranches()->forSelect()->get(['branches.id', 'branches.name']);
@@ -112,7 +111,7 @@ class TransactionController extends Controller
 
             return redirect()->back()->with('success', 'Операция успешно проведена');
         } catch (Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Ошибка при проведении операции: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Ошибка при проведении операции: '.$e->getMessage()]);
         }
     }
 
@@ -150,9 +149,10 @@ class TransactionController extends Controller
 
         try {
             FinanceService::updateTransaction($transaction, $data, auth()->id());
+
             return redirect()->back()->with('success', 'Транзакция обновлена');
         } catch (Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Ошибка при обновлении транзакции: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Ошибка при обновлении транзакции: '.$e->getMessage()]);
         }
     }
 
@@ -160,9 +160,10 @@ class TransactionController extends Controller
     {
         try {
             FinanceService::revertTransaction($transaction);
+
             return redirect()->back()->with('success', 'Транзакция отменена, баланс восстановлен');
         } catch (Exception $e) {
-            return redirect()->back()->withErrors(['error' => 'Ошибка при отмене транзакции: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Ошибка при отмене транзакции: '.$e->getMessage()]);
         }
     }
 

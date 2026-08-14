@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
 use App\Models\CustomFieldDefinition;
 use App\Services\QueryFilterService;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -16,14 +16,15 @@ class CustomFieldController extends Controller
     public function index(): Response
     {
         $query = CustomFieldDefinition::query();
-        
+
         $query = QueryFilterService::apply(
             $query,
             request()->all(),
-            ['label', 'key', 'entity_type']
+            ['label', 'key', 'entity_type'],
+            allowedSorts: ['entity_type', 'type']
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('entity_type')->orderBy('sort_order');
         }
 
@@ -51,7 +52,7 @@ class CustomFieldController extends Controller
         $key = $validated['key'] ?: Str::slug($validated['label'], '_');
 
         $options = null;
-        if ($validated['type'] === 'select' && !empty($validated['options'])) {
+        if ($validated['type'] === 'select' && ! empty($validated['options'])) {
             $options = array_map('trim', explode(',', $validated['options']));
         }
 
@@ -82,7 +83,7 @@ class CustomFieldController extends Controller
         ]);
 
         $options = null;
-        if ($validated['type'] === 'select' && !empty($validated['options'])) {
+        if ($validated['type'] === 'select' && ! empty($validated['options'])) {
             $options = array_map('trim', explode(',', $validated['options']));
         }
 
