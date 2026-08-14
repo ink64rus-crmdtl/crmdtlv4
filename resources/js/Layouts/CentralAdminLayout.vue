@@ -20,6 +20,9 @@ const logout = () => {
                 <Link :href="route('central.admin.tenants.index')" :class="[route().current('central.admin.tenants.*') ? 'bg-primary/10 text-primary' : 'text-[#aab8c5] hover:bg-gray-800 hover:text-white', 'flex items-center px-4 py-2.5 transition-all duration-300 rounded-md text-sm font-medium']">
                     <i class="ri-building-2-line text-lg mr-3"></i> Тенанты
                 </Link>
+                <Link :href="route('central.admin.document-templates.index')" :class="[route().current('central.admin.document-templates.*') ? 'bg-primary/10 text-primary' : 'text-[#aab8c5] hover:bg-gray-800 hover:text-white', 'flex items-center px-4 py-2.5 transition-all duration-300 rounded-md text-sm font-medium']">
+                    <i class="ri-file-text-line text-lg mr-3"></i> Шаблоны документов
+                </Link>
                 <Link :href="route('central.admin.settings.index')" :class="[route().current('central.admin.settings.*') ? 'bg-primary/10 text-primary' : 'text-[#aab8c5] hover:bg-gray-800 hover:text-white', 'flex items-center px-4 py-2.5 transition-all duration-300 rounded-md text-sm font-medium']">
                     <i class="ri-settings-3-line text-lg mr-3"></i> Настройки платформы
                 </Link>

@@ -236,6 +236,8 @@ Route::middleware([
         Route::post('/settings/document-templates', [DocumentTemplateController::class, 'store'])->name('settings.document-templates.store');
         Route::put('/settings/document-templates/{documentTemplate}', [DocumentTemplateController::class, 'update'])->name('settings.document-templates.update');
         Route::delete('/settings/document-templates/{documentTemplate}', [DocumentTemplateController::class, 'destroy'])->name('settings.document-templates.destroy');
+        Route::get('/settings/document-templates/library', [DocumentTemplateController::class, 'library'])->name('settings.document-templates.library');
+        Route::post('/settings/document-templates/import', [DocumentTemplateController::class, 'import'])->name('settings.document-templates.import');
 
         // Документы: реестр + генерация печатных форм (Фаза 12)
         Route::get('/documents', [DocumentController::class, 'index'])->name('documents.index');

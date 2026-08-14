@@ -22,22 +22,69 @@ namespace App\Services\Documents;
  * при отсутствии явных маркеров — фолбэк: строка-образец находится по
  * первому плейсхолдеру секции внутри <tr>...</tr> автоматически, без
  * какого-либо специального синтаксиса от пользователя.
+ *
+ * Условный блок {{#if key}}...{{/if}} — показывает кусок HTML, только если
+ * значение key в контексте непустое (та же truthy-конвенция, что уже
+ * неявно действует для опциональных плейсхолдеров вида {{work_order.
+ * vat_rate}}, которые сегодня просто приходят пустой строкой, если
+ * недоступны, — см. DocumentPlaceholderService). Нужен для шаблонов,
+ * которые должны одинаково верно печататься в нескольких взаимоисключающих
+ * состояниях одной записи (например НДС у юрлица заказа: не плательщик /
+ * включён в цену / начисляется сверх) — DocumentPlaceholderService заранее
+ * готовит нужный набор взаимоисключающих флагов, автор шаблона просто
+ * оборачивает нужный кусок в нужный флаг. Один уровень, без вложенности и
+ * БЕЗ отрицания/операторов сравнения — намеренно, тот же принцип "никакого
+ * исполнения кода", что и у {{#section}} выше.
  */
 class DocumentRenderer
 {
     /**
-     * @param string $body Тело шаблона
-     * @param array<string,string> $flat Плоские плейсхолдеры ("tenant.name" => "ООО Ромашка")
-     * @param array<string,array<int,array<string,string>>> $tables Табличные секции
-     *   (["items" => [["item.name" => "Полировка", "item.total" => "1 200,00"], ...]])
+     * @param  string  $body  Тело шаблона
+     * @param  array<string,string>  $flat  Плоские плейсхолдеры ("tenant.name" => "ООО Ромашка")
+     * @param  array<string,array<int,array<string,string>>>  $tables  Табличные секции
+     *                                                                 (["items" => [["item.name" => "Полировка", "item.total" => "1 200,00"], ...]])
      */
     public function render(string $body, array $flat, array $tables = []): string
     {
         $body = $this->renderTables($body, $tables);
+        // Второй проход по всему телу — тем же принципом, что уже действует
+        // для renderFlat() ниже: условия ВНУТРИ строк таблицы уже разрешены
+        // локальным контекстом строки (см. renderTables()/
+        // renderTableRowFallback()), этот проход добирает условия вне
+        // таблицы и условия внутри строк, ссылающиеся на общий контекст
+        // (например {{#if work_order.vat_exclusive}} внутри {{#items}}).
+        $body = $this->renderConditionals($body, $flat);
         $body = $this->renderFlat($body, $flat);
         $body = $this->stripUnresolvedPlaceholders($body);
 
         return $this->forceCyrillicFont($body);
+    }
+
+    /**
+     * Резолвит только условия, чей ключ РЕАЛЬНО присутствует в $context —
+     * если ключа нет (например условие внутри строки таблицы ссылается на
+     * общий контекст заказа, а не на данные самой строки), маркер
+     * оставляется как есть для следующего, более широкого прохода (см.
+     * render()/renderTables()). Тем же принципом уже работает renderFlat()
+     * ниже — strtr() трогает только известные ему ключи. Действительно
+     * неизвестный ключ (опечатка, чужой тип сущности) в итоге подчищается
+     * safety-net'ом в stripUnresolvedPlaceholders() — как "ложь" по умолчанию.
+     *
+     * @param  array<string,string>  $context
+     */
+    private function renderConditionals(string $body, array $context): string
+    {
+        return preg_replace_callback(
+            '/\{\{#if\s+([a-z0-9_.]+)\}\}(.*?)\{\{\/if\}\}/is',
+            function ($m) use ($context) {
+                if (! array_key_exists($m[1], $context)) {
+                    return $m[0];
+                }
+
+                return ! empty($context[$m[1]]) ? $m[2] : '';
+            },
+            $body
+        ) ?? $body;
     }
 
     /**
@@ -53,7 +100,7 @@ class DocumentRenderer
      */
     private function forceCyrillicFont(string $body): string
     {
-        return '<style>*{font-family:"DejaVu Sans",sans-serif !important}</style>' . $body;
+        return '<style>*{font-family:"DejaVu Sans",sans-serif !important}</style>'.$body;
     }
 
     /**
@@ -70,20 +117,35 @@ class DocumentRenderer
      */
     private function stripUnresolvedPlaceholders(string $body): string
     {
+        // Условие, чей ключ не нашёлся НИ в одном из пройденных контекстов
+        // (опечатка в ключе, условие для чужого типа сущности) — safety-net:
+        // блок целиком считается ложным и вырезается вместе с содержимым,
+        // а не показывается клиенту как есть.
+        $body = preg_replace_callback(
+            '/\{\{#if\s+[a-z0-9_.]+\}\}(.*?)\{\{\/if\}\}/is',
+            fn () => '',
+            $body
+        ) ?? $body;
+
+        // Незакрытый маркер (без парного {{/if}}) описанным выше проходом не
+        // ловится — подчищаем сам маркер отдельно; сырой "{{...}}" никогда
+        // не должен попасть в документ, уходящий клиенту.
+        $body = preg_replace('/\{\{#if\s+[a-z0-9_.]+\}\}|\{\{\/if\}\}/i', '', $body) ?? $body;
+
         return preg_replace('/\{\{[a-z0-9_.]+\}\}/i', '', $body) ?? $body;
     }
 
     private function renderTables(string $body, array $tables): string
     {
         foreach ($tables as $section => $rows) {
-            $pattern = '/\{\{#' . preg_quote($section, '/') . '\}\}(.*?)\{\{\/' . preg_quote($section, '/') . '\}\}/s';
+            $pattern = '/\{\{#'.preg_quote($section, '/').'\}\}(.*?)\{\{\/'.preg_quote($section, '/').'\}\}/s';
 
             if (preg_match($pattern, $body)) {
                 $body = preg_replace_callback($pattern, function ($matches) use ($rows) {
                     $rowTemplate = $matches[1];
 
                     return implode('', array_map(
-                        fn (array $row) => $this->renderFlat($rowTemplate, $row),
+                        fn (array $row) => $this->renderFlat($this->renderConditionals($rowTemplate, $row), $row),
                         $rows
                     ));
                 }, $body) ?? $body;
@@ -98,7 +160,7 @@ class DocumentRenderer
     }
 
     /**
-     * @param array<int,array<string,string>> $rows
+     * @param  array<int,array<string,string>>  $rows
      */
     private function renderTableRowFallback(string $body, array $rows): string
     {
@@ -107,18 +169,18 @@ class DocumentRenderer
         }
 
         $sampleKey = array_key_first($rows[0]);
-        $needle = preg_quote('{{' . $sampleKey . '}}', '/');
+        $needle = preg_quote('{{'.$sampleKey.'}}', '/');
         // Ищем <tr>...</tr>, содержащий плейсхолдер строки-образца — с
         // отрицательным просмотром вперёд, чтобы не захватить соседние строки.
-        $rowPattern = '/<tr\b[^>]*>(?:(?!<\/?tr\b).)*?' . $needle . '(?:(?!<\/?tr\b).)*?<\/tr>/is';
+        $rowPattern = '/<tr\b[^>]*>(?:(?!<\/?tr\b).)*?'.$needle.'(?:(?!<\/?tr\b).)*?<\/tr>/is';
 
-        if (!preg_match($rowPattern, $body, $rowMatch)) {
+        if (! preg_match($rowPattern, $body, $rowMatch)) {
             return $body;
         }
 
         $rowTemplate = $rowMatch[0];
         $rendered = implode('', array_map(
-            fn (array $row) => $this->renderFlat($rowTemplate, $row),
+            fn (array $row) => $this->renderFlat($this->renderConditionals($rowTemplate, $row), $row),
             $rows
         ));
 
@@ -137,7 +199,7 @@ class DocumentRenderer
         );
 
         return strtr($body, array_combine(
-            array_map(fn ($key) => '{{' . $key . '}}', array_keys($escaped)),
+            array_map(fn ($key) => '{{'.$key.'}}', array_keys($escaped)),
             array_values($escaped)
         ));
     }

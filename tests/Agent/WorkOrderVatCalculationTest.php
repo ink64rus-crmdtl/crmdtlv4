@@ -5,11 +5,16 @@ namespace Tests\Agent;
 use App\Http\Controllers\Tenant\WorkOrderController;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\GoodsReceipt;
+use App\Models\GoodsReceiptItem;
 use App\Models\LegalEntity;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceCategory;
+use App\Models\Warehouse;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
+use App\Services\Documents\DocumentPlaceholderService;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 
@@ -184,5 +189,68 @@ class WorkOrderVatCalculationTest extends TenantAgentTestCase
         $this->assertNotNull($workOrder->vat_rate);
         $this->assertSame(0, $workOrder->vat_amount);
         $this->assertSame(100000, $workOrder->final_amount);
+    }
+
+    #[Test]
+    public function placeholder_vat_flags_reflect_all_three_states(): void
+    {
+        // Без юрлица/НДС — оба флага-условия ({{#if}} в DocumentRenderer) пусты.
+        $flat = DocumentPlaceholderService::buildFor('work_order', $this->recalculate($this->makeWorkOrder()))['flat'];
+        $this->assertSame('', $flat['work_order.vat_inclusive']);
+        $this->assertSame('', $flat['work_order.vat_exclusive']);
+
+        $inclusiveEntity = $this->makeLegalEntity(vatPayer: true, rate: 20, method: 'inclusive');
+        $flat = DocumentPlaceholderService::buildFor('work_order', $this->recalculate($this->makeWorkOrder($inclusiveEntity)))['flat'];
+        $this->assertSame('1', $flat['work_order.vat_inclusive']);
+        $this->assertSame('', $flat['work_order.vat_exclusive']);
+
+        $exclusiveEntity = $this->makeLegalEntity(vatPayer: true, rate: 20, method: 'exclusive');
+        $flat = DocumentPlaceholderService::buildFor('work_order', $this->recalculate($this->makeWorkOrder($exclusiveEntity)))['flat'];
+        $this->assertSame('', $flat['work_order.vat_inclusive']);
+        $this->assertSame('1', $flat['work_order.vat_exclusive']);
+    }
+
+    #[Test]
+    public function goods_receipt_placeholder_vat_flags_reflect_header_method_and_per_item_presence(): void
+    {
+        $supplier = Client::create(['branch_id' => $this->branch->id, 'type' => 'b2c', 'name' => 'Поставщик НДС']);
+        $warehouse = Warehouse::create(['name' => 'Склад НДС']);
+        $productWithVat = Product::create(['name' => 'Товар с НДС']);
+        $productWithoutVat = Product::create(['name' => 'Товар без НДС']);
+
+        $receipt = GoodsReceipt::create([
+            'supplier_id' => $supplier->id,
+            'warehouse_id' => $warehouse->id,
+            'branch_id' => $this->branch->id,
+            'receipt_date' => now()->toDateString(),
+            'status' => 'posted',
+            'vat_calculation_method' => 'exclusive',
+        ]);
+
+        GoodsReceiptItem::create([
+            'goods_receipt_id' => $receipt->id,
+            'product_id' => $productWithVat->id,
+            'quantity' => 1,
+            'cost_price' => 100000,
+            'vat_rate' => 20,
+            'vat_amount' => 20000,
+        ]);
+        GoodsReceiptItem::create([
+            'goods_receipt_id' => $receipt->id,
+            'product_id' => $productWithoutVat->id,
+            'quantity' => 1,
+            'cost_price' => 50000,
+            'vat_rate' => null,
+            'vat_amount' => 0,
+        ]);
+
+        $data = DocumentPlaceholderService::buildFor('goods_receipt', $receipt->fresh(['items']));
+
+        $this->assertSame('', $data['flat']['goods_receipt.vat_inclusive']);
+        $this->assertSame('1', $data['flat']['goods_receipt.vat_exclusive']);
+
+        $rows = $data['tables']['items'];
+        $this->assertSame('1', $rows[0]['item.has_vat'], 'у позиции с vat_rate флаг обязан быть истинным');
+        $this->assertSame('', $rows[1]['item.has_vat'], 'у позиции без НДС флаг обязан быть пустым');
     }
 }

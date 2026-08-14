@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Central\Admin\AuthController as PlatformAdminAuthController;
 use App\Http\Controllers\Central\Admin\DashboardController as PlatformAdminDashboardController;
+use App\Http\Controllers\Central\Admin\PlatformDocumentTemplateController;
 use App\Http\Controllers\Central\Admin\PlatformSettingController;
 use App\Http\Controllers\Central\Admin\TenantController as PlatformAdminTenantController;
 use App\Http\Controllers\Central\RegisterTenantController;
@@ -63,4 +64,8 @@ Route::middleware('auth:platform_admin')->prefix('admin')->name('central.admin.'
     Route::get('/tenants', [PlatformAdminTenantController::class, 'index'])->name('tenants.index');
     Route::get('/settings', [PlatformSettingController::class, 'index'])->name('settings.index');
     Route::post('/settings', [PlatformSettingController::class, 'update'])->name('settings.update');
+    Route::get('/document-templates', [PlatformDocumentTemplateController::class, 'index'])->name('document-templates.index');
+    Route::post('/document-templates', [PlatformDocumentTemplateController::class, 'store'])->name('document-templates.store');
+    Route::put('/document-templates/{platformDocumentTemplate}', [PlatformDocumentTemplateController::class, 'update'])->name('document-templates.update');
+    Route::delete('/document-templates/{platformDocumentTemplate}', [PlatformDocumentTemplateController::class, 'destroy'])->name('document-templates.destroy');
 });

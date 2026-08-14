@@ -146,6 +146,12 @@ class DocumentPlaceholderService
             'work_order.vat_rate' => $workOrder->vat_rate !== null ? $workOrder->vat_rate.'%' : '',
             'work_order.vat_amount' => $workOrder->vat_rate !== null ? self::money($workOrder->vat_amount) : '',
             'work_order.total_amount_without_vat' => $workOrder->vat_rate !== null ? self::money($workOrder->final_amount - $workOrder->vat_amount) : '',
+            // Флаги-условия для {{#if ...}} в DocumentRenderer — не для
+            // печати значением, а чтобы один шаблон верно показывал нужную
+            // формулировку сразу в обоих режимах НДС (и никакой — для
+            // неплательщика). Взаимоисключающие, поэтому без отрицания.
+            'work_order.vat_inclusive' => ($workOrder->vat_rate !== null && $workOrder->vat_calculation_method === 'inclusive') ? '1' : '',
+            'work_order.vat_exclusive' => ($workOrder->vat_rate !== null && $workOrder->vat_calculation_method === 'exclusive') ? '1' : '',
             'client.name' => $workOrder->client?->name ?? '',
             'client.phone' => $workOrder->client?->phone ?? '',
             'vehicle.plate_number' => $workOrder->vehicle?->plate_number ?? '',
@@ -225,6 +231,9 @@ class DocumentPlaceholderService
             // без единой ставки; ставка — только в табличной секции item.*.
             'goods_receipt.vat_amount' => $vatTotal > 0 ? self::money($vatTotal) : '',
             'goods_receipt.total_value_without_vat' => $vatTotal > 0 ? self::money($receipt->total_value - $vatTotal) : '',
+            // Флаги-условия — см. пояснение у work_order.vat_inclusive выше.
+            'goods_receipt.vat_inclusive' => ($vatTotal > 0 && $receipt->vat_calculation_method === 'inclusive') ? '1' : '',
+            'goods_receipt.vat_exclusive' => ($vatTotal > 0 && $receipt->vat_calculation_method === 'exclusive') ? '1' : '',
             'supplier.name' => $receipt->supplier?->name ?? '',
             'supplier.phone' => $receipt->supplier?->phone ?? '',
             ...self::supplierRequisitePlaceholders($receipt->supplier),
@@ -241,6 +250,9 @@ class DocumentPlaceholderService
             'item.total' => self::money((int) round($item->quantity * $item->cost_price)),
             'item.vat_rate' => $item->vat_rate !== null ? $item->vat_rate.'%' : '',
             'item.vat_amount' => $item->vat_rate !== null ? self::money($item->vat_amount) : '',
+            // Флаг-условие — по позиции, а не по накладной целиком: у одного
+            // поставщика товары технически бывают на разных ставках/без НДС.
+            'item.has_vat' => $item->vat_rate !== null ? '1' : '',
         ])->all();
     }
 
