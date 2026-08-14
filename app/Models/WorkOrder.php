@@ -30,6 +30,9 @@ class WorkOrder extends Model
         'currency_id',
         'created_by',
         'admin_assignment_mode',
+        'vat_rate',
+        'vat_calculation_method',
+        'vat_amount',
     ];
 
     protected function casts(): array
@@ -41,6 +44,8 @@ class WorkOrder extends Model
             'discount_is_manual' => 'boolean',
             'final_amount' => 'integer',
             'currency_id' => 'integer',
+            'vat_rate' => 'integer',
+            'vat_amount' => 'integer',
         ];
     }
 

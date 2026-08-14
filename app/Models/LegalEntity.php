@@ -3,9 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LegalEntity extends Model
 {
@@ -16,6 +16,9 @@ class LegalEntity extends Model
         'tax_id',
         'requisites',
         'is_active',
+        'vat_payer',
+        'vat_rate',
+        'vat_calculation_method',
     ];
 
     protected function casts(): array
@@ -23,6 +26,8 @@ class LegalEntity extends Model
         return [
             'is_active' => 'boolean',
             'requisites' => 'array',
+            'vat_payer' => 'boolean',
+            'vat_rate' => 'integer',
         ];
     }
 

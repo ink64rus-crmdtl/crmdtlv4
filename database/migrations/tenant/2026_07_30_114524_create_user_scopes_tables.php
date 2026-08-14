@@ -26,23 +26,18 @@ return new class extends Migration
             $table->primary(['user_id', 'business_direction_id']);
         });
 
-        Schema::create('user_warehouses', function (Blueprint $table) {
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('warehouse_id')->constrained('warehouses')->cascadeOnDelete();
-            $table->primary(['user_id', 'warehouse_id']);
-        });
-
-        Schema::create('user_accounts', function (Blueprint $table) {
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('account_id')->constrained('accounts')->cascadeOnDelete();
-            $table->primary(['user_id', 'account_id']);
-        });
+        // user_warehouses/user_accounts — см. отдельную более позднюю
+        // миграцию 2026_12_31_900014_create_user_warehouses_and_user_accounts_tables.php.
+        // Раньше были здесь, но warehouses/accounts создаются миграциями
+        // 2026_12_31_900005/900012 — те идут ПОСЛЕ этой по порядку
+        // выполнения, поэтому FK здесь падал с "Failed to open the
+        // referenced table" на КАЖДОЙ новой базе тенанта (регистрация
+        // нового тенанта была сломана). Уже смигрировавшие тенанты этот
+        // файл повторно не выполняют — на них не влияет.
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('user_accounts');
-        Schema::dropIfExists('user_warehouses');
         Schema::dropIfExists('user_business_directions');
         Schema::dropIfExists('user_legal_entities');
         Schema::dropIfExists('user_branches');

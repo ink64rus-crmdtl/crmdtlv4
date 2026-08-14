@@ -26,6 +26,7 @@ class GoodsReceipt extends Model
         'supplier_document_number',
         'status',
         'payment_status',
+        'vat_calculation_method',
         'comment',
         'created_by',
     ];
@@ -98,11 +99,25 @@ class GoodsReceipt extends Model
      * осмысленная агрегация по позициям для KPI Карточки — сумма quantity
      * across позиций была бы бессмысленна (разные товары — разные единицы
      * измерения, "5 шт + 2 л").
+     *
+     * НДС: при vat_calculation_method='exclusive' цены позиций были БЕЗ
+     * НДС — к сумме добавляется Σ(item.vat_amount), это и есть реальная
+     * сумма к оплате поставщику. При 'inclusive' (или отсутствии НДС)
+     * cost_price УЖЕ включает налог — формула не меняется, побайтово
+     * совпадает с той, что была до появления НДС в системе.
      */
     protected function totalValue(): Attribute
     {
         return Attribute::make(
-            get: fn () => (int) $this->items->sum(fn (GoodsReceiptItem $item) => (int) round($item->quantity * $item->cost_price)),
+            get: function () {
+                $sum = (int) $this->items->sum(fn (GoodsReceiptItem $item) => (int) round($item->quantity * $item->cost_price));
+
+                if ($this->vat_calculation_method === 'exclusive') {
+                    $sum += (int) $this->items->sum('vat_amount');
+                }
+
+                return $sum;
+            },
         );
     }
 

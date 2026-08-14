@@ -9,6 +9,7 @@ use App\Models\ProductBatch;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\Documents\DocumentPlaceholderService;
 use Exception;
 use Illuminate\Support\Facades\DB;
 
@@ -163,13 +164,22 @@ class StockService
                 $newData['batch_number'] ?? null,
             );
 
+            $vat = self::resolveVatConfig($receipt);
+            $lineTotal = (int) round($newData['quantity'] * $newData['cost_price']);
+
             $item->update([
                 'product_id' => $product->id,
                 'product_batch_id' => $batch?->id,
                 'quantity' => $newData['quantity'],
                 'cost_price' => $newData['cost_price'],
                 'batch_number' => $newData['batch_number'] ?? null,
+                'vat_rate' => $vat['rate'],
+                'vat_amount' => self::computeVatAmount($lineTotal, $vat['rate'], $vat['method']),
             ]);
+
+            if ($receipt->vat_calculation_method !== $vat['method']) {
+                $receipt->update(['vat_calculation_method' => $vat['method']]);
+            }
 
             return $item->fresh();
         });
@@ -300,6 +310,13 @@ class StockService
             $itemData['batch_number'] ?? null,
         );
 
+        $vat = self::resolveVatConfig($receipt);
+        $lineTotal = (int) round($itemData['quantity'] * $itemData['cost_price']);
+
+        if ($receipt->vat_calculation_method !== $vat['method']) {
+            $receipt->update(['vat_calculation_method' => $vat['method']]);
+        }
+
         return GoodsReceiptItem::create([
             'goods_receipt_id' => $receipt->id,
             'product_id' => $product->id,
@@ -307,7 +324,49 @@ class StockService
             'quantity' => $itemData['quantity'],
             'cost_price' => $itemData['cost_price'],
             'batch_number' => $itemData['batch_number'] ?? null,
+            'vat_rate' => $vat['rate'],
+            'vat_amount' => self::computeVatAmount($lineTotal, $vat['rate'], $vat['method']),
         ]);
+    }
+
+    /**
+     * НДС — резолюция ставки/принципа расчёта от юрлица накладной, той же
+     * логикой, что и печатные документы (DocumentPlaceholderService::
+     * resolveLegalEntity()) — иначе расчёт НДС и то, что покажет документ,
+     * могли бы разойтись. Пересчитывается заново при каждом добавлении/
+     * правке позиции (не читается из "замороженного" состояния — тот же
+     * принцип, что и у WorkOrderController::recalculateTotals()).
+     *
+     * @return array{rate: ?int, method: ?string}
+     */
+    private static function resolveVatConfig(GoodsReceipt $receipt): array
+    {
+        $receipt->loadMissing('branch.legalEntities');
+        $legalEntity = DocumentPlaceholderService::resolveLegalEntity($receipt);
+
+        if (! $legalEntity || ! $legalEntity->vat_payer) {
+            return ['rate' => null, 'method' => null];
+        }
+
+        return ['rate' => $legalEntity->vat_rate, 'method' => $legalEntity->vat_calculation_method];
+    }
+
+    /**
+     * НДС не применяется (rate === null) — 0, иначе выделяем из суммы
+     * (inclusive) либо начисляем сверх неё (exclusive). Ставка 0% —
+     * валидный режим НДС (см. CLAUDE.md), а не "НДС выключен".
+     */
+    private static function computeVatAmount(int $lineTotal, ?int $rate, ?string $method): int
+    {
+        if ($rate === null) {
+            return 0;
+        }
+
+        if ($method === 'exclusive') {
+            return (int) round($lineTotal * $rate / 100);
+        }
+
+        return (int) round($lineTotal * $rate / (100 + $rate));
     }
 
     /**

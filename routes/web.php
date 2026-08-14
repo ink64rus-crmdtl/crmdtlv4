@@ -29,12 +29,25 @@ Route::get('/', function () {
     return '<div style="font-family: sans-serif; text-align: center; margin-top: 50px;">
                 <h1>Лендинг SaaS-платформы Детейлинг CRM</h1>
                 <p>Система успешно работает на Linux (Ubuntu 24.04)</p>
-                <p><a href="/register" style="display: inline-block; padding: 12px 24px; background: #102a43; color: white; border-radius: 6px; text-decoration: none; font-weight: bold; margin-top: 15px;">Зарегистрировать детейлинг-центр</a></p>
+                <p><a href="/register-company" style="display: inline-block; padding: 12px 24px; background: #102a43; color: white; border-radius: 6px; text-decoration: none; font-weight: bold; margin-top: 15px;">Зарегистрировать детейлинг-центр</a></p>
             </div>';
 });
 
-Route::get('/register', [RegisterTenantController::class, 'create'])->name('central.register.create');
-Route::post('/register', [RegisterTenantController::class, 'store'])->name('central.register.store');
+// Путь ИМЕННО /register-company, не /register: routes/tenant.php подключает
+// стандартный Laravel Breeze routes/auth.php (Route::get('register', ...)
+// ->name('register')) внутри своей tenancy-группы — БЕЗ Route::domain(),
+// только через middleware (InitializeTenancyByDomain и т.п., проверка
+// домена — только в РАНТАЙМЕ, на этапе обработки запроса). На этапе
+// РЕГИСТРАЦИИ маршрутов (до всякого запроса) оба GET/POST /register —
+// центральный (этот) и тенантский (Breeze) — оказываются одним и тем же
+// URI+методом без домена в Illuminate\Routing\RouteCollection, и второй
+// (регистрируется позже — routes/tenant.php грузится из TenancyServiceProvider
+// через $this->app->booted(...), то есть ПОЗЖЕ routes/web.php) молча
+// вытесняет central.register.create/store из таблицы маршрутов — GET
+// /register на центральном домене отдавал 404 несмотря на то, что маршрут
+// был явно объявлен здесь. Другое имя URI устраняет коллизию полностью.
+Route::get('/register-company', [RegisterTenantController::class, 'create'])->name('central.register.create');
+Route::post('/register-company', [RegisterTenantController::class, 'store'])->name('central.register.store');
 
 // Кабинет администратора платформы (Фаза 16) — отдельный гвард
 // 'platform_admin', см. config/auth.php и App\Models\Central\PlatformAdmin.

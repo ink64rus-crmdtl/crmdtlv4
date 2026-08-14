@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ExportEntitiesJob;
 use App\Models\Branch;
 use App\Models\LegalEntity;
 use App\Services\CountryConfigService;
 use App\Services\QueryFilterService;
-use App\Jobs\ExportEntitiesJob;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,7 +25,7 @@ class LegalEntityController extends Controller
             ['name', 'tax_id']
         );
 
-        if (!request()->has('sort_by')) {
+        if (! request()->has('sort_by')) {
             $query->orderBy('id', 'desc');
         }
 
@@ -61,7 +62,12 @@ class LegalEntityController extends Controller
             'is_active' => ['required', 'boolean'],
             'branch_ids' => [$bootstrapping ? 'nullable' : 'required', 'array', $bootstrapping ? 'sometimes' : 'min:1'],
             'branch_ids.*' => ['integer', 'exists:branches,id'],
+            'vat_payer' => ['sometimes', 'boolean'],
+            'vat_rate' => ['nullable', 'integer'],
+            'vat_calculation_method' => ['nullable', 'string', 'in:inclusive,exclusive'],
         ]);
+
+        $vatFields = $this->validateVatFields($validated, $tenantCountry);
 
         $requisites = $validated['requisites'] ?? [];
         $requisites['country_code'] = $tenantCountry;
@@ -86,6 +92,7 @@ class LegalEntityController extends Controller
             'tax_id' => $taxId,
             'requisites' => $requisites,
             'is_active' => $validated['is_active'],
+            ...$vatFields,
         ]);
 
         // Точка — обязательная операционная единица (branch_id есть у заказов,
@@ -123,7 +130,12 @@ class LegalEntityController extends Controller
             'is_active' => ['required', 'boolean'],
             'branch_ids' => ['required', 'array', 'min:1'],
             'branch_ids.*' => ['integer', 'exists:branches,id'],
+            'vat_payer' => ['sometimes', 'boolean'],
+            'vat_rate' => ['nullable', 'integer'],
+            'vat_calculation_method' => ['nullable', 'string', 'in:inclusive,exclusive'],
         ]);
+
+        $vatFields = $this->validateVatFields($validated, $tenantCountry);
 
         $requisites = $validated['requisites'] ?? [];
         $requisites['country_code'] = $tenantCountry;
@@ -148,11 +160,52 @@ class LegalEntityController extends Controller
             'tax_id' => $taxId,
             'requisites' => $requisites,
             'is_active' => $validated['is_active'],
+            ...$vatFields,
         ]);
 
         $legalEntity->branches()->sync($validated['branch_ids']);
 
         return redirect()->back()->with('success', 'Данные юрлица обновлены');
+    }
+
+    /**
+     * Ставка/принцип расчёта НДС обязательны, ТОЛЬКО если vat_payer=true —
+     * серверная проверка (форма и так их не спрашивает, если плательщик
+     * НДС выключен), плюс ставка обязана входить в список допустимых для
+     * страны тенанта (CountryConfigService::getForCountry()['vat']['rates']),
+     * иначе можно было бы в обход формы сохранить, например, "НДС 15%" для
+     * страны, где такой ставки не существует. Если vat_payer=false — оба
+     * поля принудительно обнуляются, а не остаются от прошлого включения.
+     *
+     * @return array{vat_payer: bool, vat_rate: ?int, vat_calculation_method: ?string}
+     */
+    private function validateVatFields(array $validated, string $tenantCountry): array
+    {
+        $vatPayer = (bool) ($validated['vat_payer'] ?? false);
+
+        if (! $vatPayer) {
+            return ['vat_payer' => false, 'vat_rate' => null, 'vat_calculation_method' => null];
+        }
+
+        if (! isset($validated['vat_rate']) || ! isset($validated['vat_calculation_method'])) {
+            throw ValidationException::withMessages([
+                'vat_rate' => 'Укажите ставку и принцип расчёта НДС.',
+            ]);
+        }
+
+        $allowedRates = CountryConfigService::getForCountry($tenantCountry)['vat']['rates'] ?? [];
+
+        if (! in_array($validated['vat_rate'], $allowedRates, true)) {
+            throw ValidationException::withMessages([
+                'vat_rate' => 'Недопустимая ставка НДС для этой страны.',
+            ]);
+        }
+
+        return [
+            'vat_payer' => true,
+            'vat_rate' => $validated['vat_rate'],
+            'vat_calculation_method' => $validated['vat_calculation_method'],
+        ];
     }
 
     public function destroy(LegalEntity $legalEntity)
@@ -181,7 +234,7 @@ class LegalEntityController extends Controller
             $currentBranchId = session('current_branch_id');
             if ($currentBranchId && $currentBranchId !== 'all') {
                 $stillValid = $legalEntity->branches()->where('branches.id', (int) $currentBranchId)->exists();
-                if (!$stillValid) {
+                if (! $stillValid) {
                     session(['current_branch_id' => 'all']);
                 }
             }
@@ -191,6 +244,7 @@ class LegalEntityController extends Controller
         }
 
         session()->save();
+
         return redirect()->back();
     }
 

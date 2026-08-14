@@ -14,6 +14,8 @@ class GoodsReceiptItem extends Model
         'quantity',
         'cost_price',
         'batch_number',
+        'vat_rate',
+        'vat_amount',
     ];
 
     protected function casts(): array
@@ -21,6 +23,8 @@ class GoodsReceiptItem extends Model
         return [
             'quantity' => 'decimal:3',
             'cost_price' => 'integer',
+            'vat_rate' => 'integer',
+            'vat_amount' => 'integer',
         ];
     }
 

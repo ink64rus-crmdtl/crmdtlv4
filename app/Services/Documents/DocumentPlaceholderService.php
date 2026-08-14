@@ -140,6 +140,12 @@ class DocumentPlaceholderService
             // items_total просто более понятное имя для использования сразу после
             // табличной секции {{#items}}, без диссонанса "почему это work_order.*".
             'items_total' => self::money($workOrder->total_amount),
+            // НДС — только если юрлицо заказа плательщик (WorkOrderController::
+            // recalculateTotals() снепшотит ставку/сумму на сам заказ); если нет —
+            // пустая строка, DocumentRenderer вырежет плейсхолдер из шаблона.
+            'work_order.vat_rate' => $workOrder->vat_rate !== null ? $workOrder->vat_rate.'%' : '',
+            'work_order.vat_amount' => $workOrder->vat_rate !== null ? self::money($workOrder->vat_amount) : '',
+            'work_order.total_amount_without_vat' => $workOrder->vat_rate !== null ? self::money($workOrder->final_amount - $workOrder->vat_amount) : '',
             'client.name' => $workOrder->client?->name ?? '',
             'client.phone' => $workOrder->client?->phone ?? '',
             'vehicle.plate_number' => $workOrder->vehicle?->plate_number ?? '',
@@ -205,12 +211,20 @@ class DocumentPlaceholderService
 
     private static function goodsReceiptPlaceholders(GoodsReceipt $receipt): array
     {
+        $vatTotal = (int) $receipt->items->sum('vat_amount');
+
         return [
             'goods_receipt.id' => (string) $receipt->id,
             'goods_receipt.date' => $receipt->receipt_date?->format('d.m.Y') ?? '',
             'goods_receipt.supplier_document_number' => $receipt->supplier_document_number ?? '',
             'goods_receipt.total_value' => self::money($receipt->total_value),
             'items_total' => self::money($receipt->total_value),
+            // НДС считается по каждой позиции (не по накладной целиком —
+            // у разных товаров от одного поставщика в теории могут быть
+            // разные ставки), поэтому здесь только суммарная сумма налога,
+            // без единой ставки; ставка — только в табличной секции item.*.
+            'goods_receipt.vat_amount' => $vatTotal > 0 ? self::money($vatTotal) : '',
+            'goods_receipt.total_value_without_vat' => $vatTotal > 0 ? self::money($receipt->total_value - $vatTotal) : '',
             'supplier.name' => $receipt->supplier?->name ?? '',
             'supplier.phone' => $receipt->supplier?->phone ?? '',
             ...self::supplierRequisitePlaceholders($receipt->supplier),
@@ -225,6 +239,8 @@ class DocumentPlaceholderService
             'item.quantity' => rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ''), '0'), '.'),
             'item.price' => self::money($item->cost_price),
             'item.total' => self::money((int) round($item->quantity * $item->cost_price)),
+            'item.vat_rate' => $item->vat_rate !== null ? $item->vat_rate.'%' : '',
+            'item.vat_amount' => $item->vat_rate !== null ? self::money($item->vat_amount) : '',
         ])->all();
     }
 

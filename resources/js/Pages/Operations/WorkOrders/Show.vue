@@ -1022,6 +1022,10 @@ const formatMoney = (amount) => {
                                     </span>
                                     <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
                                 </div>
+                                <div v-if="workOrder.vat_rate !== null" class="flex justify-between items-center text-sm">
+                                    <span class="text-gray-500 dark:text-gray-400">{{ workOrder.vat_calculation_method === 'exclusive' ? `НДС ${workOrder.vat_rate}% сверху:` : `в т.ч. НДС ${workOrder.vat_rate}%:` }}</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.vat_amount) }}</span>
+                                </div>
                                 <div class="pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                                     <span class="font-bold text-gray-800 dark:text-gray-200 text-base">Итого к оплате:</span>
                                     <span class="text-xl font-bold text-success">{{ formatMoney(workOrder.final_amount) }}</span>
@@ -1208,11 +1212,15 @@ const formatMoney = (amount) => {
                             </span>
                             <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
                         </div>
+                        <div v-if="workOrder.vat_rate !== null" class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">{{ workOrder.vat_calculation_method === 'exclusive' ? `НДС ${workOrder.vat_rate}% сверху:` : `в т.ч. НДС ${workOrder.vat_rate}%:` }}</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.vat_amount) }}</span>
+                        </div>
                         <div class="pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                             <span class="font-bold text-gray-800 dark:text-gray-200">К оплате:</span>
                             <span class="text-xl font-bold text-success">{{ formatMoney(workOrder.final_amount) }}</span>
                         </div>
-                        
+
                         <div class="pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                             <span class="text-sm text-gray-500 dark:text-gray-400">Оплачено:</span>
                             <span class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.final_amount - remainingAmount) }}</span>
@@ -1485,6 +1493,11 @@ const formatMoney = (amount) => {
                                     class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
                                 />
                                 <button type="button" @click="applyDrawerDiscount" class="shrink-0 inline-flex items-center justify-center rounded px-2.5 py-1 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors">Применить</button>
+                            </div>
+
+                            <div v-if="workOrder.vat_rate !== null" class="flex justify-between items-center text-xs">
+                                <span class="text-gray-500">{{ workOrder.vat_calculation_method === 'exclusive' ? `НДС ${workOrder.vat_rate}% сверху:` : `в т.ч. НДС ${workOrder.vat_rate}%:` }}</span>
+                                <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.vat_amount) }}</span>
                             </div>
 
                             <div class="pt-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center">

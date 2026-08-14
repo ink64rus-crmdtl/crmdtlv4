@@ -30,6 +30,7 @@ use App\Models\VehicleModel;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Services\ActivityLogger;
+use App\Services\Documents\DocumentPlaceholderService;
 use App\Services\FieldPermissionService;
 use App\Services\FinanceService;
 use App\Services\LoyaltyGradeService;
@@ -1239,12 +1240,44 @@ class WorkOrderController extends Controller
             $discount = $total;
         }
 
-        $final = $total - $discount;
+        $netAfterDiscount = $total - $discount;
+
+        // НДС — снепшот ставки/принципа с юрлица заказа В МОМЕНТ пересчёта
+        // (не читается заново при каждом открытии, см. CLAUDE.md — тот же
+        // принцип, что у Document::isStale(), "зафиксированный во времени
+        // артефакт"). Резолюция ЮРЛИЦА — та же, что и у печатных документов
+        // (DocumentPlaceholderService::resolveLegalEntity()), иначе расчёт
+        // НДС и то, что покажет документ, могли бы разойтись.
+        $legalEntity = DocumentPlaceholderService::resolveLegalEntity($workOrder);
+        $vatRate = null;
+        $vatMethod = null;
+        $vatAmount = 0;
+        $final = $netAfterDiscount;
+
+        if ($legalEntity && $legalEntity->vat_payer) {
+            $vatRate = $legalEntity->vat_rate;
+            $vatMethod = $legalEntity->vat_calculation_method;
+
+            if ($vatMethod === 'exclusive') {
+                // Позиции набирались БЕЗ НДС — налог начисляется сверх уже
+                // посчитанной суммы, final_amount увеличивается.
+                $vatAmount = (int) round($netAfterDiscount * $vatRate / 100);
+                $final = $netAfterDiscount + $vatAmount;
+            } else {
+                // inclusive (по умолчанию) — сумма позиций УЖЕ включает
+                // НДС, просто выделяем налог отдельной строкой; final_amount
+                // не меняется — та же формула, что и без НДС вовсе.
+                $vatAmount = (int) round($netAfterDiscount * $vatRate / (100 + $vatRate));
+            }
+        }
 
         $workOrder->update([
             'total_amount' => $total,
             'discount_amount' => $discount,
             'final_amount' => $final,
+            'vat_rate' => $vatRate,
+            'vat_calculation_method' => $vatMethod,
+            'vat_amount' => $vatAmount,
         ]);
 
         $workOrder->syncPaymentStatus();

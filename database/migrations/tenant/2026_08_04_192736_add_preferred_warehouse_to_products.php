@@ -1,23 +1,16 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
+// Содержимое перенесено в
+// 2026_12_31_900015_add_preferred_warehouse_to_products_table.php —
+// products/warehouses создаются ПОЗЖЕ (2026_12_31_900004/900005), чем эта
+// миграция по своей дате (2026_08_04), поэтому ALTER здесь падал на
+// КАЖДОЙ новой базе тенанта (регистрация нового тенанта была сломана).
+// Уже смигрировавшие тенанты этот файл повторно не выполняют.
 return new class extends Migration
 {
-    public function up(): void
-    {
-        Schema::table('products', function (Blueprint $table) {
-            $table->foreignId('preferred_warehouse_id')->nullable()->after('accounting_type')->constrained('warehouses')->nullOnDelete()->comment('Для смешанного режима склада');
-        });
-    }
+    public function up(): void {}
 
-    public function down(): void
-    {
-        Schema::table('products', function (Blueprint $table) {
-            $table->dropForeign(['preferred_warehouse_id']);
-            $table->dropColumn('preferred_warehouse_id');
-        });
-    }
+    public function down(): void {}
 };

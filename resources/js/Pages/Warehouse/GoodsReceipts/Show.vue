@@ -58,6 +58,12 @@ const paidTransactions = computed(() => props.receipt.transactions?.filter(t => 
 const paidAmount = computed(() => paidTransactions.value.reduce((sum, t) => sum + t.amount, 0));
 const remainingAmount = computed(() => Math.max(0, props.receipt.total_value - paidAmount.value));
 
+// НДС считается по каждой позиции (в отличие от заказ-нарядов — здесь у
+// разных товаров от одного поставщика в теории могут быть разные ставки),
+// поэтому на Карточке показываем только сумму, без единой ставки в подписи.
+const receiptVatTotal = computed(() => (props.receipt.items || []).reduce((sum, item) => sum + (item.vat_amount || 0), 0));
+const receiptHasVat = computed(() => (props.receipt.items || []).some(item => item.vat_rate !== null));
+
 const isPaymentModalOpen = ref(false);
 const paymentForm = useForm({
     account_id: '',
@@ -336,7 +342,10 @@ const submitQuickProduct = () => {
                                         </td>
                                         <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ parseFloat(item.quantity) }} {{ item.product?.unit }}</td>
                                         <td class="py-3 px-6 text-sm text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(item.cost_price) }}</td>
-                                        <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">{{ formatMoney(Math.round(item.quantity * item.cost_price)) }}</td>
+                                        <td class="py-3 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 text-right">
+                                            {{ formatMoney(Math.round(item.quantity * item.cost_price)) }}
+                                            <div v-if="item.vat_rate !== null" class="text-[11px] text-gray-400 font-normal">НДС {{ item.vat_rate }}%: {{ formatMoney(item.vat_amount) }}</div>
+                                        </td>
                                         <td v-if="receipt.status === 'posted'" class="py-3 px-6 text-sm text-right space-x-1 whitespace-nowrap">
                                             <button @click="openEditItemModal(item)" class="inline-flex items-center justify-center rounded px-2.5 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
                                             <button @click="deleteItem(item)" class="inline-flex items-center justify-center rounded px-2.5 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
@@ -410,6 +419,10 @@ const submitQuickProduct = () => {
                         <div class="pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                             <span class="font-bold text-gray-800 dark:text-gray-200">Сумма закупки:</span>
                             <span class="text-xl font-bold text-success">{{ formatMoney(receipt.total_value) }}</span>
+                        </div>
+                        <div v-if="receiptHasVat" class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">{{ receipt.vat_calculation_method === 'exclusive' ? 'НДС сверху:' : 'в т.ч. НДС:' }}</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatMoney(receiptVatTotal) }}</span>
                         </div>
                         <div class="flex justify-between items-center text-sm">
                             <span class="text-gray-500 dark:text-gray-400">Оплачено поставщику:</span>

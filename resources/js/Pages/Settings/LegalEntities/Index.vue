@@ -39,6 +39,9 @@ const form = useForm({
     requisites: {},
     is_active: true,
     branch_ids: [],
+    vat_payer: false,
+    vat_rate: null,
+    vat_calculation_method: 'inclusive',
 });
 
 const accountForm = useForm({
@@ -162,6 +165,10 @@ const signatorySchema = computed(() => {
     return props.countryConfig?.signatory_schema || [];
 });
 
+const vatConfig = computed(() => {
+    return props.countryConfig?.vat || { applicable: false, rates: [], default_rate: null, label: 'НДС' };
+});
+
 const bankLabels = computed(() => {
     return props.countryConfig?.bank_labels || {
         bik: 'БИК / SWIFT',
@@ -192,16 +199,30 @@ const openModal = (entity = null) => {
         form.requisites = entity.requisites || {};
         form.is_active = Boolean(entity.is_active);
         form.branch_ids = (entity.branches || []).map(b => b.id);
+        form.vat_payer = Boolean(entity.vat_payer);
+        form.vat_rate = entity.vat_rate ?? vatConfig.value.default_rate;
+        form.vat_calculation_method = entity.vat_calculation_method || 'inclusive';
     } else {
         editingEntityId.value = null;
         form.reset();
         form.requisites = {};
         form.is_active = true;
         form.branch_ids = [];
+        form.vat_payer = false;
+        form.vat_rate = vatConfig.value.default_rate;
+        form.vat_calculation_method = 'inclusive';
     }
     activeTab.value = 'main';
     isModalOpen.value = true;
 };
+
+// Включение чекбокса "Плательщик НДС" без готового значения ставки —
+// подставляем дефолт страны, чтобы select не остался пустым.
+watch(() => form.vat_payer, (isPayer) => {
+    if (isPayer && !form.vat_rate) {
+        form.vat_rate = vatConfig.value.default_rate;
+    }
+});
 
 const closeModal = () => {
     isModalOpen.value = false;
@@ -461,6 +482,17 @@ const deleteAccount = (account) => {
                         Подписи
                     </button>
                     <button
+                        v-if="vatConfig.applicable"
+                        type="button"
+                        @click="activeTab = 'vat'"
+                        :class="[
+                            activeTab === 'vat' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2',
+                            'py-3.5 px-2 text-sm transition-colors focus:outline-none'
+                        ]"
+                    >
+                        {{ vatConfig.label || 'НДС' }}
+                    </button>
+                    <button
                         v-if="editingEntity"
                         type="button"
                         @click="activeTab = 'accounts'"
@@ -477,7 +509,7 @@ const deleteAccount = (account) => {
                 </div>
 
                 <!-- Содержимое Вкладок 1-2: Основная информация / Подписи (общая форма — оба относятся к одному submitEntity) -->
-                <form v-show="activeTab === 'main' || activeTab === 'signatures'" @submit.prevent="submitEntity" class="flex flex-col">
+                <form v-show="activeTab === 'main' || activeTab === 'signatures' || activeTab === 'vat'" @submit.prevent="submitEntity" class="flex flex-col">
                     <div class="p-6 space-y-5">
 
                         <div v-show="activeTab === 'main'" class="space-y-5">
@@ -605,6 +637,41 @@ const deleteAccount = (account) => {
                                         :placeholder="field.placeholder"
                                         class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                     />
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- НДС (Фаза 1, поддержка НДС) — только для стран, где применимо
+                             (vatConfig.applicable, см. CountryConfigService). Если плательщик
+                             НДС выключен — поля ставки/принципа расчёта скрыты целиком, а не
+                             просто задизейблены, как и требуется CLAUDE.md-принципом "нет
+                             НДС — нет полей". -->
+                        <div v-show="activeTab === 'vat'">
+                            <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
+                                {{ vatConfig.label || 'НДС' }}
+                            </h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Определяет, появятся ли поля НДС в заказах и приходных накладных от лица этого юрлица, и как считается сумма.</p>
+
+                            <label class="inline-flex items-center gap-2 mb-4 cursor-pointer">
+                                <input v-model="form.vat_payer" type="checkbox" class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary" />
+                                <span class="text-sm text-gray-700 dark:text-gray-300">Плательщик {{ (vatConfig.label || 'НДС').toLowerCase() }}</span>
+                            </label>
+
+                            <div v-if="form.vat_payer" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ставка</label>
+                                    <select v-model.number="form.vat_rate" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                        <option v-for="rate in vatConfig.rates" :key="rate" :value="rate">{{ rate }}%</option>
+                                    </select>
+                                    <span v-if="form.errors.vat_rate" class="text-xs text-danger mt-1 block">{{ form.errors.vat_rate }}</span>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Принцип расчёта</label>
+                                    <select v-model="form.vat_calculation_method" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                        <option value="inclusive">Цена уже включает {{ (vatConfig.label || 'НДС').toLowerCase() }}</option>
+                                        <option value="exclusive">{{ vatConfig.label || 'НДС' }} начисляется сверху</option>
+                                    </select>
+                                    <p class="text-[11px] text-gray-400 mt-1">«Включает» — итог заказа не меняется, налог просто выделяется отдельной строкой. «Сверху» — к сумме позиций добавляется налог.</p>
                                 </div>
                             </div>
                         </div>
