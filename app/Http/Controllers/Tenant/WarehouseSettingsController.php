@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\WarehouseResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -24,6 +25,7 @@ class WarehouseSettingsController extends Controller
 
         return Inertia::render('Settings/Warehouse/Index', [
             'warehouseMode' => $mode,
+            'warehouseEnabled' => WarehouseResolver::isEnabled(),
             'warehouses' => Warehouse::with('branches:id,name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'owner_type', 'owner_id', 'is_default', 'is_active']),
@@ -35,11 +37,17 @@ class WarehouseSettingsController extends Controller
     {
         $validated = $request->validate([
             'warehouse_mode' => ['required', 'string', 'in:per_branch,shared,mixed'],
+            'warehouse_enabled' => ['boolean'],
         ]);
 
         Setting::updateOrCreate(
             ['key' => 'warehouse_mode'],
             ['value' => $validated['warehouse_mode']]
+        );
+
+        Setting::updateOrCreate(
+            ['key' => 'warehouse_enabled'],
+            ['value' => ($validated['warehouse_enabled'] ?? true) ? '1' : '0']
         );
 
         return redirect()->back()->with('success', 'Настройки склада успешно сохранены');

@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Warehouse;
 use App\Services\QueryFilterService;
+use App\Services\WarehouseResolver;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,11 +20,17 @@ class ProductController extends Controller
     {
         $query = Product::with(['category', 'preferredWarehouse']);
 
+        // Справочная средняя себестоимость (для подсказки наценки в форме) —
+        // только если склад вообще ведётся, иначе StockBalance пуст по смыслу.
+        if (WarehouseResolver::isEnabled()) {
+            $query->with('stockBalances:id,product_id,quantity,avg_cost');
+        }
+
         $query = QueryFilterService::apply(
             $query,
             $request->all(),
             ['name', 'sku'],
-            allowedSorts: ['sku', 'unit', 'accounting_type', 'is_active']
+            allowedSorts: ['sku', 'unit', 'accounting_type', 'is_active', 'base_price']
         );
 
         if (! $request->has('sort_by')) {
@@ -45,6 +52,7 @@ class ProductController extends Controller
             ['key' => 'name', 'label' => 'Название'],
             ['key' => 'unit', 'label' => 'Ед. изм.'],
             ['key' => 'accounting_type', 'label' => 'Тип учета'],
+            ['key' => 'price', 'label' => 'Цена'],
             ['key' => 'status', 'label' => 'Статус'],
         ];
 
@@ -55,6 +63,7 @@ class ProductController extends Controller
             'products' => $products,
             'categories' => $categories,
             'warehouses' => $warehouses,
+            'warehouseEnabled' => WarehouseResolver::isEnabled(),
             'filters' => $request->all(),
             'availableColumns' => $availableColumns,
             'listView' => ['visible_columns' => $visibleColumns],
@@ -71,6 +80,9 @@ class ProductController extends Controller
             'accounting_type' => ['required', 'string', 'in:average,batch'],
             'preferred_warehouse_id' => ['nullable', 'exists:warehouses,id'],
             'is_active' => ['boolean'],
+            'base_price' => ['nullable', 'numeric', 'min:0'],
+            'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         Product::create([
@@ -81,6 +93,9 @@ class ProductController extends Controller
             'accounting_type' => $validated['accounting_type'],
             'preferred_warehouse_id' => $validated['preferred_warehouse_id'],
             'is_active' => $validated['is_active'] ?? true,
+            'base_price' => isset($validated['base_price']) ? (int) round($validated['base_price'] * 100) : null,
+            'markup_percent' => $validated['markup_percent'] ?? null,
+            'discount_percent' => $validated['discount_percent'] ?? null,
         ]);
 
         return redirect()->back()->with('success', 'Товар успешно добавлен');
@@ -96,6 +111,9 @@ class ProductController extends Controller
             'accounting_type' => ['required', 'string', 'in:average,batch'],
             'preferred_warehouse_id' => ['nullable', 'exists:warehouses,id'],
             'is_active' => ['boolean'],
+            'base_price' => ['nullable', 'numeric', 'min:0'],
+            'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         $name = $product->getTranslations('name');
@@ -109,6 +127,9 @@ class ProductController extends Controller
             'accounting_type' => $validated['accounting_type'],
             'preferred_warehouse_id' => $validated['preferred_warehouse_id'],
             'is_active' => $validated['is_active'] ?? true,
+            'base_price' => isset($validated['base_price']) ? (int) round($validated['base_price'] * 100) : null,
+            'markup_percent' => $validated['markup_percent'] ?? null,
+            'discount_percent' => $validated['discount_percent'] ?? null,
         ]);
 
         return redirect()->back()->with('success', 'Товар обновлен');

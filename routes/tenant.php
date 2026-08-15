@@ -42,6 +42,7 @@ use App\Http\Controllers\Tenant\TransactionController;
 use App\Http\Controllers\Tenant\VehicleController;
 use App\Http\Controllers\Tenant\WarehouseSettingsController;
 use App\Http\Controllers\Tenant\WorkOrderController;
+use App\Http\Middleware\EnsureWarehouseEnabled;
 use App\Http\Middleware\PreventSandboxTenantHttpAccess;
 use App\Http\Middleware\SetBranchContext;
 use Illuminate\Foundation\Application;
@@ -356,23 +357,28 @@ Route::middleware([
         Route::post('/warehouse/products/bulk-export', [ProductController::class, 'bulkExport'])->name('warehouse.products.bulk-export');
         Route::post('/warehouse/product-categories', [ProductController::class, 'storeCategory'])->name('warehouse.product-categories.store');
 
-        // Warehouse: Остатки и Движения (Оприходование)
-        Route::get('/warehouse/balances', [StockBalanceController::class, 'index'])->name('warehouse.balances.index');
-        Route::post('/warehouse/balances/bulk-export', [StockBalanceController::class, 'bulkExport'])->name('warehouse.balances.bulk-export');
+        // Warehouse: Остатки, Движения, Приходные накладные — недоступны при
+        // выключенном тумблере складского учёта (EnsureWarehouseEnabled).
+        // warehouse.products.* сознательно ВНЕ этой группы — каталог и цены
+        // товаров остаются доступны всегда.
+        Route::middleware([EnsureWarehouseEnabled::class])->group(function () {
+            Route::get('/warehouse/balances', [StockBalanceController::class, 'index'])->name('warehouse.balances.index');
+            Route::post('/warehouse/balances/bulk-export', [StockBalanceController::class, 'bulkExport'])->name('warehouse.balances.bulk-export');
 
-        Route::get('/warehouse/movements', [StockMovementController::class, 'index'])->name('warehouse.movements.index');
-        Route::post('/warehouse/movements/bulk-export', [StockMovementController::class, 'bulkExport'])->name('warehouse.movements.bulk-export');
+            Route::get('/warehouse/movements', [StockMovementController::class, 'index'])->name('warehouse.movements.index');
+            Route::post('/warehouse/movements/bulk-export', [StockMovementController::class, 'bulkExport'])->name('warehouse.movements.bulk-export');
 
-        // Warehouse: Приходные накладные (оприходование через поставщика — заменяет старое warehouse.movements.receipt)
-        Route::get('/warehouse/suppliers-debt', [GoodsReceiptController::class, 'debts'])->name('warehouse.suppliers-debt.index');
-        Route::get('/warehouse/goods-receipts', [GoodsReceiptController::class, 'index'])->name('warehouse.goods-receipts.index');
-        Route::post('/warehouse/goods-receipts', [GoodsReceiptController::class, 'store'])->name('warehouse.goods-receipts.store');
-        Route::get('/warehouse/goods-receipts/{receipt}', [GoodsReceiptController::class, 'show'])->name('warehouse.goods-receipts.show');
-        Route::post('/warehouse/goods-receipts/{receipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('warehouse.goods-receipts.cancel');
-        Route::post('/warehouse/goods-receipts/{receipt}/pay', [GoodsReceiptController::class, 'pay'])->name('warehouse.goods-receipts.pay');
-        Route::post('/warehouse/goods-receipts/{receipt}/items', [GoodsReceiptController::class, 'addItem'])->name('warehouse.goods-receipts.items.store');
-        Route::put('/warehouse/goods-receipts/{receipt}/items/{item}', [GoodsReceiptController::class, 'updateItem'])->name('warehouse.goods-receipts.items.update');
-        Route::delete('/warehouse/goods-receipts/{receipt}/items/{item}', [GoodsReceiptController::class, 'destroyItem'])->name('warehouse.goods-receipts.items.destroy');
+            // Warehouse: Приходные накладные (оприходование через поставщика — заменяет старое warehouse.movements.receipt)
+            Route::get('/warehouse/suppliers-debt', [GoodsReceiptController::class, 'debts'])->name('warehouse.suppliers-debt.index');
+            Route::get('/warehouse/goods-receipts', [GoodsReceiptController::class, 'index'])->name('warehouse.goods-receipts.index');
+            Route::post('/warehouse/goods-receipts', [GoodsReceiptController::class, 'store'])->name('warehouse.goods-receipts.store');
+            Route::get('/warehouse/goods-receipts/{receipt}', [GoodsReceiptController::class, 'show'])->name('warehouse.goods-receipts.show');
+            Route::post('/warehouse/goods-receipts/{receipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('warehouse.goods-receipts.cancel');
+            Route::post('/warehouse/goods-receipts/{receipt}/pay', [GoodsReceiptController::class, 'pay'])->name('warehouse.goods-receipts.pay');
+            Route::post('/warehouse/goods-receipts/{receipt}/items', [GoodsReceiptController::class, 'addItem'])->name('warehouse.goods-receipts.items.store');
+            Route::put('/warehouse/goods-receipts/{receipt}/items/{item}', [GoodsReceiptController::class, 'updateItem'])->name('warehouse.goods-receipts.items.update');
+            Route::delete('/warehouse/goods-receipts/{receipt}/items/{item}', [GoodsReceiptController::class, 'destroyItem'])->name('warehouse.goods-receipts.items.destroy');
+        });
 
         // Finance: Статьи доходов и расходов
         Route::get('/finance/categories', [TransactionCategoryController::class, 'index'])->name('finance.categories.index');

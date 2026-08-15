@@ -11,12 +11,14 @@ import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     warehouseMode: String,
+    warehouseEnabled: { type: Boolean, default: true },
     warehouses: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
 });
 
 const form = useForm({
     warehouse_mode: props.warehouseMode || 'per_branch',
+    warehouse_enabled: props.warehouseEnabled,
 });
 
 const submit = () => {
@@ -156,8 +158,25 @@ const deleteWarehouse = (warehouse) => {
             <!-- Content Card -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6">
                 <form @submit.prevent="submit" class="space-y-6">
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                    <!-- Тумблер: складской учёт целиком -->
+                    <div class="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">Складской учёт</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
+                                Выключите, если бизнес не ведёт остатки физически (например, только услуги). Каталог товаров и их цены останутся доступны — их можно будет добавлять в заказ-наряды, — но приходные накладные, остатки, движения и списание материалов при завершении заказа вестись не будут.
+                            </p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                            <input type="checkbox" v-model="form.warehouse_enabled" class="sr-only peer" />
+                            <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                        </label>
+                    </div>
+
+                    <div
+                        :class="['grid grid-cols-1 md:grid-cols-3 gap-6 transition-opacity', !form.warehouse_enabled ? 'opacity-50 pointer-events-none' : '']"
+                        :title="!form.warehouse_enabled ? 'Складской учёт выключен — режим склада сейчас не используется' : undefined"
+                    >
                         
                         <!-- Раздельный режим -->
                         <label 

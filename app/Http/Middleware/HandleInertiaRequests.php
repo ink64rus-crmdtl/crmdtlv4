@@ -2,12 +2,12 @@
 
 namespace App\Http\Middleware;
 
-use Illuminate\Http\Request;
-use Inertia\Middleware;
 use App\Models\Module;
-use App\Models\Branch;
 use App\Services\BranchContext;
 use App\Services\LegalEntityContext;
+use App\Services\WarehouseResolver;
+use Illuminate\Http\Request;
+use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -58,6 +58,7 @@ class HandleInertiaRequests extends Middleware
                         if (empty($module->required_permission)) {
                             return true;
                         }
+
                         return $request->user()->can($module->required_permission);
                     })
                     ->map(function ($module) {
@@ -83,6 +84,11 @@ class HandleInertiaRequests extends Middleware
             'current_branch_id' => fn () => ($request->user() && tenancy()->initialized)
                 ? BranchContext::current() // null means 'all'
                 : null,
+            // Тумблер складского учёта (Настройки → Склад) — нужен глобально,
+            // WarehouseNav.vue скрывает по нему вкладки без отдельного запроса.
+            'warehouse_enabled' => fn () => ($request->user() && tenancy()->initialized)
+                ? WarehouseResolver::isEnabled()
+                : true,
         ];
     }
 }

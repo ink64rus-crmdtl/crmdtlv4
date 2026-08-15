@@ -2,13 +2,25 @@
 
 namespace App\Services;
 
-use App\Models\Product;
 use App\Models\Branch;
+use App\Models\Product;
 use App\Models\Setting;
 use App\Models\Warehouse;
 
 class WarehouseResolver
 {
+    /**
+     * Глобальный тумблер складского учёта (Настройки → Склад). Выключен —
+     * значит каталог товаров и их цены остаются, но приходные накладные,
+     * остатки, движения и списание при завершении заказа не ведутся вовсе
+     * (не просто скрыты — реально не создаются). См. EnsureWarehouseEnabled
+     * (гейт роутов) и WorkOrderController::completeOrder() (гейт списания).
+     */
+    public static function isEnabled(): bool
+    {
+        return (Setting::where('key', 'warehouse_enabled')->value('value') ?? '1') === '1';
+    }
+
     /**
      * Определяет, с какого склада нужно списать товар в зависимости от настроек тенанта.
      */

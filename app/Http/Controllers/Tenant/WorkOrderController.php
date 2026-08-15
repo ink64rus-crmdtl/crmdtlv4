@@ -202,7 +202,7 @@ class WorkOrderController extends Controller
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
 
         $services = Service::where('is_active', true)->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
-        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id']);
+        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id', 'base_price', 'discount_percent']);
 
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']);
 
@@ -1091,36 +1091,47 @@ class WorkOrderController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($workOrder) {
+            $stockTouched = false;
+
+            DB::transaction(function () use ($workOrder, &$stockTouched) {
                 $branch = $workOrder->branch;
 
-                foreach ($workOrder->items as $item) {
-                    if ($item->itemable_type === Product::class) {
-                        $product = $item->itemable;
-                        if (! $product) {
-                            continue;
+                // Склад отключён тумблером (Настройки → Склад) — товар остаётся
+                // просто позицией заказа, списания не происходит вовсе (не
+                // просто пропускается лог, а физически не создаётся StockMovement).
+                if (WarehouseResolver::isEnabled()) {
+                    foreach ($workOrder->items as $item) {
+                        if ($item->itemable_type === Product::class) {
+                            $product = $item->itemable;
+                            if (! $product) {
+                                continue;
+                            }
+
+                            $warehouse = WarehouseResolver::resolveFor($product, $branch);
+
+                            if (! $warehouse) {
+                                $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
+                                throw new Exception("Не удалось определить склад для списания товара: {$productName}");
+                            }
+
+                            StockService::deduct(
+                                $product,
+                                $warehouse,
+                                $branch->id,
+                                $item->quantity,
+                                $workOrder->id,
+                                auth()->id()
+                            );
+                            $stockTouched = true;
                         }
-
-                        $warehouse = WarehouseResolver::resolveFor($product, $branch);
-
-                        if (! $warehouse) {
-                            $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
-                            throw new Exception("Не удалось определить склад для списания товара: {$productName}");
-                        }
-
-                        StockService::deduct(
-                            $product,
-                            $warehouse,
-                            $branch->id,
-                            $item->quantity,
-                            $workOrder->id,
-                            auth()->id()
-                        );
                     }
                 }
 
                 $workOrder->update(['status' => 'completed']);
-                ActivityLogger::log($workOrder, "Заказ №{$workOrder->id} завершён, материалы списаны со склада", $this->workOrderLink($workOrder), 'completed');
+                $completionMessage = $stockTouched
+                    ? "Заказ №{$workOrder->id} завершён, материалы списаны со склада"
+                    : "Заказ №{$workOrder->id} завершён";
+                ActivityLogger::log($workOrder, $completionMessage, $this->workOrderLink($workOrder), 'completed');
 
                 // Фаза 10.2: автоматическое начисление ЗП по факту завершения
                 // заказа. Не блокирует завершение, если для кого-то из
@@ -1155,7 +1166,11 @@ class WorkOrderController extends Controller
                 }
             });
 
-            return redirect()->back()->with('success', 'Заказ успешно завершен, материалы списаны со склада');
+            $successMessage = $stockTouched
+                ? 'Заказ успешно завершен, материалы списаны со склада'
+                : 'Заказ успешно завершен';
+
+            return redirect()->back()->with('success', $successMessage);
         } catch (Exception $e) {
             return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         }

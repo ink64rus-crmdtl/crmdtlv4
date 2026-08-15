@@ -337,7 +337,7 @@ const addItemDirect = (type, item) => {
     
     if (type === 'service') {
         finalPrice = item.price / 100; // Базовая цена
-        
+
         // Расчет цены на основе матрицы
         if (props.pricingBasis === 'vehicle_body' && props.workOrder.vehicle?.vehicle_model?.body_type) {
             const bodyType = props.workOrder.vehicle.vehicle_model.body_type;
@@ -350,6 +350,11 @@ const addItemDirect = (type, item) => {
                 finalPrice = item.prices[vClass] / 100;
             }
         }
+    } else {
+        // Товар — цена продажи (Warehouse/Products) за вычетом собственной скидки
+        // товара; остаётся редактируемой вручную в таблице позиций после добавления.
+        const discount = Number(item.discount_percent) || 0;
+        finalPrice = item.base_price ? (item.base_price * (1 - discount / 100)) / 100 : 0;
     }
 
     router.post(route('operations.work-orders.items.store', props.workOrder.id), {
@@ -489,7 +494,11 @@ watch(() => itemForm.itemable_id, (newId) => {
         const product = props.products.find(p => p.id === newId);
         if (product) {
             itemForm.name = getLocalizedLabel(product.name);
-            itemForm.price = 0;
+            // Цена по умолчанию — цена продажи товара за вычетом его собственной
+            // скидки (Warehouse/Products); остаётся редактируемой вручную, как и
+            // у услуг выше.
+            const discount = Number(product.discount_percent) || 0;
+            itemForm.price = product.base_price ? (product.base_price * (1 - discount / 100)) / 100 : 0;
         }
     }
 });

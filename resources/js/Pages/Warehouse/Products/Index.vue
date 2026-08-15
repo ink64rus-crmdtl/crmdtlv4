@@ -18,6 +18,7 @@ const props = defineProps({
     products: Object,
     categories: Array,
     warehouses: Array,
+    warehouseEnabled: { type: Boolean, default: true },
     filters: Object,
     availableColumns: { type: Array, default: () => [] },
     listView: { type: Object, default: () => ({ visible_columns: [] }) },
@@ -37,8 +38,8 @@ const activeColumns = computed(() => {
 // Сортировка — только реальные колонки products (белый список зеркалит
 // ProductController::index()). category — связь, name — переводимый JSON
 // (сортировка по сырому JSON дала бы бессмысленный порядок) — не sortable.
-const SORTABLE_COLUMN_KEYS = ['sku', 'unit', 'accounting_type', 'status'];
-const SORT_KEY_MAP = { status: 'is_active' };
+const SORTABLE_COLUMN_KEYS = ['sku', 'unit', 'accounting_type', 'status', 'price'];
+const SORT_KEY_MAP = { status: 'is_active', price: 'base_price' };
 const dataTableColumns = computed(() => activeColumns.value.map(col => (
     SORTABLE_COLUMN_KEYS.includes(col.key)
         ? { ...col, sortable: true, sortKey: SORT_KEY_MAP[col.key] }
@@ -53,6 +54,32 @@ const form = useForm({
     accounting_type: 'average',
     preferred_warehouse_id: '',
     is_active: true,
+    base_price: '',
+    markup_percent: '',
+    discount_percent: '',
+});
+
+const formatMoney = (cents) => {
+    return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format((cents || 0) / 100);
+};
+
+// Средняя себестоимость товара по всем складам (взвешенная) — только справочно,
+// для подсказки наценки в форме; появляется, только если склад ведётся
+// (product.stock_balances приходит с бэкенда исключительно тогда).
+const averageCost = (product) => {
+    const balances = product?.stock_balances || [];
+    const totalQty = balances.reduce((sum, b) => sum + Number(b.quantity), 0);
+    if (totalQty <= 0) return null;
+    const totalCost = balances.reduce((sum, b) => sum + Number(b.quantity) * b.avg_cost, 0);
+    return totalCost / totalQty;
+};
+
+// Живая подсказка "цена по наценке" в форме редактирования — считается один
+// раз в момент ввода, ничего не сохраняет и не пересчитывается фоном.
+const editingAverageCost = computed(() => editingProduct.value ? averageCost(editingProduct.value) : null);
+const markupSuggestedPrice = computed(() => {
+    if (editingAverageCost.value === null || !form.markup_percent) return null;
+    return editingAverageCost.value * (1 + Number(form.markup_percent) / 100);
 });
 
 const categoryForm = useForm({
@@ -144,6 +171,9 @@ const openModal = (product = null) => {
         form.accounting_type = product.accounting_type || 'average';
         form.preferred_warehouse_id = product.preferred_warehouse_id || '';
         form.is_active = Boolean(product.is_active);
+        form.base_price = product.base_price ? product.base_price / 100 : '';
+        form.markup_percent = product.markup_percent ?? '';
+        form.discount_percent = product.discount_percent ?? '';
     } else {
         form.reset();
         form.is_active = true;
@@ -273,6 +303,10 @@ const submitCategory = () => {
                             <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(product.name) }}</span>
                         </template>
                         <template #cell-unit="{ row: product }">{{ product.unit }}</template>
+                        <template #cell-price="{ row: product }">
+                            <span v-if="product.base_price" class="font-medium">{{ formatMoney(product.base_price) }}</span>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
                         <template #cell-accounting_type="{ row: product }">
                             <span v-if="product.accounting_type === 'average'" class="inline-flex items-center gap-1 text-xs font-medium text-info"><i class="ri-scales-3-line"></i> Средневзвешенный</span>
                             <span v-else class="inline-flex items-center gap-1 text-xs font-medium text-warning"><i class="ri-stack-line"></i> Партионный (FIFO)</span>
@@ -396,13 +430,36 @@ const submitCategory = () => {
                             </div>
                         </div>
 
-                        <div>
+                        <div v-if="warehouseEnabled">
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Привязка к складу (Для Смешанного режима)</label>
                             <select v-model="form.preferred_warehouse_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
                                 <option value="" class="bg-white dark:bg-gray-800">Определять автоматически по локации</option>
                                 <option v-for="wh in warehouses" :key="wh.id" :value="wh.id" class="bg-white dark:bg-gray-800">Всегда списывать с: {{ wh.name }}</option>
                             </select>
                             <p class="text-xs text-gray-500 mt-1">Используется только если в настройках включен "Смешанный" режим склада.</p>
+                        </div>
+
+                        <!-- Цена, наценка, скидка — независимые поля (CLAUDE.md: наценка подсказывает
+                             цену от текущей средней себестоимости при вводе, разово, без фоновой
+                             привязки; скидка даёт цену по умолчанию при добавлении товара в заказ). -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Цена продажи, ₽</label>
+                                <input v-model="form.base_price" type="number" step="0.01" min="0" placeholder="0" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Наценка, %</label>
+                                <input v-model="form.markup_percent" type="number" step="0.01" min="0" placeholder="0" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <p v-if="markupSuggestedPrice !== null" class="text-[11px] text-gray-400 mt-1">
+                                    От себестоимости {{ formatMoney(editingAverageCost) }} ≈ <button type="button" @click="form.base_price = (Math.round(markupSuggestedPrice) / 100).toFixed(2)" class="text-primary hover:underline font-medium">{{ formatMoney(markupSuggestedPrice) }}</button>
+                                </p>
+                                <p v-else-if="editingProduct && warehouseEnabled" class="text-[11px] text-gray-400 mt-1">Нет данных о себестоимости — товар ещё не приходовался.</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Скидка по умолчанию, %</label>
+                                <input v-model="form.discount_percent" type="number" step="0.01" min="0" max="100" placeholder="0" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <p class="text-[11px] text-gray-400 mt-1">Такую цену увидит менеджер при добавлении товара в заказ-наряд — её всегда можно поправить вручную.</p>
+                            </div>
                         </div>
 
                         <div class="flex items-center pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
