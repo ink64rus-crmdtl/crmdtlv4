@@ -19,6 +19,18 @@
         <testsuite name="Agent">
             <directory>tests/Agent</directory>
         </testsuite>
+        <!--
+            tests/Unit — чистые unit-тесты БЕЗ БД и БЕЗ tenancy (extends
+            голый PHPUnit\Framework\TestCase, не Laravel Tests\TestCase),
+            поэтому DB_CONNECTION=mysql выше их не касается. Добавлено сюда,
+            потому что штатный phpunit.xml в этом окружении не запускается
+            целиком (central-прогон требует php_sqlite, который здесь не
+            установлен) — без этой строки DocumentRendererTest не гонялся
+            вообще ни одной из двух стандартных команд (см. CLAUDE.md §2).
+        -->
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
