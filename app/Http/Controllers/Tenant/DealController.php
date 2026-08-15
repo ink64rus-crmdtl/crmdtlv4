@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\WorkOrder;
 use App\Services\ActivityLogger;
+use App\Services\Sales\PipelineAutomationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -156,6 +157,8 @@ class DealController extends Controller
             return $deal;
         });
 
+        PipelineAutomationService::runFor($deal, $stage);
+
         return redirect()->route('sales.deals.show', $deal)->with('success', 'Сделка создана');
     }
 
@@ -216,6 +219,8 @@ class DealController extends Controller
             $this->dealLink($deal),
             'stage_changed'
         );
+
+        PipelineAutomationService::runFor($deal, $stage);
 
         return redirect()->back()->with('success', 'Стадия обновлена');
     }

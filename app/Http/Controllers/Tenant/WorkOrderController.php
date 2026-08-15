@@ -11,6 +11,7 @@ use App\Models\BusinessDirection;
 use App\Models\Client;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
+use App\Models\Deal;
 use App\Models\DocumentTemplate;
 use App\Models\Employee;
 use App\Models\ListView;
@@ -38,6 +39,7 @@ use App\Services\Messaging\ChatDispatchService;
 use App\Services\Messaging\MessageTemplateService;
 use App\Services\PayrollCalculationService;
 use App\Services\QueryFilterService;
+use App\Services\Sales\PipelineAutomationService;
 use App\Services\StockService;
 use App\Services\TimezoneResolver;
 use App\Services\WarehouseResolver;
@@ -1103,10 +1105,55 @@ class WorkOrderController extends Controller
             // операция, откатывать её вместе с платежом не нужно).
             LoyaltyGradeService::evaluate($workOrder->client);
 
+            // Фаза 17, этап 3 — сделка сама переходит в «Успех», когда по
+            // связанному заказу поступила ПОЛНАЯ оплата (деньги — единственный
+            // надёжный сигнал согласия клиента, ручной перевод стадии не нужен).
+            if ($workOrder->payment_status === 'paid') {
+                $this->autoWinLinkedDeal($workOrder);
+            }
+
             return redirect()->back()->with('success', 'Оплата успешно принята');
         } catch (Exception $e) {
             return redirect()->back()->withErrors(['error' => 'Ошибка при оплате: '.$e->getMessage()]);
         }
+    }
+
+    /**
+     * @see processPayment() — вызывается после полной оплаты заказа, если он
+     * связан со сделкой (Deal.work_order_id). Тот же принцип, что у
+     * DealController::moveStage(): без стадии type=won в воронке или уже
+     * закрытой сделки — просто ничего не делает, молча.
+     */
+    private function autoWinLinkedDeal(WorkOrder $workOrder): void
+    {
+        $deal = Deal::where('work_order_id', $workOrder->id)->first();
+
+        if (! $deal || $deal->stage?->isClosing()) {
+            return;
+        }
+
+        $wonStage = $deal->pipeline?->wonStage();
+
+        if (! $wonStage) {
+            return;
+        }
+
+        $previous = $deal->stage?->name ?? '—';
+
+        $deal->update([
+            'pipeline_stage_id' => $wonStage->id,
+            'stage_entered_at' => now(),
+            'closed_at' => now(),
+        ]);
+
+        ActivityLogger::log(
+            $deal,
+            "Сделка «{$deal->title}» автоматически переведена со стадии «{$previous}» на «{$wonStage->name}» — по заказу №{$workOrder->id} поступила полная оплата",
+            [['type' => 'deal', 'id' => $deal->id, 'label' => "Сделка «{$deal->title}»"]],
+            'stage_changed'
+        );
+
+        PipelineAutomationService::runFor($deal, $wonStage);
     }
 
     public function completeOrder(Request $request, WorkOrder $workOrder)

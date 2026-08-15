@@ -59,6 +59,12 @@ class PipelineStage extends Model
         return $this->hasMany(Deal::class);
     }
 
+    /** Действия, выполняемые автоматически при входе сделки в эту стадию (этап 3). */
+    public function automations(): HasMany
+    {
+        return $this->hasMany(PipelineStageAutomation::class);
+    }
+
     /** Стадия закрытия (успех или проигрыш) — сделка в ней больше не «в работе». */
     public function isClosing(): bool
     {

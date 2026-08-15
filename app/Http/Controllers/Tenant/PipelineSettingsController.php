@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessDirection;
 use App\Models\Deal;
+use App\Models\MessageTemplate;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
+use App\Models\PipelineStageAutomation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -25,13 +27,15 @@ class PipelineSettingsController extends Controller
     public function index(): Response
     {
         return Inertia::render('Settings/Pipelines/Index', [
-            'pipelines' => Pipeline::with(['stages', 'businessDirection:id,name'])
+            'pipelines' => Pipeline::with(['stages.automations.messageTemplate:id,name', 'businessDirection:id,name'])
                 ->withCount('deals')
                 ->orderBy('sort_order')
                 ->orderBy('id')
                 ->get(),
             'businessDirections' => BusinessDirection::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'stageTypes' => PipelineStage::TYPES,
+            'automationActions' => PipelineStageAutomation::ACTIONS,
+            'messageTemplates' => MessageTemplate::where('is_active', true)->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -172,6 +176,32 @@ class PipelineSettingsController extends Controller
         return redirect()->back()->with('success', 'Порядок стадий обновлён');
     }
 
+    /** Действия, автоматически выполняемые при входе сделки в эту стадию (этап 3). */
+    public function storeAutomation(Request $request, PipelineStage $stage)
+    {
+        $validated = $this->validateAutomation($request);
+
+        $stage->automations()->create($validated);
+
+        return redirect()->back()->with('success', 'Автоматизация добавлена');
+    }
+
+    public function updateAutomation(Request $request, PipelineStageAutomation $automation)
+    {
+        $validated = $this->validateAutomation($request);
+
+        $automation->update($validated);
+
+        return redirect()->back()->with('success', 'Автоматизация обновлена');
+    }
+
+    public function destroyAutomation(PipelineStageAutomation $automation)
+    {
+        $automation->delete();
+
+        return redirect()->back()->with('success', 'Автоматизация удалена');
+    }
+
     // --- ВНУТРЕННЕЕ ---
 
     private function validateStage(Request $request, ?PipelineStage $stage = null): array
@@ -205,5 +235,33 @@ class PipelineSettingsController extends Controller
         if ($pipeline->is_default) {
             Pipeline::where('id', '!=', $pipeline->id)->update(['is_default' => false]);
         }
+    }
+
+    private function validateAutomation(Request $request): array
+    {
+        $validated = $request->validate([
+            'action' => ['required', 'string', Rule::in(array_keys(PipelineStageAutomation::ACTIONS))],
+            'message_template_id' => ['nullable', 'integer', 'exists:message_templates,id'],
+            'task_title' => ['nullable', 'string', 'max:255'],
+            'task_due_offset_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+            'is_active' => ['boolean'],
+        ]);
+
+        // send_message без шаблона отправлял бы пустое сообщение — бессмысленно
+        // и незаметно для того, кто настраивал автоматизацию.
+        if ($validated['action'] === PipelineStageAutomation::ACTION_SEND_MESSAGE && empty($validated['message_template_id'])) {
+            throw ValidationException::withMessages([
+                'message_template_id' => 'Для отправки сообщения нужно выбрать шаблон.',
+            ]);
+        }
+
+        // Поля другого действия не должны молча оставаться от предыдущего
+        // выбора в форме — иначе смена action на create_task оставила бы
+        // призрачный message_template_id в записи.
+        if ($validated['action'] !== PipelineStageAutomation::ACTION_SEND_MESSAGE) {
+            $validated['message_template_id'] = null;
+        }
+
+        return $validated;
     }
 }

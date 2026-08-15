@@ -4,6 +4,7 @@ namespace App\Services\Messaging;
 
 use App\Models\Appointment;
 use App\Models\Client;
+use App\Models\Deal;
 use App\Models\MessageTemplate;
 use App\Models\WorkOrder;
 use App\Services\CustomFieldPlaceholderService;
@@ -25,6 +26,19 @@ class MessageTemplateService
             [
                 'work_order.id' => (string) $workOrder->id,
                 'work_order.final_amount' => number_format($workOrder->final_amount / 100, 2, '.', ' '),
+            ]
+        ));
+    }
+
+    /** Фаза 17, этап 3 — автоматизация «отправить сообщение» при входе сделки в стадию. */
+    public static function renderForDeal(MessageTemplate $template, Deal $deal): string
+    {
+        return self::render($template, array_merge(
+            self::clientPlaceholders($deal->client),
+            [
+                'deal.title' => $deal->title,
+                'deal.amount' => number_format($deal->amount / 100, 2, '.', ' '),
+                'branch.name' => $deal->branch?->name ?? '',
             ]
         ));
     }

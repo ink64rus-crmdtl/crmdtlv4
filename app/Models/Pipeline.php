@@ -47,4 +47,16 @@ class Pipeline extends Model
     {
         return $this->hasMany(Deal::class);
     }
+
+    /**
+     * Стадия «Успех» этой воронки — куда сделка переходит автоматически при
+     * оплате связанного заказа (WorkOrderController::processPayment()).
+     * Может отсутствовать только у испорченной ручным вводом воронки —
+     * PipelineSettingsController не даёт удалить/переименовать тип у
+     * закрывающей стадии, поэтому в норме она всегда ровно одна.
+     */
+    public function wonStage(): ?PipelineStage
+    {
+        return $this->stages()->where('type', PipelineStage::TYPE_WON)->first();
+    }
 }

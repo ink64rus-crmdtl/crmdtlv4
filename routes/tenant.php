@@ -335,6 +335,9 @@ Route::middleware([
         Route::put('/settings/pipeline-stages/{stage}', [PipelineSettingsController::class, 'updateStage'])->name('settings.pipelines.stages.update');
         Route::delete('/settings/pipeline-stages/{stage}', [PipelineSettingsController::class, 'destroyStage'])->name('settings.pipelines.stages.destroy');
         Route::post('/settings/pipelines/{pipeline}/stages/reorder', [PipelineSettingsController::class, 'reorderStages'])->name('settings.pipelines.stages.reorder');
+        Route::post('/settings/pipeline-stages/{stage}/automations', [PipelineSettingsController::class, 'storeAutomation'])->name('settings.pipelines.stages.automations.store');
+        Route::put('/settings/pipeline-stage-automations/{automation}', [PipelineSettingsController::class, 'updateAutomation'])->name('settings.pipelines.stages.automations.update');
+        Route::delete('/settings/pipeline-stage-automations/{automation}', [PipelineSettingsController::class, 'destroyAutomation'])->name('settings.pipelines.stages.automations.destroy');
 
         // Operations: Заказ-наряды
         Route::get('/operations/work-orders', [WorkOrderController::class, 'index'])->name('operations.work-orders.index');

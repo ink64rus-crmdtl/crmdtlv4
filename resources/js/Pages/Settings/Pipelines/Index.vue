@@ -4,13 +4,15 @@ import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import Modal from '@/Components/Modal.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import draggable from 'vuedraggable';
 
 const props = defineProps({
     pipelines: { type: Array, default: () => [] },
     businessDirections: { type: Array, default: () => [] },
     stageTypes: { type: Object, default: () => ({}) },
+    automationActions: { type: Object, default: () => ({}) },
+    messageTemplates: { type: Array, default: () => [] },
 });
 
 const stageColors = [
@@ -129,6 +131,59 @@ const destroyStage = (stage) => {
 };
 
 const isClosingStage = (stage) => ['won', 'lost'].includes(stage.type);
+
+// --- АВТОМАТИЗАЦИИ СТАДИИ (этап 3) ---
+const isAutomationsModalOpen = ref(false);
+const automationsStage = ref(null);
+
+// Локальный поиск актуального списка стадии по id — после любого action
+// Inertia обновляет props.pipelines целиком, а automationsStage — снэпшот
+// на момент открытия модалки.
+const currentAutomations = computed(() => {
+    if (!automationsStage.value) return [];
+    for (const p of props.pipelines) {
+        const s = (p.stages || []).find(s => s.id === automationsStage.value.id);
+        if (s) return s.automations || [];
+    }
+    return [];
+});
+
+const openAutomationsModal = (stage) => {
+    automationsStage.value = stage;
+    automationForm.reset();
+    automationForm.clearErrors();
+    isAutomationsModalOpen.value = true;
+};
+
+const automationForm = useForm({
+    action: 'send_message',
+    message_template_id: '',
+    task_title: '',
+    task_due_offset_days: '',
+    is_active: true,
+});
+
+const submitAutomation = () => {
+    automationForm.post(route('settings.pipelines.stages.automations.store', automationsStage.value.id), {
+        preserveScroll: true,
+        onSuccess: () => { automationForm.reset(); automationForm.is_active = true; },
+    });
+};
+
+const toggleAutomation = (automation) => {
+    router.put(route('settings.pipelines.stages.automations.update', automation.id), {
+        action: automation.action,
+        message_template_id: automation.message_template_id,
+        task_title: automation.task_title,
+        task_due_offset_days: automation.task_due_offset_days,
+        is_active: !automation.is_active,
+    }, { preserveScroll: true });
+};
+
+const destroyAutomation = (automation) => {
+    if (!confirm('Удалить эту автоматизацию?')) return;
+    router.delete(route('settings.pipelines.stages.automations.destroy', automation.id), { preserveScroll: true });
+};
 </script>
 
 <template>
@@ -241,6 +296,10 @@ const isClosingStage = (stage) => ['won', 'lost'].includes(stage.type);
                                     </td>
                                     <td class="py-3 px-3">
                                         <div class="flex items-center justify-end gap-2">
+                                            <button @click="openAutomationsModal(stage)" class="relative w-8 h-8 rounded-full bg-warning/10 text-warning hover:bg-warning hover:text-white inline-flex items-center justify-center transition-colors" title="Автоматизации при входе в стадию">
+                                                <i class="ri-flashlight-line"></i>
+                                                <span v-if="(stage.automations || []).filter(a => a.is_active).length > 0" class="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-warning text-white text-[10px] font-bold flex items-center justify-center">{{ (stage.automations || []).filter(a => a.is_active).length }}</span>
+                                            </button>
                                             <button @click="openStageModal(pipeline.id, stage)" class="w-8 h-8 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-white inline-flex items-center justify-center transition-colors" title="Редактировать стадию">
                                                 <i class="ri-pencil-line"></i>
                                             </button>
@@ -384,6 +443,71 @@ const isClosingStage = (stage) => ['won', 'lost'].includes(stage.type);
                     <button type="submit" :disabled="stageForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Сохранить</button>
                 </div>
             </form>
+        </Modal>
+
+        <!-- Автоматизации стадии (этап 3) -->
+        <Modal :show="isAutomationsModalOpen" @close="isAutomationsModalOpen = false" max-width="2xl">
+            <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Автоматизации стадии «{{ automationsStage?.name }}»</h3>
+                <button @click="isAutomationsModalOpen = false" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                <p class="text-sm text-gray-500">Срабатывают автоматически, как только сделка попадает на эту стадию — при создании, перетаскивании на доске или автопереходе в «Успех» после оплаты заказа.</p>
+
+                <div v-if="currentAutomations.length === 0" class="text-sm text-gray-400 text-center py-4">Автоматизаций пока нет.</div>
+
+                <div v-else class="space-y-2">
+                    <div v-for="automation in currentAutomations" :key="automation.id" :class="[automation.is_active ? 'border-gray-200 dark:border-gray-700' : 'border-gray-100 dark:border-gray-800 opacity-50', 'rounded-md border p-3 flex items-center justify-between gap-3']">
+                        <div class="min-w-0">
+                            <div class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ automationActions[automation.action] }}</div>
+                            <div class="text-xs text-gray-500 mt-0.5 truncate">
+                                <span v-if="automation.action === 'send_message'">Шаблон: {{ automation.message_template?.name || '—' }}</span>
+                                <span v-else>{{ automation.task_title || '(текст по умолчанию)' }}<span v-if="automation.task_due_offset_days !== null"> · срок через {{ automation.task_due_offset_days }} дн.</span></span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button @click="toggleAutomation(automation)" :class="[automation.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full transition-all duration-200 relative shrink-0']" :title="automation.is_active ? 'Выключить' : 'Включить'">
+                                <div :class="[automation.is_active ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </button>
+                            <button @click="destroyAutomation(automation)" class="w-8 h-8 rounded-full bg-danger/10 text-danger hover:bg-danger hover:text-white inline-flex items-center justify-center transition-colors" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <form @submit.prevent="submitAutomation" class="border-t border-gray-200 dark:border-gray-700 pt-5 space-y-3">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Добавить действие</label>
+                    <select v-model="automationForm.action" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                        <option v-for="(label, key) in automationActions" :key="key" :value="key" class="bg-white dark:bg-gray-800">{{ label }}</option>
+                    </select>
+
+                    <div v-if="automationForm.action === 'send_message'">
+                        <select v-model="automationForm.message_template_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="" class="bg-white dark:bg-gray-800">Выберите шаблон</option>
+                            <option v-for="t in messageTemplates" :key="t.id" :value="t.id" class="bg-white dark:bg-gray-800">{{ t.name }}</option>
+                        </select>
+                        <p v-if="automationForm.errors.message_template_id" class="text-xs text-danger mt-1">{{ automationForm.errors.message_template_id }}</p>
+                        <p v-if="messageTemplates.length === 0" class="text-[11px] text-gray-400 mt-1">Шаблонов сообщений пока нет — заведите их в Настройки → Шаблоны сообщений.</p>
+                    </div>
+
+                    <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <input v-model="automationForm.task_title" type="text" :placeholder="automationForm.action === 'create_appointment' ? 'Запланировать визит по сделке «...»' : 'Задача по сделке «...»'" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <p class="text-[11px] text-gray-400 mt-1">Пусто — подставится текст по умолчанию</p>
+                        </div>
+                        <div>
+                            <input v-model.number="automationForm.task_due_offset_days" type="number" min="0" max="365" placeholder="Срок, дней от входа в стадию" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button type="submit" :disabled="automationForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50 gap-1.5">
+                            <i class="ri-add-line"></i> Добавить
+                        </button>
+                    </div>
+                </form>
+            </div>
         </Modal>
     </AuthenticatedLayout>
 </template>
