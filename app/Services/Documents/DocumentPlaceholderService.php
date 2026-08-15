@@ -131,15 +131,31 @@ class DocumentPlaceholderService
 
     private static function workOrderPlaceholders(WorkOrder $workOrder): array
     {
+        // Скидка на заказе разделена на два взаимоисключающих режима — общая
+        // (work_order.discount_amount, колонка) и по позициям (сумма
+        // item.discount_amount) — см. WorkOrderController::updateDiscount()/
+        // addItem()/updateItem(). Документ не обязан знать, каким именно
+        // способом менеджер задал скидку — плейсхолдер "Сумма скидки" в
+        // итоговой части обязан показать её в любом случае. WorkOrder::
+        // total_amount (DB-колонка) уже НЕТТО по позиционной скидке (см.
+        // WorkOrderController::recalculateTotals(), item.total = qty*price -
+        // item.discount_amount), поэтому для "Сумма позиций до скидки" здесь
+        // считаем валовую сумму заново, а не берём готовую колонку — иначе
+        // при позиционной скидке в документе "Сумма позиций - Скидка"
+        // переставало бы сходиться с "Итого".
+        $itemsDiscountTotal = $workOrder->items->sum('discount_amount');
+        $grossTotal = $workOrder->items->sum(fn ($item) => (int) round($item->quantity * $item->price));
+        $effectiveDiscount = $workOrder->discount_amount + $itemsDiscountTotal;
+
         return [
             'work_order.id' => (string) $workOrder->id,
-            'work_order.total_amount' => self::money($workOrder->total_amount),
-            'work_order.discount_amount' => self::money($workOrder->discount_amount),
+            'work_order.total_amount' => self::money($grossTotal),
+            'work_order.discount_amount' => self::money($effectiveDiscount),
             'work_order.final_amount' => self::money($workOrder->final_amount),
             // total_amount уже есть сумма items.total (см. WorkOrder::recalculateTotals) —
             // items_total просто более понятное имя для использования сразу после
             // табличной секции {{#items}}, без диссонанса "почему это work_order.*".
-            'items_total' => self::money($workOrder->total_amount),
+            'items_total' => self::money($grossTotal),
             // НДС — только если юрлицо заказа плательщик (WorkOrderController::
             // recalculateTotals() снепшотит ставку/сумму на сам заказ); если нет —
             // пустая строка, DocumentRenderer вырежет плейсхолдер из шаблона.
@@ -168,6 +184,11 @@ class DocumentPlaceholderService
             'item.price' => self::money($item->price),
             'item.discount_amount' => self::money($item->discount_amount),
             'item.total' => self::money($item->total),
+            // Флаг-условие для {{#if item.has_discount}} внутри {{#items}} (см.
+            // DocumentRenderer::renderConditionals()) — так шаблон может
+            // показывать колонку "Скидка" только у тех строк, где она реально
+            // есть, не добавляя "0,00 ₽" на каждую позицию заказа.
+            'item.has_discount' => $item->discount_amount > 0 ? '1' : '',
         ])->all();
     }
 

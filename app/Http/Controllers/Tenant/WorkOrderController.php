@@ -728,6 +728,13 @@ class WorkOrderController extends Controller
         $discountCents = (int) round(($validated['discount_amount'] ?? 0) * 100);
         $totalCents = max(0, (int) round($validated['quantity'] * $priceCents) - $discountCents);
 
+        // Скидка на позицию и скидка на заказ взаимоисключающие — см. пояснение в updateDiscount().
+        if ($discountCents > 0 && $workOrder->discount_is_manual && $workOrder->discount_amount > 0) {
+            return redirect()->back()->withErrors([
+                'discount_amount' => 'Нельзя установить скидку на позицию — на заказе уже задана общая скидка. Сначала уберите общую скидку.',
+            ]);
+        }
+
         DB::transaction(function () use ($validated, $workOrder, $isCustom, $priceCents, $discountCents, $totalCents) {
             $itemableId = $validated['itemable_id'] ?? null;
 
@@ -804,6 +811,13 @@ class WorkOrderController extends Controller
             $qty = $validated['quantity'] ?? $item->quantity;
             $price = $request->has('price') ? (int) round($validated['price'] * 100) : $item->price;
             $discount = $request->has('discount_amount') ? (int) round($validated['discount_amount'] * 100) : $item->discount_amount;
+
+            // Скидка на позицию и скидка на заказ взаимоисключающие — см. пояснение в updateDiscount().
+            if ($discount > 0 && $workOrder->discount_is_manual && $workOrder->discount_amount > 0) {
+                return redirect()->back()->withErrors([
+                    'discount_amount' => 'Нельзя установить скидку на позицию — на заказе уже задана общая скидка. Сначала уберите общую скидку.',
+                ]);
+            }
 
             $data['quantity'] = $qty;
             $data['price'] = $price;
@@ -955,7 +969,18 @@ class WorkOrderController extends Controller
             // считается ниже в recalculateTotals(), здесь только снимаем флаг.
             $workOrder->discount_is_manual = false;
         } else {
-            $workOrder->discount_amount = (int) round($validated['discount_amount'] * 100);
+            $manualDiscountCents = (int) round($validated['discount_amount'] * 100);
+
+            // Скидка на заказ и скидка на позицию взаимоисключающие (см. CLAUDE.md
+            // про пояснение блокировок в UI) — иначе сумма к оплате считалась бы
+            // с двойной скидкой, а пользователю было бы не очевидно, откуда она.
+            if ($manualDiscountCents > 0 && $workOrder->items()->where('discount_amount', '>', 0)->exists()) {
+                return redirect()->back()->withErrors([
+                    'discount_amount' => 'Нельзя установить общую скидку на заказ — на одной из позиций уже задана индивидуальная скидка. Сначала уберите скидки с позиций.',
+                ]);
+            }
+
+            $workOrder->discount_amount = $manualDiscountCents;
             $workOrder->discount_is_manual = true;
         }
         $workOrder->save();

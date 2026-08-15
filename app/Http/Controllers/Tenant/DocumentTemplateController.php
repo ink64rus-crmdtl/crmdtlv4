@@ -146,6 +146,9 @@ class DocumentTemplateController extends Controller
                 'item.discount_amount' => 'Скидка по позиции',
                 'item.total' => 'Сумма по позиции',
             ],
+            'conditions' => [
+                'item.has_discount' => 'Блок покажется, только если на эту позицию задана индивидуальная скидка',
+            ],
         ],
         'goods_receipt' => [
             'section' => 'items',

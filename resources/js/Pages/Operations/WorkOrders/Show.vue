@@ -615,6 +615,12 @@ const orderDiscountPercent = computed(() => {
     return Math.round((props.workOrder.discount_amount / props.workOrder.total_amount) * 1000) / 10;
 });
 
+// Скидка на позицию и скидка на заказ взаимоисключающие (см. WorkOrderController) —
+// эти два вычисляемых свойства управляют блокировкой полей друг друга в UI.
+const itemsDiscountTotal = computed(() => (props.workOrder.items || []).reduce((sum, item) => sum + (item.discount_amount || 0), 0));
+const hasItemDiscounts = computed(() => itemsDiscountTotal.value > 0);
+const hasOrderDiscount = computed(() => props.workOrder.discount_is_manual && props.workOrder.discount_amount > 0);
+
 // Инлайн-скидка в корзине пакетного добавления (сумма ₽ или %)
 const drawerDiscountMode = ref('amount'); // 'amount' | 'percent'
 const drawerDiscountValue = ref(0);
@@ -1024,9 +1030,13 @@ const formatMoney = (amount) => {
                                     <span class="text-gray-500 dark:text-gray-400">Сумма позиций:</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.total_amount) }}</span>
                                 </div>
+                                <div v-if="itemsDiscountTotal > 0" class="flex justify-between items-center text-sm">
+                                    <span class="text-gray-500 dark:text-gray-400">Скидка по позициям:</span>
+                                    <span class="font-medium text-danger">- {{ formatMoney(itemsDiscountTotal) }}</span>
+                                </div>
                                 <div class="flex justify-between items-center text-sm group">
                                     <span class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                        Скидка:
+                                        Скидка на заказ:
                                         <button v-if="workOrder.status !== 'completed'" @click="openDiscountModal" class="text-primary hover:text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"><i class="ri-pencil-line"></i></button>
                                     </span>
                                     <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
@@ -1214,9 +1224,13 @@ const formatMoney = (amount) => {
                             <span class="text-gray-500 dark:text-gray-400">Сумма по прайсу:</span>
                             <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.total_amount) }}</span>
                         </div>
+                        <div v-if="itemsDiscountTotal > 0" class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Скидка по позициям:</span>
+                            <span class="font-medium text-danger">- {{ formatMoney(itemsDiscountTotal) }}</span>
+                        </div>
                         <div class="flex justify-between items-center text-sm group">
                             <span class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                Скидка:
+                                Скидка на заказ:
                                 <button v-if="workOrder.status !== 'completed'" @click="openDiscountModal" class="text-primary hover:text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"><i class="ri-pencil-line"></i></button>
                             </span>
                             <span class="font-medium text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
@@ -1451,11 +1465,11 @@ const formatMoney = (amount) => {
                                         @update="payload => updateItemAssignees(item, payload)"
                                     />
 
-                                    <div class="flex items-center gap-1.5 ml-auto">
+                                    <div class="flex items-center gap-1.5 ml-auto" :title="hasOrderDiscount ? 'Скидка на позицию недоступна — на заказе уже установлена общая скидка. Уберите общую скидку, чтобы задать скидку на позицию.' : ''">
                                         <span class="text-[11px] text-gray-400 font-semibold">Скидка:</span>
                                         <div class="inline-flex rounded border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
-                                            <button type="button" @click="setItemDiscountMode(item, 'amount')" :class="[getItemDiscountMode(item) === 'amount' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-1.5 py-1 text-[11px] font-bold transition-colors']">₽</button>
-                                            <button type="button" @click="setItemDiscountMode(item, 'percent')" :class="[getItemDiscountMode(item) === 'percent' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-1.5 py-1 text-[11px] font-bold transition-colors border-l border-gray-200 dark:border-gray-700']">%</button>
+                                            <button type="button" :disabled="hasOrderDiscount" @click="setItemDiscountMode(item, 'amount')" :class="[getItemDiscountMode(item) === 'amount' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-1.5 py-1 text-[11px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed']">₽</button>
+                                            <button type="button" :disabled="hasOrderDiscount" @click="setItemDiscountMode(item, 'percent')" :class="[getItemDiscountMode(item) === 'percent' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-1.5 py-1 text-[11px] font-bold transition-colors border-l border-gray-200 dark:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed']">%</button>
                                         </div>
                                         <input
                                             type="number"
@@ -1463,11 +1477,16 @@ const formatMoney = (amount) => {
                                             min="0"
                                             :max="getItemDiscountMode(item) === 'percent' ? 100 : itemBaseRub(item)"
                                             :value="itemDiscountDisplayValue(item)"
+                                            :disabled="hasOrderDiscount"
                                             @change="e => applyItemDiscount(item, e.target.value)"
-                                            class="w-16 rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-1.5 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                            class="w-16 rounded border-gray-200 dark:border-gray-700 bg-transparent py-1 px-1.5 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed"
                                         />
                                     </div>
                                 </div>
+                                <p v-if="hasOrderDiscount" class="text-[11px] text-gray-400 flex items-center gap-1 pt-1">
+                                    <i class="ri-information-line"></i>
+                                    Скидка на позицию недоступна, пока на заказе установлена общая скидка.
+                                </p>
                             </div>
 
                             <div v-if="!workOrder.items || workOrder.items.length === 0" class="text-center py-8 text-xs text-gray-400">
@@ -1481,13 +1500,21 @@ const formatMoney = (amount) => {
                                 <span class="text-gray-500">Сумма услуг:</span>
                                 <span class="font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(workOrder.total_amount) }}</span>
                             </div>
+                            <div v-if="itemsDiscountTotal > 0" class="flex justify-between items-center text-xs">
+                                <span class="text-gray-500">Скидка по позициям:</span>
+                                <span class="font-bold text-danger">- {{ formatMoney(itemsDiscountTotal) }}</span>
+                            </div>
                             <div class="flex justify-between items-center text-xs">
-                                <span class="text-gray-500">Скидка:</span>
+                                <span class="text-gray-500">Скидка на заказ:</span>
                                 <span class="font-bold text-danger">- {{ formatMoney(workOrder.discount_amount) }} <span class="text-gray-400 font-normal">({{ orderDiscountPercent }}%)</span></span>
                             </div>
 
-                            <!-- Инлайн-редактирование скидки: сумма (₽) или процент (%) -->
-                            <div class="flex items-center gap-1.5">
+                            <!-- Инлайн-редактирование скидки: сумма (₽) или процент (%). Взаимоисключает скидку по позициям (см. WorkOrderController::updateDiscount()). -->
+                            <p v-if="hasItemDiscounts" class="text-[11px] text-danger flex items-start gap-1">
+                                <i class="ri-error-warning-line mt-0.5"></i>
+                                <span>Общая скидка на заказ недоступна — на одной из позиций уже задана индивидуальная скидка. Уберите её на позиции, чтобы задать общую.</span>
+                            </p>
+                            <div v-else class="flex items-center justify-end gap-1.5">
                                 <div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden shrink-0">
                                     <button type="button" @click="setDrawerDiscountMode('amount')" :class="[drawerDiscountMode === 'amount' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-2 py-1 text-[11px] font-bold transition-colors']">₽</button>
                                     <button type="button" @click="setDrawerDiscountMode('percent')" :class="[drawerDiscountMode === 'percent' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700', 'px-2 py-1 text-[11px] font-bold transition-colors border-l border-gray-200 dark:border-gray-700']">%</button>
@@ -1499,7 +1526,7 @@ const formatMoney = (amount) => {
                                     :max="drawerDiscountMode === 'percent' ? 100 : drawerTotalRub"
                                     v-model="drawerDiscountValue"
                                     @keyup.enter="applyDrawerDiscount"
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs font-bold text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                                    class="shrink-0 w-24 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs font-bold text-gray-800 dark:text-gray-200 text-right focus:border-primary focus:ring-0"
                                 />
                                 <button type="button" @click="applyDrawerDiscount" class="shrink-0 inline-flex items-center justify-center rounded px-2.5 py-1 text-[11px] font-bold bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors">Применить</button>
                             </div>
@@ -1883,9 +1910,13 @@ const formatMoney = (amount) => {
                     </div>
                     <form @submit.prevent="submitDiscount" class="flex flex-col">
                         <div class="p-6 space-y-4">
+                            <p v-if="hasItemDiscounts" class="text-xs text-danger flex items-start gap-1.5 bg-danger/10 rounded-md p-3">
+                                <i class="ri-error-warning-line mt-0.5"></i>
+                                <span>Общую скидку нельзя задать — на одной из позиций заказа уже установлена индивидуальная скидка. Уберите скидки с позиций в корзине заказа, чтобы задать общую.</span>
+                            </p>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сумма скидки (₽) <span class="text-danger">*</span></label>
-                                <input v-model="discountForm.discount_amount" type="number" step="0.01" min="0" :max="workOrder.total_amount / 100" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0" />
+                                <input v-model="discountForm.discount_amount" type="number" step="0.01" min="0" :max="workOrder.total_amount / 100" :disabled="hasItemDiscounts" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 disabled:opacity-50 disabled:cursor-not-allowed" />
                                 <p class="text-xs text-gray-500 mt-1">Максимальная скидка: {{ formatMoney(workOrder.total_amount) }}</p>
                             </div>
                             <p v-if="!workOrder.discount_is_manual" class="text-xs text-gray-500 dark:text-gray-400">
@@ -1897,7 +1928,7 @@ const formatMoney = (amount) => {
                         </div>
                         <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                             <button type="button" @click="closeDiscountModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
-                            <button type="submit" :disabled="discountForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Применить</button>
+                            <button type="submit" :disabled="discountForm.processing || hasItemDiscounts" :title="hasItemDiscounts ? 'Недоступно, пока на позициях есть индивидуальные скидки' : ''" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed">Применить</button>
                         </div>
                     </form>
                 </div>
