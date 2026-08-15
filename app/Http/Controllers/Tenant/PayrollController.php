@@ -182,35 +182,87 @@ class PayrollController extends Controller
 
         $account = Account::findOrFail($validated['account_id']);
 
-        // Получателем может быть как штатный сотрудник, так и подрядчик —
-        // payeeName() сам разбирается, кто именно (см. Payroll::payee()).
-        // Само движение денег не меняется: как и раньше, единственный способ
-        // тронуть баланс кассы — FinanceService, напрямую balance не пишем.
-        $payeeName = $payroll->payeeName();
-        $payoutLabel = $payroll->client_id ? 'Выплата подрядчику' : 'Выплата ЗП';
-
         try {
-            DB::transaction(function () use ($payroll, $account, $payeeName, $payoutLabel) {
-                $transaction = FinanceService::processTransaction([
-                    'account_id' => $account->id,
-                    'branch_id' => $payroll->branch_id,
-                    'type' => 'expense',
-                    'amount' => $payroll->amount,
-                    'comment' => $payoutLabel.': '.$payeeName.($payroll->comment ? ' ('.$payroll->comment.')' : ''),
-                    'payable_type' => Payroll::class,
-                    'payable_id' => $payroll->id,
-                ], auth()->id());
-
-                $payroll->update([
-                    'status' => 'paid',
-                    'paid_transaction_id' => $transaction->id,
-                ]);
-            });
+            DB::transaction(fn () => $this->payOne($payroll, $account));
 
             return redirect()->back()->with('success', 'Выплата проведена');
         } catch (Exception $e) {
             return redirect()->back()->withErrors(['error' => 'Ошибка при выплате: '.$e->getMessage()]);
         }
+    }
+
+    /**
+     * Массовая выплата (кнопка «Выплатить выбранные» на вкладке «Начисления»
+     * Карточки сотрудника/подрядчика) — та же проводка, что и у одиночной
+     * payout(), просто применённая к нескольким записям одной DB-транзакцией
+     * (либо выплачиваются ВСЕ выбранные, либо ни одна — падение на любой из
+     * них откатывает уже проведённые в рамках этого запроса). Каждая запись
+     * при этом получает СВОЮ транзакцию в кассе (payable_id = именно её id),
+     * а не одну общую суммовую — иначе терялась бы привязка "за что именно"
+     * из комментария к движению по счёту.
+     */
+    public function bulkPayout(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:payrolls,id'],
+            'account_id' => ['required', 'exists:accounts,id'],
+        ]);
+
+        // whereIn сам по себе уже отфильтрован BranchScope (глобальный scope
+        // модели) — чужие/недоступные id из чужой локации/тенанта просто не
+        // попадут в выборку, отдельная проверка доступа не нужна.
+        $payrolls = Payroll::whereIn('id', $validated['ids'])->get();
+
+        if ($payrolls->pluck('employee_id')->filter()->unique()->count() > 1
+            || $payrolls->pluck('client_id')->filter()->unique()->count() > 1) {
+            return redirect()->back()->withErrors(['ids' => 'Нельзя выплатить одной операцией начисления разных получателей.']);
+        }
+
+        if ($payrolls->contains(fn (Payroll $p) => $p->status !== 'pending' || $p->type !== 'accrual')) {
+            return redirect()->back()->withErrors(['ids' => 'В выборке есть уже выплаченные, отменённые записи или штрафы — обновите страницу и выберите заново.']);
+        }
+
+        $account = Account::findOrFail($validated['account_id']);
+
+        try {
+            DB::transaction(function () use ($payrolls, $account) {
+                foreach ($payrolls as $payroll) {
+                    $this->payOne($payroll, $account);
+                }
+            });
+
+            return redirect()->back()->with('success', 'Выплачено записей: '.$payrolls->count());
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => 'Ошибка при массовой выплате: '.$e->getMessage()]);
+        }
+    }
+
+    /**
+     * Получателем может быть как штатный сотрудник, так и подрядчик —
+     * payeeName() сам разбирается, кто именно (см. Payroll::payee()).
+     * Само движение денег не меняется: единственный способ тронуть баланс
+     * кассы — FinanceService, напрямую balance не пишем.
+     */
+    private function payOne(Payroll $payroll, Account $account): void
+    {
+        $payeeName = $payroll->payeeName();
+        $payoutLabel = $payroll->client_id ? 'Выплата подрядчику' : 'Выплата ЗП';
+
+        $transaction = FinanceService::processTransaction([
+            'account_id' => $account->id,
+            'branch_id' => $payroll->branch_id,
+            'type' => 'expense',
+            'amount' => $payroll->amount,
+            'comment' => $payoutLabel.': '.$payeeName.($payroll->comment ? ' ('.$payroll->comment.')' : ''),
+            'payable_type' => Payroll::class,
+            'payable_id' => $payroll->id,
+        ], auth()->id());
+
+        $payroll->update([
+            'status' => 'paid',
+            'paid_transaction_id' => $transaction->id,
+        ]);
     }
 
     /**

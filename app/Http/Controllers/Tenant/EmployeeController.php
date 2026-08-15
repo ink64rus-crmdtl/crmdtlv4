@@ -164,7 +164,7 @@ class EmployeeController extends Controller
         ]);
     }
 
-    public function show(Employee $employee): Response
+    public function show(Request $request, Employee $employee): Response
     {
         $employee->load(['user.roles', 'branch' => fn ($q) => $q->withTrashed(), 'position', 'secondaryPosition']);
 
@@ -216,18 +216,34 @@ class EmployeeController extends Controller
             ->orderBy('id', 'desc')
             ->get();
 
-        // Фаза 10.3: начисления/штрафы/оклад и их выплата.
+        // Фаза 10.3: начисления/штрафы/оклад и их выплата — две отдельные
+        // вкладки на карточке (см. HR/Employees/Show.vue), каждая со своей
+        // серверной пагинацией и своим query-параметром страницы, чтобы
+        // листание одной не сбивало страницу другой:
+        // «Начисления» — полный журнал решений (все статусы), «Выплаты» —
+        // только уже реально прошедшие оплаты (растёт без ограничения при
+        // каждой выплате, поэтому именно она вынесена главной вкладкой).
+        $accrualsPerPage = min(max((int) $request->input('accruals_per_page', 10), 5), 100);
+        $payoutsPerPage = min(max((int) $request->input('payouts_per_page', 10), 5), 100);
+
         $payrollEntries = Payroll::where('employee_id', $employee->id)
             ->with('transaction:id,transaction_date')
             ->orderBy('id', 'desc')
-            ->limit(50)
-            ->get();
+            ->paginate($accrualsPerPage, ['*'], 'accruals_page')
+            ->withQueryString();
+
+        $payrollPayouts = Payroll::where('employee_id', $employee->id)
+            ->where('status', 'paid')
+            ->with('transaction:id,transaction_date')
+            ->orderBy('paid_transaction_id', 'desc')
+            ->paginate($payoutsPerPage, ['*'], 'payouts_page')
+            ->withQueryString();
 
         $payoutAccounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type']);
 
         // Фаза 10.4: баланс взаиморасчётов — считаем по ВСЕЙ истории начислений
-        // (не по обрезанным до 50 строк $payrollEntries), та же формула, что и в
-        // общем отчёте PayrollController::index().
+        // отдельным запросом (не по текущей странице $payrollEntries), та же
+        // формула, что и в общем отчёте PayrollController::index().
         $balanceRow = Payroll::where('employee_id', $employee->id)
             ->selectRaw("
                 SUM(CASE WHEN type = 'accrual' AND status != 'canceled' THEN amount ELSE 0 END) as accrued_total,
@@ -262,6 +278,7 @@ class EmployeeController extends Controller
             'serviceCategories' => ServiceCategory::where('is_active', true)->get(['id', 'name']),
             'services' => Service::where('is_active', true)->get(['id', 'name', 'service_category_id']),
             'payrollEntries' => $payrollEntries,
+            'payrollPayouts' => $payrollPayouts,
             'payoutAccounts' => $payoutAccounts,
             'payrollBalance' => $payrollBalance,
         ]);

@@ -270,6 +270,7 @@ Route::middleware([
         // HR: Начисления/выплаты ЗП (Фаза 10.3)
         Route::get('/hr/payroll', [PayrollController::class, 'index'])->name('hr.payroll.index');
         Route::post('/hr/payroll', [PayrollController::class, 'store'])->name('hr.payroll.store');
+        Route::post('/hr/payroll/bulk-payout', [PayrollController::class, 'bulkPayout'])->name('hr.payroll.bulk-payout');
         Route::post('/hr/payroll/{payroll}/payout', [PayrollController::class, 'payout'])->name('hr.payroll.payout');
         Route::delete('/hr/payroll/{payroll}', [PayrollController::class, 'cancel'])->name('hr.payroll.cancel');
 

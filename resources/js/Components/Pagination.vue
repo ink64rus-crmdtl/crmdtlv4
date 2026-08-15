@@ -1,10 +1,24 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
 
+// preserveScroll/preserveState — опционально, по умолчанию выключены (не
+// меняем поведение везде, где компонент уже используется): нужны страницам,
+// где пагинация — часть более крупной страницы (например встроенный блок
+// на Карточке сотрудника, HR/Employees/Show.vue), а не вся страница целиком,
+// иначе клик по пагинации перекидывает наверх ВСЕЙ страницы, а не только
+// списка внутри неё.
 defineProps({
     meta: {
         type: Object,
         required: true,
+    },
+    preserveScroll: {
+        type: Boolean,
+        default: false,
+    },
+    preserveState: {
+        type: Boolean,
+        default: false,
     },
 });
 </script>
@@ -38,6 +52,8 @@ defineProps({
                         <Link
                             v-else
                             :href="link.url"
+                            :preserve-scroll="preserveScroll"
+                            :preserve-state="preserveState"
                             class="relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-colors"
                             :class="[
                                 link.active 
@@ -60,6 +76,8 @@ defineProps({
             <Link
                 v-if="meta.links[0].url"
                 :href="meta.links[0].url"
+                :preserve-scroll="preserveScroll"
+                :preserve-state="preserveState"
                 class="relative inline-flex items-center px-4 py-2 border border-gray-200 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-[#313a46] hover:bg-gray-50 dark:hover:bg-gray-700"
             >
                 Назад
@@ -71,6 +89,8 @@ defineProps({
             <Link
                 v-if="meta.links[meta.links.length - 1].url"
                 :href="meta.links[meta.links.length - 1].url"
+                :preserve-scroll="preserveScroll"
+                :preserve-state="preserveState"
                 class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-200 dark:border-gray-700 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-[#313a46] hover:bg-gray-50 dark:hover:bg-gray-700"
             >
                 Вперед
