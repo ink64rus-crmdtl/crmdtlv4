@@ -29,7 +29,23 @@ const form = useForm({
     is_required: false,
     is_filterable: false,
     is_visible_in_list: true,
+    use_in_templates: false,
 });
+
+// Сущности, у которых пока нет ни одного шаблона документа/сообщения —
+// плейсхолдер технически заведётся, но подставлять его будет пока некуда.
+// Не блокируем переключатель, просто предупреждаем — как только появится
+// шаблон для этой сущности, плейсхолдер сразу станет рабочим.
+const entitiesWithoutTemplates = ['vehicle', 'employee'];
+
+// Предпросмотр плейсхолдера, который реально появится в шаблонах (см.
+// App\Services\CustomFieldPlaceholderService) — точный системный ключ
+// известен только после сохранения (сервер сам генерирует его из названия,
+// если поле "Системный ключ" оставлено пустым), поэтому здесь лишь подсказка.
+const placeholderKeyPreview = computed(() => `${form.entity_type}.custom.${form.key || '...'}`);
+// Функция, а не литерал прямо в шаблоне — парсер Vue обрывает интерполяцию
+// на первом "}}", встреченном где угодно в выражении, включая внутри строк.
+const wrapPlaceholder = (key) => `{{${key}}}`;
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -116,6 +132,7 @@ const openModal = (field = null) => {
         form.is_required = Boolean(field.is_required);
         form.is_filterable = Boolean(field.is_filterable);
         form.is_visible_in_list = Boolean(field.is_visible_in_list);
+        form.use_in_templates = Boolean(field.use_in_templates);
     } else {
         form.reset();
         form.entity_type = 'client';
@@ -123,6 +140,7 @@ const openModal = (field = null) => {
         form.is_required = false;
         form.is_filterable = false;
         form.is_visible_in_list = true;
+        form.use_in_templates = false;
     }
     isModalOpen.value = true;
 };
@@ -169,6 +187,7 @@ const deleteField = (field) => {
             <PageHelper title="Для чего нужны кастомные поля?">
                 <p>Кастомные поля позволяют вам расширять стандартные карточки (Клиентов, Автомобилей, Заказов) под специфику вашего бизнеса без привлечения программистов.</p>
                 <p>Если вы отметите поле как <strong>«Использовать в фильтрах»</strong>, оно появится в панели поиска, и вы сможете легко находить нужные записи (например, отфильтровать всех клиентов по полю «Источник рекламы»).</p>
+                <p>Если вы отметите поле как <strong>«Использовать в шаблонах документов / сообщений»</strong>, значение поля станет доступно как плейсхолдер в конструкторе шаблонов документов и сообщений — в разделе, для которого поле создано.</p>
             </PageHelper>
 
             <!-- Header Card (Attex Theme) -->
@@ -234,6 +253,7 @@ const deleteField = (field) => {
                             <span v-if="field.is_required" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger border border-danger/20" title="Обязательное">Обяз.</span>
                             <span v-if="field.is_filterable" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-info/10 text-info border border-info/20" title="Можно фильтровать">Фильтр</span>
                             <span v-if="field.is_visible_in_list" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success border border-success/20" title="Видно в таблице">В списке</span>
+                            <span v-if="field.use_in_templates" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary border border-primary/20" :title="`Плейсхолдер: {{${field.entity_type}.custom.${field.key}}}`">Шаблоны</span>
                         </template>
                         <template #actions="{ row: field }">
                             <button
@@ -360,6 +380,19 @@ const deleteField = (field) => {
                                     Показывать колонку в общей таблице списка
                                 </label>
                             </div>
+
+                            <div class="flex items-center pt-2">
+                                <div @click="form.use_in_templates = !form.use_in_templates" :class="[form.use_in_templates ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0']">
+                                    <div :class="[form.use_in_templates ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                                </div>
+                                <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.use_in_templates = !form.use_in_templates">
+                                    Использовать в шаблонах документов / сообщений
+                                </label>
+                            </div>
+                            <p v-if="form.use_in_templates" class="text-xs text-gray-400 ml-11">
+                                Плейсхолдер: <code class="bg-gray-100 dark:bg-gray-700 rounded px-1 py-0.5">{{ wrapPlaceholder(placeholderKeyPreview) }}</code>
+                                <span v-if="entitiesWithoutTemplates.includes(form.entity_type)">— для этого раздела пока нет ни одного шаблона документа или сообщения, плейсхолдер заработает, как только он появится.</span>
+                            </p>
                         </div>
                     </div>
 

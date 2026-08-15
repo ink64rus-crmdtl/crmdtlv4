@@ -18,6 +18,7 @@ class CustomFieldDefinition extends Model
         'is_required',
         'is_filterable',
         'is_visible_in_list',
+        'use_in_templates',
         'sort_order',
         'validation_rules',
         'created_by',
@@ -33,6 +34,7 @@ class CustomFieldDefinition extends Model
             'is_required' => 'boolean',
             'is_filterable' => 'boolean',
             'is_visible_in_list' => 'boolean',
+            'use_in_templates' => 'boolean',
         ];
     }
 }

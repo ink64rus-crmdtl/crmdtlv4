@@ -6,6 +6,8 @@ use App\Models\Appointment;
 use App\Models\Client;
 use App\Models\MessageTemplate;
 use App\Models\WorkOrder;
+use App\Services\CustomFieldPlaceholderService;
+use App\Services\TimezoneResolver;
 
 /**
  * Рендер плейсхолдеров вида {{client.name}} в теле шаблона (Фаза 11.1) —
@@ -19,6 +21,7 @@ class MessageTemplateService
     {
         return self::render($template, array_merge(
             self::clientPlaceholders($workOrder->client),
+            CustomFieldPlaceholderService::forEntity('work_order', $workOrder),
             [
                 'work_order.id' => (string) $workOrder->id,
                 'work_order.final_amount' => number_format($workOrder->final_amount / 100, 2, '.', ' '),
@@ -28,7 +31,7 @@ class MessageTemplateService
 
     public static function renderForAppointment(MessageTemplate $template, Appointment $appointment): string
     {
-        $branchTz = \App\Services\TimezoneResolver::forBranch($appointment->branch_id);
+        $branchTz = TimezoneResolver::forBranch($appointment->branch_id);
 
         return self::render($template, array_merge(
             self::clientPlaceholders($appointment->client),
@@ -41,9 +44,10 @@ class MessageTemplateService
 
     private static function clientPlaceholders(?Client $client): array
     {
-        return [
-            'client.name' => $client?->name ?? '',
-        ];
+        return array_merge(
+            ['client.name' => $client?->name ?? ''],
+            CustomFieldPlaceholderService::forEntity('client', $client)
+        );
     }
 
     private static function render(MessageTemplate $template, array $context): string
@@ -51,7 +55,7 @@ class MessageTemplateService
         $body = $template->body;
 
         return strtr($body, array_combine(
-            array_map(fn ($key) => '{{' . $key . '}}', array_keys($context)),
+            array_map(fn ($key) => '{{'.$key.'}}', array_keys($context)),
             array_values($context)
         ));
     }

@@ -4,12 +4,13 @@ import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
 import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
     templates: { type: Array, default: () => [] },
     triggers: { type: Object, default: () => ({}) },
+    triggerPlaceholders: { type: Object, default: () => ({}) },
 });
 
 const localizedBody = (template) => {
@@ -60,6 +61,39 @@ const closeModal = () => {
     form.clearErrors();
 };
 
+// Доступные плейсхолдеры зависят от выбранного триггера (пустой ключ '' —
+// шаблон без автотриггера) — реестр приходит с сервера (MessageTemplateController::
+// STATIC_PLACEHOLDERS + кастомные поля с use_in_templates), чтобы список
+// никогда не расходился с тем, что реально подставит MessageTemplateService.
+const currentPlaceholders = computed(() => props.triggerPlaceholders[form.event_trigger] || {});
+
+const bodyTextarea = ref(null);
+
+// Вынесено в функцию, а не собрано прямо в шаблоне ({{ '{{' + key + '}}' }}) —
+// парсер Vue ищет ПЕРВОЕ вхождение "}}" при разборе интерполяции и обрывает
+// выражение на литерале '}}' внутри строки, до реального конца интерполяции.
+const placeholderText = (key) => `{{${key}}}`;
+
+const insertPlaceholder = (key) => {
+    const text = placeholderText(key);
+    const el = bodyTextarea.value;
+
+    if (!el) {
+        form.body += text;
+        return;
+    }
+
+    const start = el.selectionStart ?? form.body.length;
+    const end = el.selectionEnd ?? form.body.length;
+    form.body = form.body.slice(0, start) + text + form.body.slice(end);
+
+    nextTick(() => {
+        el.focus();
+        const pos = start + text.length;
+        el.setSelectionRange(pos, pos);
+    });
+};
+
 const submit = () => {
     if (editingTemplate.value) {
         form.put(route('settings.message-templates.update', editingTemplate.value.id), { onSuccess: closeModal });
@@ -88,7 +122,8 @@ const deleteTemplate = (template) => {
 
             <PageHelper title="Как это устроено">
                 <p>Шаблон без триггера можно использовать только вручную (в будущем — как быструю заготовку в чате). Шаблон с триггером отправляется автоматически при наступлении события — только один активный шаблон на триггер учитывается.</p>
-                <p v-pre>Доступные плейсхолдеры зависят от триггера: <code>{{client.name}}</code> — везде; <code>{{work_order.id}}</code>, <code>{{work_order.final_amount}}</code> — для «Заказ готов»; <code>{{appointment.start_at}}</code>, <code>{{branch.name}}</code> — для «Напоминание о записи».</p>
+                <p v-pre>Доступные плейсхолдеры зависят от триггера: <code>{{client.name}}</code> — везде; <code>{{work_order.id}}</code>, <code>{{work_order.final_amount}}</code> — для «Заказ готов»; <code>{{appointment.start_at}}</code>, <code>{{branch.name}}</code> — для «Напоминание о записи». Полный список для выбранного триггера — под полем текста, клик вставляет плейсхолдер в курсор.</p>
+                <p>Кастомные поля (Настройки → Кастомные поля) с включённой опцией «Использовать в шаблонах документов / сообщений» добавляют свои плейсхолдеры в этот список автоматически.</p>
             </PageHelper>
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
@@ -156,7 +191,17 @@ const deleteTemplate = (template) => {
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Текст сообщения <span class="text-danger">*</span></label>
-                            <textarea v-model="form.body" required rows="4" maxlength="4096" placeholder="Здравствуйте, {{client.name}}! Ваш заказ №{{work_order.id}} готов." class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 resize-none"></textarea>
+                            <textarea ref="bodyTextarea" v-model="form.body" required rows="4" maxlength="4096" placeholder="Здравствуйте, {{client.name}}! Ваш заказ №{{work_order.id}} готов." class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 resize-none"></textarea>
+                            <div class="flex flex-wrap gap-1.5 mt-2">
+                                <button
+                                    v-for="(label, key) in currentPlaceholders"
+                                    :key="key"
+                                    type="button"
+                                    @click="insertPlaceholder(key)"
+                                    :title="label"
+                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"
+                                >{{ placeholderText(key) }}</button>
+                            </div>
                         </div>
                         <div class="flex items-center pt-2">
                             <div @click="form.is_active = !form.is_active" :class="[form.is_active ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative']">

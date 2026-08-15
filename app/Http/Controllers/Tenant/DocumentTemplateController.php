@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
 use App\Models\DocumentTemplate;
+use App\Services\CustomFieldPlaceholderService;
 use App\Services\Documents\DocxToHtmlConverter;
 use App\Services\Documents\PlatformDocumentTemplateService;
 use Illuminate\Http\Request;
@@ -197,10 +198,39 @@ class DocumentTemplateController extends Controller
                 }),
             'entityTypes' => self::ENTITY_TYPES,
             'commonPlaceholders' => self::COMMON_PLACEHOLDERS,
-            'entityPlaceholders' => self::ENTITY_PLACEHOLDERS,
+            'entityPlaceholders' => $this->entityPlaceholdersWithCustomFields(),
             'entityTablePlaceholders' => self::ENTITY_TABLE_PLACEHOLDERS,
             'entityConditions' => self::ENTITY_CONDITIONS,
         ]);
+    }
+
+    /**
+     * ENTITY_PLACEHOLDERS дополняется кастомными полями (CustomFieldDefinition.
+     * use_in_templates, CLAUDE.md §5) — теми же ключами {{<entity>.custom.
+     * <key>}}, что реально подставляет DocumentPlaceholderService::buildFor().
+     * Для work_order добавляются ещё и подсказки вложенных client/vehicle —
+     * их плейсхолдеры (client.name/vehicle.plate_number) уже доступны в
+     * заказе-наряде, поэтому и их кастомные поля должны быть видны в пикере.
+     *
+     * @return array<string,array<string,string>>
+     */
+    private function entityPlaceholdersWithCustomFields(): array
+    {
+        $entityPlaceholders = self::ENTITY_PLACEHOLDERS;
+
+        foreach ($entityPlaceholders as $entityType => $placeholders) {
+            $entityPlaceholders[$entityType] = array_merge($placeholders, CustomFieldPlaceholderService::hintsFor($entityType));
+        }
+
+        if (isset($entityPlaceholders['work_order'])) {
+            $entityPlaceholders['work_order'] = array_merge(
+                $entityPlaceholders['work_order'],
+                CustomFieldPlaceholderService::hintsFor('client'),
+                CustomFieldPlaceholderService::hintsFor('vehicle')
+            );
+        }
+
+        return $entityPlaceholders;
     }
 
     public function store(Request $request)

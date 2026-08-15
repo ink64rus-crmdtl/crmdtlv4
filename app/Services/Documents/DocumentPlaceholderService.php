@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\WorkOrder;
 use App\Services\CountryConfigService;
+use App\Services\CustomFieldPlaceholderService;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -38,7 +39,8 @@ class DocumentPlaceholderService
                 'client' => self::clientPlaceholders($entity),
                 'goods_receipt' => self::goodsReceiptPlaceholders($entity),
                 default => [],
-            }
+            },
+            self::customFieldPlaceholders($entityType, $entity)
         );
 
         $tables = match ($entityType) {
@@ -48,6 +50,31 @@ class DocumentPlaceholderService
         };
 
         return ['flat' => $flat, 'tables' => $tables, 'legal_entity' => $legalEntity];
+    }
+
+    /**
+     * Кастомные поля (CustomFieldDefinition.use_in_templates, CLAUDE.md §5) —
+     * как самой сущности документа, так и вложенных клиента/автомобиля у
+     * заказа-наряда, т.к. те уже фигурируют в плейсхолдерах как
+     * client.name/vehicle.plate_number. entity_type кастомных полей не
+     * пересекается с transaction/goods_receipt — для них метод просто вернёт
+     * пустой массив, это безопасный no-op, а не ошибка.
+     *
+     * @return array<string,string>
+     */
+    private static function customFieldPlaceholders(string $entityType, Model $entity): array
+    {
+        $placeholders = CustomFieldPlaceholderService::forEntity($entityType, $entity);
+
+        if ($entityType === 'work_order') {
+            $placeholders = array_merge(
+                $placeholders,
+                CustomFieldPlaceholderService::forEntity('client', $entity->client),
+                CustomFieldPlaceholderService::forEntity('vehicle', $entity->vehicle)
+            );
+        }
+
+        return $placeholders;
     }
 
     /**

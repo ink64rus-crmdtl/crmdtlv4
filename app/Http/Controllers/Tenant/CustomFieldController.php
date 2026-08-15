@@ -47,6 +47,7 @@ class CustomFieldController extends Controller
             'is_required' => ['boolean'],
             'is_filterable' => ['boolean'],
             'is_visible_in_list' => ['boolean'],
+            'use_in_templates' => ['boolean'],
         ]);
 
         $key = $validated['key'] ?: Str::slug($validated['label'], '_');
@@ -65,6 +66,7 @@ class CustomFieldController extends Controller
             'is_required' => $validated['is_required'] ?? false,
             'is_filterable' => $validated['is_filterable'] ?? false,
             'is_visible_in_list' => $validated['is_visible_in_list'] ?? true,
+            'use_in_templates' => $validated['use_in_templates'] ?? false,
             'created_by' => auth()->id(),
         ]);
 
@@ -80,6 +82,7 @@ class CustomFieldController extends Controller
             'is_required' => ['boolean'],
             'is_filterable' => ['boolean'],
             'is_visible_in_list' => ['boolean'],
+            'use_in_templates' => ['boolean'],
         ]);
 
         $options = null;
@@ -97,6 +100,7 @@ class CustomFieldController extends Controller
             'is_required' => $validated['is_required'] ?? false,
             'is_filterable' => $validated['is_filterable'] ?? false,
             'is_visible_in_list' => $validated['is_visible_in_list'] ?? true,
+            'use_in_templates' => $validated['use_in_templates'] ?? false,
         ]);
 
         return redirect()->back()->with('success', 'Поле обновлено');
