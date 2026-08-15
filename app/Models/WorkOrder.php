@@ -118,6 +118,11 @@ class WorkOrder extends Model
         return $this->morphMany(Document::class, 'documentable');
     }
 
+    public function tasks(): MorphMany
+    {
+        return $this->morphMany(Task::class, 'taskable');
+    }
+
     /**
      * Пересчитывает payment_status на основе суммы поступивших (income) транзакций.
      * O(1) относительно общего числа транзакций в системе — агрегат по индексу payable_type+payable_id.

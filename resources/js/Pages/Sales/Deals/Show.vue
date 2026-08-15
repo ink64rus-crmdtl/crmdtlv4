@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import PointBadge from '@/Components/PointBadge.vue';
+import TaskPanel from '@/Components/TaskPanel.vue';
 import Modal from '@/Components/Modal.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
@@ -9,10 +10,12 @@ import { ref, computed } from 'vue';
 const props = defineProps({
     deal: { type: Object, required: true },
     isRotting: { type: Boolean, default: false },
+    isAbandoned: { type: Boolean, default: false },
     stages: { type: Array, default: () => [] },
     pipelines: { type: Array, default: () => [] },
     owners: { type: Array, default: () => [] },
     lossReasons: { type: Array, default: () => [] },
+    taskTypes: { type: Array, default: () => [] },
     activities: { type: Array, default: () => [] },
     comments: { type: Array, default: () => [] },
 });
@@ -160,6 +163,18 @@ const submitEdit = () => {
                 </div>
             </div>
 
+            <!-- Предупреждение: нет ни одной запланированной задачи -->
+            <div v-if="isAbandoned" class="bg-danger/10 border border-danger/30 rounded-md p-4 flex items-start gap-3">
+                <i class="ri-alarm-line text-danger text-lg mt-0.5"></i>
+                <div class="text-sm">
+                    <span class="font-semibold text-danger">Сделка брошена.</span>
+                    <span class="text-gray-600 dark:text-gray-400">
+                        По ней нет ни одной незавершённой задачи — легко забыть про следующий шаг.
+                        Поставьте задачу во вкладке «Задачи».
+                    </span>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
                 <!-- ЛЕВАЯ КОЛОНКА -->
@@ -238,6 +253,7 @@ const submitEdit = () => {
                                 <button
                                     v-for="tab in [
                                         { key: 'items', label: 'Смета', icon: 'ri-list-check-2' },
+                                        { key: 'tasks', label: 'Задачи', icon: 'ri-task-line' },
                                         { key: 'comments', label: 'Комментарии', icon: 'ri-chat-1-line' },
                                         { key: 'history', label: 'История', icon: 'ri-time-line' },
                                     ]"
@@ -293,6 +309,11 @@ const submitEdit = () => {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Задачи -->
+                        <div v-show="activeTab === 'tasks'" class="p-6">
+                            <TaskPanel taskable-type="Deal" :taskable-id="deal.id" :branch-id="deal.branch_id" :task-types="taskTypes" />
                         </div>
 
                         <!-- Комментарии -->

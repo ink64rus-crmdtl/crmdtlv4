@@ -4,12 +4,12 @@ namespace App\Models;
 
 use App\Models\Concerns\HasActivityLog;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Vehicle extends Model
 {
-    use SoftDeletes, HasActivityLog;
+    use HasActivityLog, SoftDeletes;
 
     protected $fillable = [
         'client_id',
@@ -40,5 +40,10 @@ class Vehicle extends Model
     public function vehicleModel(): BelongsTo
     {
         return $this->belongsTo(VehicleModel::class, 'vehicle_model_id');
+    }
+
+    public function tasks(): MorphMany
+    {
+        return $this->morphMany(Task::class, 'taskable');
     }
 }

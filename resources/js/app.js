@@ -4,7 +4,26 @@ import './bootstrap';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
+import { createI18n } from 'vue-i18n';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
+
+// Минимальная обвязка (CLAUDE.md §6): единственная локаль 'ru', каталог
+// переводов ПУСТОЙ намеренно — ключ и есть русский текст ({{ $t('Добавить
+// клиента') }}), vue-i18n при отсутствии перевода в messages сам возвращает
+// сам ключ как есть. Задача этого шага — только чтобы $t() работал и не
+// падал в новом коде, не переводить существующие ~100 файлов (это отдельная,
+// сознательно отложенная задача). missingWarn/fallbackWarn выключены, т.к.
+// "отсутствующий" перевод — здесь ожидаемое обычное состояние КАЖДОГО
+// ключа, а не сигнал реальной проблемы.
+const i18n = createI18n({
+    legacy: false,
+    globalInjection: true,
+    locale: 'ru',
+    fallbackLocale: 'ru',
+    messages: { ru: {} },
+    missingWarn: false,
+    fallbackWarn: false,
+});
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -36,6 +55,7 @@ createInertiaApp({
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)
+            .use(i18n)
             .mount(el);
     },
     progress: {

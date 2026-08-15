@@ -1,7 +1,7 @@
 <script setup>
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
-import { usePage, Link } from '@inertiajs/vue3';
+import { usePage, Link, router } from '@inertiajs/vue3';
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 
@@ -72,6 +72,19 @@ const markAsRead = async (id) => {
         } catch (error) {
             console.error('Failed to mark notification as read', error);
         }
+    }
+};
+
+// Общая навигация по клику на уведомление (Фаза 17, этап 2 — напоминания
+// о задачах) — data.link = { route, params }, именованный роут вместо
+// готового URL, т.к. в самом уведомлении тенантский домен не хранится.
+// file_name (экспорт) остаётся спец-случаем — там нужна ссылка на скачивание,
+// а не переход по странице, см. кнопку «Скачать» в шаблоне.
+const goToNotification = (notification) => {
+    markAsRead(notification.id);
+    const link = notification.data.link;
+    if (link?.route) {
+        router.visit(route(link.route, link.params ?? undefined));
     }
 };
 
@@ -210,8 +223,8 @@ onUnmounted(() => {
                             <div v-if="notifications.length === 0" class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                 Нет новых уведомлений
                             </div>
-                            <div v-for="notification in notifications" :key="notification.id" 
-                                 @click="markAsRead(notification.id)"
+                            <div v-for="notification in notifications" :key="notification.id"
+                                 @click="goToNotification(notification)"
                                  :class="['px-4 py-3 border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer', !notification.read_at ? 'bg-primary/5' : '']">
                                 <p class="text-sm text-gray-800 dark:text-gray-200" :class="{'font-semibold': !notification.read_at}">
                                     {{ notification.data.message }}

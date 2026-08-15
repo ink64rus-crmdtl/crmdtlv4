@@ -29,8 +29,8 @@ use App\Http\Controllers\Tenant\MessengerWebhookController;
 use App\Http\Controllers\Tenant\NotificationController;
 use App\Http\Controllers\Tenant\PayrollController;
 use App\Http\Controllers\Tenant\PayrollSettingsController;
-use App\Http\Controllers\Tenant\PipelineSettingsController;
 use App\Http\Controllers\Tenant\PeriodClosureController;
+use App\Http\Controllers\Tenant\PipelineSettingsController;
 use App\Http\Controllers\Tenant\PositionController;
 use App\Http\Controllers\Tenant\PostController;
 use App\Http\Controllers\Tenant\ProductController;
@@ -39,6 +39,7 @@ use App\Http\Controllers\Tenant\ServiceController;
 use App\Http\Controllers\Tenant\StockBalanceController;
 use App\Http\Controllers\Tenant\StockMovementController;
 use App\Http\Controllers\Tenant\SystemController;
+use App\Http\Controllers\Tenant\TaskController;
 use App\Http\Controllers\Tenant\TransactionCategoryController;
 use App\Http\Controllers\Tenant\TransactionController;
 use App\Http\Controllers\Tenant\VehicleController;
@@ -315,6 +316,15 @@ Route::middleware([
         Route::post('/sales/deals/{deal}/comment', [DealController::class, 'addComment'])->name('sales.deals.comment');
         // Догрузка следующей страницы карточек ОДНОЙ колонки (доска не грузит все сделки разом)
         Route::get('/sales/stages/{stage}/deals', [DealController::class, 'loadStage'])->name('sales.stages.deals');
+
+        // Sales: Задачи (Фаза 17, этап 2) — общесистемные, поэтому не под /sales
+        // логически, но маршрутами лежат рядом со сделками (основной драйвер этапа)
+        Route::get('/tasks', [TaskController::class, 'index'])->name('tasks.index');
+        Route::post('/tasks', [TaskController::class, 'store'])->name('tasks.store');
+        Route::put('/tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
+        Route::post('/tasks/{task}/complete', [TaskController::class, 'complete'])->name('tasks.complete');
+        Route::post('/tasks/{task}/reopen', [TaskController::class, 'reopen'])->name('tasks.reopen');
+        Route::delete('/tasks/{task}', [TaskController::class, 'destroy'])->name('tasks.destroy');
 
         // Settings: Воронки и стадии
         Route::get('/settings/pipelines', [PipelineSettingsController::class, 'index'])->name('settings.pipelines.index');

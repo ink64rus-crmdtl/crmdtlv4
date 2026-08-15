@@ -117,10 +117,12 @@ class DealController extends Controller
         return Inertia::render('Sales/Deals/Show', [
             'deal' => $deal,
             'isRotting' => $deal->isRotting(),
+            'isAbandoned' => $deal->isAbandoned(),
             'stages' => $deal->pipeline->stages()->where('is_active', true)->get(),
             'pipelines' => Pipeline::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
             'owners' => User::orderBy('name')->get(['id', 'name']),
             'lossReasons' => Lookup::where('type', 'deal_loss_reason')->where('is_active', true)->orderBy('sort_order')->get(['id', 'label']),
+            'taskTypes' => Lookup::where('type', 'task_type')->where('is_active', true)->orderBy('sort_order')->get(['id', 'value', 'label']),
             'activities' => $feed['activities'],
             'comments' => $feed['comments'],
         ]);
@@ -326,6 +328,11 @@ class DealController extends Controller
 
         $cards = $base()
             ->with(['client:id,name,phone', 'vehicle:id,vehicle_make_id,plate_number', 'vehicle.make:id,name', 'owner:id,name', 'stage:id,rotting_days,type'])
+            // «Брошена» — открытая сделка без единой незавершённой задачи
+            // (Deal::isAbandoned()). Считаем EXISTS-подзапросом в самой
+            // выборке карточек, а не Deal::isAbandoned() построчно — тот бы
+            // на каждую карточку страницы дал отдельный запрос (N+1).
+            ->withExists(['tasks as has_open_task' => fn ($q) => $q->whereNull('completed_at')])
             ->orderByDesc('id')
             ->paginate(self::CARDS_PER_COLUMN, ['*'], 'page', $page);
 
@@ -356,6 +363,7 @@ class DealController extends Controller
                 'owner' => $deal->owner?->only(['id', 'name']),
                 'expected_close_date' => $deal->expected_close_date?->format('Y-m-d'),
                 'is_rotting' => $deal->isRotting(),
+                'is_abandoned' => ! $stage->isClosing() && ! $deal->has_open_task,
             ])->values(),
         ];
     }

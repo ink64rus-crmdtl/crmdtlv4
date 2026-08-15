@@ -132,6 +132,26 @@ class Deal extends Model
         return $this->morphMany(Document::class, 'documentable');
     }
 
+    public function tasks(): MorphMany
+    {
+        return $this->morphMany(Task::class, 'taskable');
+    }
+
+    /**
+     * «Брошенная» сделка (приём Pipedrive) — открыта, но у неё НЕТ ни одной
+     * незавершённой задачи. Главная причина потери сделок — не отказ
+     * клиента, а то, что о ней забыли. Закрытые стадии (won/lost) сюда не
+     * попадают — там следующий шаг уже не нужен по определению.
+     */
+    public function isAbandoned(): bool
+    {
+        if ($this->stage && $this->stage->isClosing()) {
+            return false;
+        }
+
+        return ! $this->tasks()->whereNull('completed_at')->exists();
+    }
+
     /**
      * «Протухание» (deal rotting, приём HubSpot) — сделка лежит в текущей
      * стадии дольше норматива. Считается НА ЛЕТУ, фонового джоба намеренно

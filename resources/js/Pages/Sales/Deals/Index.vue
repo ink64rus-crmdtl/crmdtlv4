@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import SalesNav from '@/Components/SalesNav.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import Modal from '@/Components/Modal.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
@@ -218,6 +219,8 @@ const branchLegalEntities = computed(() => {
 
         <div class="w-[99%] mx-auto space-y-6 font-sans text-gray-600 dark:text-gray-400">
 
+            <SalesNav />
+
             <PageHelper title="Как устроена воронка">
                 <p>Сделка — это переговоры <strong>до того</strong>, как клиент согласился: обращение, замер, КП, согласование. Склад и финансы она не трогает — они начинаются с заказ-наряда.</p>
                 <p>Карточку можно перетаскивать между стадиями мышью. Когда договорились — кнопка «Оформить заказ» на карточке сделки переносит клиента, авто и предварительные позиции в заказ-наряд.</p>
@@ -346,6 +349,10 @@ const branchLegalEntities = computed(() => {
                                     <div class="flex items-start justify-between gap-2">
                                         <span class="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-snug">{{ deal.title }}</span>
                                         <i v-if="deal.is_rotting" class="ri-alarm-warning-line text-warning shrink-0" title="Сделка зависла в стадии дольше норматива"></i>
+                                    </div>
+
+                                    <div v-if="deal.is_abandoned" class="inline-flex items-center gap-1 mt-1.5 px-1.5 py-0.5 rounded text-[11px] font-medium bg-danger/10 text-danger" title="Нет ни одной запланированной задачи по сделке — про неё легко забыть">
+                                        <i class="ri-alarm-line"></i> Брошена
                                     </div>
 
                                     <div class="text-sm font-bold text-primary mt-1.5">{{ formatMoney(deal.amount) }}</div>

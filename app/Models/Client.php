@@ -99,4 +99,9 @@ class Client extends Model
     {
         return $this->morphMany(Document::class, 'documentable');
     }
+
+    public function tasks(): MorphMany
+    {
+        return $this->morphMany(Task::class, 'taskable');
+    }
 }

@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -20,8 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
     // что и остальные бизнес-маршруты — см. там.
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
+            HandleInertiaRequests::class,
+            AddLinkHeadersForPreloadedAssets::class,
         ]);
 
         // Вебхуки от Wappi/SMS Aero и т.п. — внешние сервисы, у них нет и не может
@@ -51,6 +53,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // "за N часов до визита" узкое, часовая точность тут заметна клиенту.
         // Часовой пояс не нужен — сравнение "сейчас < start_at <= сейчас+N" в UTC.
         $schedule->command('tenants:run appointments:send-reminders')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping();
+
+        // Напоминания о задачах (Фаза 17, этап 2) — тот же 15-минутный такт
+        // и тот же принцип узкого окна "за N часов до срока", что и у записей.
+        $schedule->command('tenants:run tasks:send-reminders')
             ->everyFifteenMinutes()
             ->withoutOverlapping();
     })

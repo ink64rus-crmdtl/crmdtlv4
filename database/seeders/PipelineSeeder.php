@@ -60,5 +60,16 @@ class PipelineSeeder extends Seeder
                 ['label' => $label, 'sort_order' => $index, 'is_active' => true, 'is_system' => false]
             );
         }
+
+        // Типы задач (этап 2) — та же схема, что и статусы заказ-нарядов:
+        // обычная строка на Task.type, сверяемая со справочником, не FK.
+        $taskTypes = ['Звонок', 'Встреча', 'Сообщение', 'Другое'];
+
+        foreach ($taskTypes as $index => $label) {
+            Lookup::firstOrCreate(
+                ['type' => 'task_type', 'value' => 'task_type_'.($index + 1)],
+                ['label' => $label, 'sort_order' => $index, 'is_active' => true, 'is_system' => false]
+            );
+        }
     }
 }
