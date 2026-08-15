@@ -41,6 +41,7 @@ const routeMap = {
     'system': 'system.index',
     'hr': 'hr.employees.index',
     'crm': 'crm.clients.index',
+    'sales': 'sales.deals.index',
     'operations': 'operations.work-orders.index',
     'communications': 'communications.index',
     'documents': 'documents.index',

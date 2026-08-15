@@ -14,6 +14,7 @@ use App\Http\Controllers\Tenant\CommunicationsController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
 use App\Http\Controllers\Tenant\CustomFieldController;
 use App\Http\Controllers\Tenant\DadataController;
+use App\Http\Controllers\Tenant\DealController;
 use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\DocumentController;
 use App\Http\Controllers\Tenant\DocumentTemplateController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Tenant\MessengerWebhookController;
 use App\Http\Controllers\Tenant\NotificationController;
 use App\Http\Controllers\Tenant\PayrollController;
 use App\Http\Controllers\Tenant\PayrollSettingsController;
+use App\Http\Controllers\Tenant\PipelineSettingsController;
 use App\Http\Controllers\Tenant\PeriodClosureController;
 use App\Http\Controllers\Tenant\PositionController;
 use App\Http\Controllers\Tenant\PostController;
@@ -300,6 +302,29 @@ Route::middleware([
         Route::post('/crm/vehicles/{vehicle}/comment', [VehicleController::class, 'addComment'])->name('crm.vehicles.comment');
         Route::post('/crm/vehicles/bulk-delete', [VehicleController::class, 'bulkDestroy'])->name('crm.vehicles.bulk-destroy');
         Route::post('/crm/vehicles/bulk-export', [VehicleController::class, 'bulkExport'])->name('crm.vehicles.bulk-export');
+
+        // Sales: Воронка сделок и канбан-доска (Фаза 17)
+        Route::get('/sales/deals', [DealController::class, 'index'])->name('sales.deals.index');
+        Route::post('/sales/deals', [DealController::class, 'store'])->name('sales.deals.store');
+        Route::get('/sales/deals/{deal}', [DealController::class, 'show'])->name('sales.deals.show');
+        Route::put('/sales/deals/{deal}', [DealController::class, 'update'])->name('sales.deals.update');
+        Route::delete('/sales/deals/{deal}', [DealController::class, 'destroy'])->name('sales.deals.destroy');
+        // Перенос между стадиями — сюда же ходит и drag-n-drop на доске, и select на Карточке
+        Route::patch('/sales/deals/{deal}/stage', [DealController::class, 'moveStage'])->name('sales.deals.stage.update');
+        Route::post('/sales/deals/{deal}/convert', [DealController::class, 'convertToWorkOrder'])->name('sales.deals.convert');
+        Route::post('/sales/deals/{deal}/comment', [DealController::class, 'addComment'])->name('sales.deals.comment');
+        // Догрузка следующей страницы карточек ОДНОЙ колонки (доска не грузит все сделки разом)
+        Route::get('/sales/stages/{stage}/deals', [DealController::class, 'loadStage'])->name('sales.stages.deals');
+
+        // Settings: Воронки и стадии
+        Route::get('/settings/pipelines', [PipelineSettingsController::class, 'index'])->name('settings.pipelines.index');
+        Route::post('/settings/pipelines', [PipelineSettingsController::class, 'store'])->name('settings.pipelines.store');
+        Route::put('/settings/pipelines/{pipeline}', [PipelineSettingsController::class, 'update'])->name('settings.pipelines.update');
+        Route::delete('/settings/pipelines/{pipeline}', [PipelineSettingsController::class, 'destroy'])->name('settings.pipelines.destroy');
+        Route::post('/settings/pipelines/{pipeline}/stages', [PipelineSettingsController::class, 'storeStage'])->name('settings.pipelines.stages.store');
+        Route::put('/settings/pipeline-stages/{stage}', [PipelineSettingsController::class, 'updateStage'])->name('settings.pipelines.stages.update');
+        Route::delete('/settings/pipeline-stages/{stage}', [PipelineSettingsController::class, 'destroyStage'])->name('settings.pipelines.stages.destroy');
+        Route::post('/settings/pipelines/{pipeline}/stages/reorder', [PipelineSettingsController::class, 'reorderStages'])->name('settings.pipelines.stages.reorder');
 
         // Operations: Заказ-наряды
         Route::get('/operations/work-orders', [WorkOrderController::class, 'index'])->name('operations.work-orders.index');

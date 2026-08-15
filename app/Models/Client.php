@@ -85,6 +85,16 @@ class Client extends Model
         return $this->hasMany(WorkOrder::class);
     }
 
+    /**
+     * Сделки клиента (Фаза 17). У одного клиента их может идти НЕСКОЛЬКО
+     * одновременно — именно поэтому воронка не выражается флагом is_lead
+     * на самом клиенте (см. CLAUDE.md, Фаза 17).
+     */
+    public function deals(): HasMany
+    {
+        return $this->hasMany(Deal::class);
+    }
+
     public function documents(): MorphMany
     {
         return $this->morphMany(Document::class, 'documentable');

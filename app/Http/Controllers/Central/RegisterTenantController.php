@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\CountryConfigService;
 use Database\Seeders\ModuleSeeder;
+use Database\Seeders\PipelineSeeder;
 use Database\Seeders\TenantRoleSeeder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -77,6 +78,10 @@ class RegisterTenantController extends Controller
                 // Запускаем сидеры ролей и модулей
                 (new TenantRoleSeeder)->run();
                 (new ModuleSeeder)->run();
+                // Стартовая воронка продаж со стадиями (Фаза 17) — без неё
+                // раздел «Продажи» открылся бы у нового тенанта пустым, и
+                // первую сделку было бы некуда положить.
+                (new PipelineSeeder)->run();
 
                 // Создаем администратора
                 $owner = User::create([

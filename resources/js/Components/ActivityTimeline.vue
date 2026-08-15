@@ -48,9 +48,17 @@ const LINK_ROUTES = {
     client: (id) => route('crm.clients.show', id),
     vehicle: (id) => route('crm.vehicles.show', id),
     employee: (id) => route('hr.employees.show', id),
+    deal: (id) => route('sales.deals.show', id),
 };
 
 const linkHref = (link) => LINK_ROUTES[link.type] ? LINK_ROUTES[link.type](link.id) : null;
+
+// Незарегистрированный тип ссылки НЕ должен ронять всю страницу: <Link href="null">
+// падает внутри Inertia (mergeDataIntoQueryString читает href.toString()), и вместо
+// карточки пользователь видит пустой экран. Живой баг: ActivityLogger записал
+// properties.links с type='deal' раньше, чем этот тип появился в LINK_ROUTES выше.
+// Поэтому чип без известного маршрута рендерится обычным <span>, а не ссылкой.
+const hasLink = (link) => Boolean(linkHref(link));
 
 const formatRelative = (dateStr) => {
     const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
@@ -102,14 +110,21 @@ const formatAbsolute = (dateStr) => new Date(dateStr).toLocaleString('ru-RU', { 
                             <span :title="formatAbsolute(a.created_at)">{{ formatRelative(a.created_at) }}</span>
                         </div>
                         <div v-if="a.properties?.links?.length" class="flex flex-wrap gap-1.5 mt-2">
-                            <Link
-                                v-for="link in a.properties.links"
-                                :key="`${link.type}-${link.id}`"
-                                :href="linkHref(link)"
-                                class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-primary/10 hover:text-primary transition-colors"
-                            >
-                                <i class="ri-arrow-right-up-line"></i> {{ link.label }}
-                            </Link>
+                            <template v-for="link in a.properties.links" :key="`${link.type}-${link.id}`">
+                                <Link
+                                    v-if="hasLink(link)"
+                                    :href="linkHref(link)"
+                                    class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-primary/10 hover:text-primary transition-colors"
+                                >
+                                    <i class="ri-arrow-right-up-line"></i> {{ link.label }}
+                                </Link>
+                                <span
+                                    v-else
+                                    class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                >
+                                    {{ link.label }}
+                                </span>
+                            </template>
                         </div>
                     </div>
                 </li>

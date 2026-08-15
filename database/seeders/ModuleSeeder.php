@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\Module;
+use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 
 class ModuleSeeder extends Seeder
@@ -13,6 +13,10 @@ class ModuleSeeder extends Seeder
         $modules = [
             ['key' => 'dashboard', 'label' => ['en' => 'Dashboard', 'ru' => 'Дашборд'], 'icon' => 'ri-home-4-line', 'is_core' => true, 'sort_order' => 10, 'required_permission' => 'view_dashboard'],
             ['key' => 'crm', 'label' => ['en' => 'CRM', 'ru' => 'Клиенты и Авто'], 'icon' => 'ri-group-line', 'is_core' => true, 'sort_order' => 20, 'required_permission' => 'view_crm'],
+            // Фаза 17 — воронка сделок. Отдельный раздел (не вкладка внутри
+            // «Заказы и Записи»): у продаж своя аудитория (менеджер, не мастер)
+            // и своё право доступа, которое нужно уметь закрывать отдельно.
+            ['key' => 'sales', 'label' => ['en' => 'Sales', 'ru' => 'Продажи'], 'icon' => 'ri-funds-line', 'is_core' => true, 'sort_order' => 25, 'required_permission' => 'view_sales'],
             ['key' => 'operations', 'label' => ['en' => 'Orders & Appointments', 'ru' => 'Заказы и Записи'], 'icon' => 'ri-briefcase-line', 'is_core' => true, 'sort_order' => 30, 'required_permission' => 'view_operations'],
             ['key' => 'warehouse', 'label' => ['en' => 'Warehouse', 'ru' => 'Склад'], 'icon' => 'ri-archive-line', 'is_core' => true, 'sort_order' => 40, 'required_permission' => 'view_warehouse'],
             ['key' => 'finance', 'label' => ['en' => 'Finance', 'ru' => 'Финансы'], 'icon' => 'ri-money-dollar-circle-line', 'is_core' => true, 'sort_order' => 50, 'required_permission' => 'view_finance'],
@@ -25,7 +29,7 @@ class ModuleSeeder extends Seeder
         ];
 
         foreach ($modules as $mod) {
-            if (!empty($mod['required_permission'])) {
+            if (! empty($mod['required_permission'])) {
                 Permission::firstOrCreate(['name' => $mod['required_permission'], 'guard_name' => 'web']);
             }
             Module::updateOrCreate(['key' => $mod['key']], $mod);
