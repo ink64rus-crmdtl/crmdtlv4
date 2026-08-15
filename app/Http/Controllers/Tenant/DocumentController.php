@@ -41,8 +41,7 @@ class DocumentController extends Controller
 
     public function index(Request $request): Response
     {
-        $query = Document::with(['template', 'branch.legalEntities', 'documentable', 'supersededBy:id,number'])
-            ->orderBy('created_at', 'desc');
+        $query = Document::with(['template', 'branch.legalEntities', 'documentable', 'supersededBy:id,number']);
 
         if ($request->filled('document_template_id')) {
             $query->where('document_template_id', $request->input('document_template_id'));
@@ -69,6 +68,25 @@ class DocumentController extends Controller
             $query->where(fn ($q) => $q->where('number', 'like', $search)->orWhere('title', 'like', $search));
         }
 
+        // Контроллер не проходит через QueryFilterService::apply() (фильтры
+        // собраны вручную выше) — та же схема "белый список + массивы sort_by/
+        // sort_dir по приоритету", что и в её сортировке, продублирована здесь.
+        $allowedSorts = ['number', 'title', 'created_at'];
+        $sortBy = (array) $request->input('sort_by', []);
+        $sortDir = (array) $request->input('sort_dir', []);
+        $appliedSort = false;
+        foreach ($sortBy as $i => $column) {
+            if (! is_string($column) || ! in_array($column, $allowedSorts, true)) {
+                continue;
+            }
+            $direction = (($sortDir[$i] ?? null) === 'desc') ? 'desc' : 'asc';
+            $query->orderBy($column, $direction);
+            $appliedSort = true;
+        }
+        if (! $appliedSort) {
+            $query->orderBy('created_at', 'desc');
+        }
+
         $documents = $query->paginate(15)->withQueryString();
         $documents->getCollection()->each->append('is_stale');
 
@@ -76,7 +94,7 @@ class DocumentController extends Controller
             'documents' => $documents,
             'templates' => DocumentTemplate::where('is_active', true)->get(['id', 'name', 'entity_type']),
             'entityTypes' => DocumentTemplateController::ENTITY_TYPES,
-            'filters' => $request->only(['document_template_id', 'entity_type', 'legal_entity_id', 'date_from', 'date_to', 'search']),
+            'filters' => $request->only(['document_template_id', 'entity_type', 'legal_entity_id', 'date_from', 'date_to', 'search', 'sort_by', 'sort_dir']),
         ]);
     }
 

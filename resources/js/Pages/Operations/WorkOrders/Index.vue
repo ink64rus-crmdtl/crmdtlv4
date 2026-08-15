@@ -10,10 +10,12 @@ import Modal from '@/Components/Modal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import PointBadge from '@/Components/PointBadge.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
+import DataTable from '@/Components/DataTable.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -94,6 +96,8 @@ const fetchFiltered = useDebounceFn(() => {
     router.get(route('operations.work-orders.index'), {
         search: search.value,
         filters: filtersForm,
+        sort_by: sort.value.map(s => s.key),
+        sort_dir: sort.value.map(s => s.dir),
     }, { preserveState: true, preserveScroll: true });
 }, 300);
 
@@ -107,18 +111,8 @@ const resetFilters = () => {
 };
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
+// select-all/сброс выбора теперь считает сам DataTable (v-model="selectedIds").
 const selectedIds = ref([]);
-
-const selectAll = computed({
-    get: () => props.workOrders.data.length > 0 && selectedIds.value.length === props.workOrders.data.length,
-    set: (value) => {
-        if (value) {
-            selectedIds.value = props.workOrders.data.map(o => o.id);
-        } else {
-            selectedIds.value = [];
-        }
-    }
-});
 
 const bulkDelete = () => {
     if (confirm(`Удалить выбранные заказ-наряды (${selectedIds.value.length})? Это действие необратимо.`)) {
@@ -154,6 +148,16 @@ const activeColumns = computed(() => {
     const visibleKeys = props.listView?.visible_columns || [];
     return visibleKeys.map(key => props.availableColumns.find(c => c.key === key)).filter(Boolean);
 });
+
+// client/vehicle/branch (связи) и кастомные поля (EAV, считаются в PHP после
+// пагинации) — не сортируются простым orderBy.
+const SORTABLE_COLUMN_KEYS = ['id', 'created_at', 'status', 'payment_status', 'final_amount', 'mileage'];
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+})));
+
+const { sort, onSort } = useServerSort('operations.work-orders.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
 
 const columnsForm = useForm({
     entity_type: 'work_order',
@@ -587,134 +591,116 @@ const deleteOrder = (order) => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
-                                    <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </th>
-                                <th v-for="col in activeColumns" :key="col.key" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
-                                    {{ col.label }}
-                                </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="order in workOrders.data" :key="order.id" @click="openPreview(order)" class="odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors cursor-pointer group">
-                                
-                                <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
-                                    <input type="checkbox" :value="order.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                </td>
+                    <DataTable
+                        :columns="dataTableColumns"
+                        :rows="workOrders.data"
+                        selectable
+                        v-model="selectedIds"
+                        has-actions
+                        row-clickable
+                        @row-click="openPreview"
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Заказ-наряды не найдены."
+                    >
+                        <template #cell-id="{ row: order }">
+                            <span class="font-mono font-semibold text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors">
+                                #{{ String(order.id).padStart(6, '0') }}
+                            </span>
+                        </template>
 
-                                <td v-for="col in activeColumns" :key="col.key" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
-                                    
-                                    <template v-if="col.key === 'id'">
-                                        <span class="font-mono font-semibold text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors">
-                                            #{{ String(order.id).padStart(6, '0') }}
-                                        </span>
-                                    </template>
+                        <template #cell-created_at="{ row: order }">
+                            {{ new Date(order.created_at).toLocaleDateString('ru-RU') }}
+                        </template>
 
-                                    <template v-else-if="col.key === 'created_at'">
-                                        {{ new Date(order.created_at).toLocaleDateString('ru-RU') }}
-                                    </template>
+                        <template #cell-client="{ row: order }">
+                            <Link v-if="order.client" :href="route('crm.clients.show', order.client.id)" class="inline-flex items-center gap-1.5 hover:text-primary transition-colors font-medium" @click.stop>
+                                <i class="ri-user-line text-gray-400"></i> {{ order.client.name }}
+                            </Link>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'client'">
-                                        <Link v-if="order.client" :href="route('crm.clients.show', order.client.id)" class="inline-flex items-center gap-1.5 hover:text-primary transition-colors font-medium" @click.stop>
-                                            <i class="ri-user-line text-gray-400"></i> {{ order.client.name }}
-                                        </Link>
-                                        <span v-else class="text-gray-400">—</span>
-                                    </template>
+                        <template #cell-vehicle="{ row: order }">
+                            <Link v-if="order.vehicle" :href="route('crm.vehicles.show', order.vehicle.id)" class="inline-flex items-center gap-1.5 hover:text-primary transition-colors font-medium" @click.stop>
+                                <i class="ri-car-line text-gray-400"></i> {{ order.vehicle.make ? order.vehicle.make.name : '' }} {{ order.vehicle.vehicle_model ? order.vehicle.vehicle_model.name : '' }}
+                            </Link>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'vehicle'">
-                                        <Link v-if="order.vehicle" :href="route('crm.vehicles.show', order.vehicle.id)" class="inline-flex items-center gap-1.5 hover:text-primary transition-colors font-medium" @click.stop>
-                                            <i class="ri-car-line text-gray-400"></i> {{ order.vehicle.make ? order.vehicle.make.name : '' }} {{ order.vehicle.vehicle_model ? order.vehicle.vehicle_model.name : '' }}
-                                        </Link>
-                                        <span v-else class="text-gray-400">—</span>
-                                    </template>
+                        <template #cell-status="{ row: order }">
+                            <StatusBadgeSelect
+                                :model-value="order.status"
+                                :options="workOrderStatuses"
+                                @click.stop
+                                @update:model-value="v => changeStatus(order, v)"
+                            />
+                        </template>
 
-                                    <template v-else-if="col.key === 'status'">
-                                        <StatusBadgeSelect
-                                            :model-value="order.status"
-                                            :options="workOrderStatuses"
-                                            @click.stop
-                                            @update:model-value="v => changeStatus(order, v)"
-                                        />
-                                    </template>
+                        <template #cell-payment_status="{ row: order }">
+                            <span :class="[paymentStatuses[order.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
+                                {{ paymentStatuses[order.payment_status]?.label || order.payment_status }}
+                            </span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'payment_status'">
-                                        <span :class="[paymentStatuses[order.payment_status]?.class || 'bg-gray-100 text-gray-700', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">
-                                            {{ paymentStatuses[order.payment_status]?.label || order.payment_status }}
-                                        </span>
-                                    </template>
+                        <template #cell-final_amount="{ row: order }">
+                            <span class="font-bold">{{ formatMoney(order.final_amount) }}</span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'final_amount'">
-                                        <span class="font-bold">{{ formatMoney(order.final_amount) }}</span>
-                                    </template>
+                        <template #cell-branch="{ row: order }">
+                            <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
+                                <i class="ri-store-2-line"></i> {{ order.branch ? order.branch.name : '—' }}
+                            </span>
+                        </template>
 
-                                    <template v-else-if="col.key === 'branch'">
-                                        <span class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300">
-                                            <i class="ri-store-2-line"></i> {{ order.branch ? order.branch.name : '—' }}
-                                        </span>
-                                    </template>
+                        <template #cell-mileage="{ row: order }">
+                            {{ order.mileage ? order.mileage + ' км' : '—' }}
+                        </template>
 
-                                    <template v-else-if="col.key === 'mileage'">
-                                        {{ order.mileage ? order.mileage + ' км' : '—' }}
-                                    </template>
+                        <template v-for="def in customFieldDefs" :key="def.key" #[`cell-${def.key}`]="{ row: order }">
+                            {{ order.custom_fields && order.custom_fields[def.key] !== undefined && order.custom_fields[def.key] !== null && order.custom_fields[def.key] !== '' ? order.custom_fields[def.key] : '—' }}
+                        </template>
 
-                                    <template v-else>
-                                        {{ order.custom_fields && order.custom_fields[col.key] !== undefined && order.custom_fields[col.key] !== null && order.custom_fields[col.key] !== '' ? order.custom_fields[col.key] : '—' }}
-                                    </template>
-
-                                </td>
-
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2">
-                                    <Link 
-                                        :href="route('operations.work-orders.show', order.id)" 
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
-                                        title="Открыть заказ"
-                                        @click.stop
-                                    >
-                                        <i class="ri-folder-open-line"></i>
-                                    </Link>
-                                    <button
-                                        v-if="remainingAmount(order) > 0"
-                                        @click.stop="openPaymentModal(order)"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
-                                        title="Принять оплату"
-                                    >
-                                        <i class="ri-money-dollar-circle-line"></i>
-                                    </button>
-                                    <button
-                                        v-if="order.status !== 'completed'"
-                                        @click.stop="openStatusModal(order)"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white"
-                                        title="Сменить статус"
-                                    >
-                                        <i class="ri-flag-2-line"></i>
-                                    </button>
-                                    <button
-                                        @click.stop="openModal(order)"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                                        title="Редактировать форму"
-                                    >
-                                        <i class="ri-pencil-line"></i>
-                                    </button>
-                                    <button
-                                        @click.stop="deleteOrder(order)"
-                                        class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
-                                        title="Удалить"
-                                    >
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="workOrders.data.length === 0">
-                                <td :colspan="activeColumns.length + 2" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Заказ-наряды не найдены.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                        <template #actions="{ row: order }">
+                            <Link
+                                :href="route('operations.work-orders.show', order.id)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white"
+                                title="Открыть заказ"
+                                @click.stop
+                            >
+                                <i class="ri-folder-open-line"></i>
+                            </Link>
+                            <button
+                                v-if="remainingAmount(order) > 0"
+                                @click.stop="openPaymentModal(order)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success/10 text-success hover:bg-success hover:text-white"
+                                title="Принять оплату"
+                            >
+                                <i class="ri-money-dollar-circle-line"></i>
+                            </button>
+                            <button
+                                v-if="order.status !== 'completed'"
+                                @click.stop="openStatusModal(order)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white"
+                                title="Сменить статус"
+                            >
+                                <i class="ri-flag-2-line"></i>
+                            </button>
+                            <button
+                                @click.stop="openModal(order)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white"
+                                title="Редактировать форму"
+                            >
+                                <i class="ri-pencil-line"></i>
+                            </button>
+                            <button
+                                @click.stop="deleteOrder(order)"
+                                class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white"
+                                title="Удалить"
+                            >
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="workOrders" />
             </div>

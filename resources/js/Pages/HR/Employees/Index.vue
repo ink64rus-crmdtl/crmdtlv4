@@ -63,6 +63,8 @@ const fetchFiltered = useDebounceFn(() => {
     router.get(route('hr.employees.index'), {
         search: search.value,
         filters: filtersForm,
+        sort_by: sort.value.map(s => s.key),
+        sort_dir: sort.value.map(s => s.dir),
     }, { preserveState: true, preserveScroll: true });
 }, 300);
 

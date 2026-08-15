@@ -87,7 +87,8 @@ class WorkOrderController extends Controller
             $query,
             $request->all(),
             ['id', 'client.name', 'client.phone', 'vehicle.plate_number'],
-            'work_order'
+            'work_order',
+            allowedSorts: ['id', 'created_at', 'status', 'payment_status', 'final_amount', 'mileage']
         );
 
         if (! request()->has('sort_by')) {

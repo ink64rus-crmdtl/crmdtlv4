@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 /**
  * Общий компонент таблицы — заменяет только <table>...</table> (шапка+тело),
@@ -77,6 +77,50 @@ const toggleSort = (col, event) => {
     }
 };
 
+// Тултип на иконке сортировки — не CSS group-hover, а position:fixed +
+// Teleport (тот же приём, что у SearchableSelect и остальных плавающих
+// панелей — CLAUDE.md, правило про Teleport-компоненты): таблица всегда
+// обёрнута в overflow-x-auto, и CSS-тултип, всплывающий локально внутри
+// <th>, обрезается этим контейнером как только колонка ближе к правому
+// (или левому) краю прокрутки — ровно тот же класс бага, что и с вертикальным
+// клиппингом выше. position:fixed уходит из-под any overflow-контейнера,
+// поэтому позиция считается вручную от getBoundingClientRect() иконки и
+// прижимается (clamp) к границам окна, чтобы не вылезать за экран.
+const TOOLTIP_WIDTH = 224; // соответствует w-56
+const TOOLTIP_MARGIN = 8;
+const hoveredSortKey = ref(null);
+const tooltipStyle = ref({});
+const tooltipArrowStyle = ref({});
+const tooltipTeleportTarget = ref(typeof document !== 'undefined' ? document.body : null);
+
+const showSortTooltip = (col, event) => {
+    if (!col.sortable) return;
+    const key = col.sortKey || col.key;
+    const rect = event.currentTarget.getBoundingClientRect();
+    // Тултип может открыться внутри формы, отрендеренной через <Modal>
+    // (нативный <dialog>) — телепорт в document.body положил бы его вне
+    // top layer диалога, диалог перекрыл бы его несмотря на z-index.
+    tooltipTeleportTarget.value = event.currentTarget.closest('dialog') || document.body;
+
+    const idealLeft = rect.left + rect.width / 2 - TOOLTIP_WIDTH / 2;
+    const maxLeft = Math.max(window.innerWidth - TOOLTIP_WIDTH - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
+    const boxLeft = Math.min(Math.max(idealLeft, TOOLTIP_MARGIN), maxLeft);
+    const arrowLeft = Math.min(Math.max(rect.left + rect.width / 2 - boxLeft, 12), TOOLTIP_WIDTH - 12);
+
+    tooltipStyle.value = {
+        position: 'fixed',
+        top: `${rect.bottom + 8}px`,
+        left: `${boxLeft}px`,
+        width: `${TOOLTIP_WIDTH}px`,
+    };
+    tooltipArrowStyle.value = { left: `${arrowLeft}px` };
+    hoveredSortKey.value = key;
+};
+
+const hideSortTooltip = () => {
+    hoveredSortKey.value = null;
+};
+
 const selectAll = computed({
     get: () => props.rows.length > 0 && props.modelValue.length === props.rows.length,
     set: (value) => {
@@ -107,12 +151,16 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                     v-for="col in columns"
                     :key="col.key"
                     :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', alignClass(col.align), col.sortable ? 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : '', col.headerClass]"
-                    :title="col.sortable ? 'Клик — сортировать. Shift+клик — добавить как ещё одну колонку сортировки' : undefined"
                     @click="toggleSort(col, $event)"
                 >
                     <span :class="['inline-flex items-center gap-0.5', col.align === 'right' ? 'flex-row-reverse' : '']">
                         {{ col.label }}
-                        <span v-if="col.sortable" class="inline-flex items-center">
+                        <span
+                            v-if="col.sortable"
+                            class="inline-flex items-center"
+                            @mouseenter="showSortTooltip(col, $event)"
+                            @mouseleave="hideSortTooltip"
+                        >
                             <i
                                 :class="[
                                     sortEntry(col.sortKey || col.key) ? (sortEntry(col.sortKey || col.key).dir === 'desc' ? 'ri-arrow-down-s-line text-primary' : 'ri-arrow-up-s-line text-primary') : 'ri-expand-up-down-line text-gray-300 dark:text-gray-600',
@@ -166,4 +214,16 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
             </tr>
         </tbody>
     </table>
+
+    <Teleport :to="tooltipTeleportTarget">
+        <div
+            v-if="hoveredSortKey"
+            :style="tooltipStyle"
+            class="pointer-events-none z-50 rounded bg-gray-800 dark:bg-gray-900 px-2.5 py-1.5 text-left text-[11px] font-normal normal-case leading-snug text-white shadow-lg"
+        >
+            <span :style="tooltipArrowStyle" class="absolute bottom-full -mb-1 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-800 dark:bg-gray-900"></span>
+            <span class="block"><b class="font-semibold">Клик</b> — сортировать по этой колонке.</span>
+            <span class="block mt-0.5"><b class="font-semibold">Shift+клик</b> — добавить ещё одну колонку сортировки (по порядку приоритета).</span>
+        </div>
+    </Teleport>
 </template>

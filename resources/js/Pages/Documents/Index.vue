@@ -1,8 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue';
+import DataTable from '@/Components/DataTable.vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useServerSort } from '@/Composables/useServerSort.js';
 
 const props = defineProps({
     documents: { type: Object, required: true },
@@ -24,8 +26,29 @@ const applyFilters = () => {
         entity_type: entityType.value || undefined,
         date_from: dateFrom.value || undefined,
         date_to: dateTo.value || undefined,
+        sort_by: sort.value.map(s => s.key),
+        sort_dir: sort.value.map(s => s.dir),
     }, { preserveState: true, preserveScroll: true });
 };
+
+// entity_type/связанная запись/юрлицо — производные от documentable_type/связей,
+// не сортируются простым orderBy.
+const documentColumns = [
+    { key: 'number', label: 'Номер', sortable: true },
+    { key: 'title', label: 'Название', sortable: true },
+    { key: 'entity_type', label: 'Тип' },
+    { key: 'entity_record', label: 'Связанная запись' },
+    { key: 'legal_entity', label: 'Юрлицо' },
+    { key: 'created_at', label: 'Дата', sortable: true },
+];
+
+const { sort, onSort } = useServerSort('documents.index', () => props.filters, () => ({
+    search: search.value || undefined,
+    document_template_id: documentTemplateId.value || undefined,
+    entity_type: entityType.value || undefined,
+    date_from: dateFrom.value || undefined,
+    date_to: dateTo.value || undefined,
+}));
 
 const formatDate = (dateStr) => new Date(dateStr).toLocaleString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -96,58 +119,66 @@ const entityRecordLabel = (doc) => {
 
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
-                        <thead class="bg-gray-50/50 dark:bg-gray-800/50">
-                            <tr>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Номер</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Тип</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Связанная запись</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Юрлицо</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Дата</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="doc in documents.data" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
-                                <td class="py-4 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
-                                    {{ doc.number }}
-                                    <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
-                                    <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем обновить документ"></i>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ doc.title }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ entityLabel(doc.documentable_type) }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
-                                    <Link v-if="entityRoute(doc)" :href="entityRoute(doc)" class="text-primary hover:underline">{{ entityRecordLabel(doc) }}</Link>
-                                    <span v-else class="text-gray-400">{{ entityRecordLabel(doc) }}</span>
-                                </td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ doc.branch?.legal_entity?.name || '—' }}</td>
-                                <td class="py-4 px-6 text-sm text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">{{ formatDate(doc.created_at) }}</td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-1">
-                                    <template v-if="doc.is_stale && !doc.superseded_by_document_id">
-                                        <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)">
-                                            <i class="ri-file-add-line"></i>
-                                        </button>
-                                        <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)">
-                                            <i class="ri-refresh-line"></i>
-                                        </button>
-                                    </template>
-                                    <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать">
-                                        <i class="ri-printer-line"></i>
-                                    </a>
-                                    <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF">
-                                        <i class="ri-download-2-line"></i>
-                                    </a>
-                                    <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
-                                        <i class="ri-delete-bin-line"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="documents.data.length === 0">
-                                <td colspan="7" class="py-8 px-6 text-center text-sm text-gray-500 dark:text-gray-400">Документов пока нет.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <DataTable
+                        :columns="documentColumns"
+                        :rows="documents.data"
+                        has-actions
+                        :sort="sort"
+                        @sort="onSort"
+                        empty-message="Документов пока нет."
+                        row-key="id"
+                    >
+                        <template #cell-number="{ row: doc }">
+                            <span :class="doc.superseded_by_document_id ? 'opacity-50' : ''">
+                                {{ doc.number }}
+                                <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
+                                <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные заказа изменились с момента формирования — рекомендуем обновить документ"></i>
+                            </span>
+                        </template>
+
+                        <template #cell-title="{ row: doc }">
+                            <span :class="doc.superseded_by_document_id ? 'opacity-50' : ''">{{ doc.title }}</span>
+                        </template>
+
+                        <template #cell-entity_type="{ row: doc }">
+                            <span :class="doc.superseded_by_document_id ? 'opacity-50' : ''">{{ entityLabel(doc.documentable_type) }}</span>
+                        </template>
+
+                        <template #cell-entity_record="{ row: doc }">
+                            <span :class="doc.superseded_by_document_id ? 'opacity-50' : ''">
+                                <Link v-if="entityRoute(doc)" :href="entityRoute(doc)" class="text-primary hover:underline">{{ entityRecordLabel(doc) }}</Link>
+                                <span v-else class="text-gray-400">{{ entityRecordLabel(doc) }}</span>
+                            </span>
+                        </template>
+
+                        <template #cell-legal_entity="{ row: doc }">
+                            <span :class="doc.superseded_by_document_id ? 'opacity-50' : ''">{{ doc.branch?.legal_entity?.name || '—' }}</span>
+                        </template>
+
+                        <template #cell-created_at="{ row: doc }">
+                            <span :class="doc.superseded_by_document_id ? 'opacity-50' : ''">{{ formatDate(doc.created_at) }}</span>
+                        </template>
+
+                        <template #actions="{ row: doc }">
+                            <template v-if="doc.is_stale && !doc.superseded_by_document_id">
+                                <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)">
+                                    <i class="ri-file-add-line"></i>
+                                </button>
+                                <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </template>
+                            <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать">
+                                <i class="ri-printer-line"></i>
+                            </a>
+                            <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF">
+                                <i class="ri-download-2-line"></i>
+                            </a>
+                            <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                                <i class="ri-delete-bin-line"></i>
+                            </button>
+                        </template>
+                    </DataTable>
                 </div>
                 <Pagination :meta="documents" />
             </div>

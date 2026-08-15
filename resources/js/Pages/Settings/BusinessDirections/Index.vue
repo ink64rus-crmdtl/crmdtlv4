@@ -33,6 +33,8 @@ const search = ref(props.filters?.search || '');
 const fetchFiltered = useDebounceFn(() => {
     router.get(route('settings.business-directions.index'), {
         search: search.value,
+        sort_by: sort.value.map(s => s.key),
+        sort_dir: sort.value.map(s => s.dir),
     }, { preserveState: true, preserveScroll: true });
 }, 300);
 
