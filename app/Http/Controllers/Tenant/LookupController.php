@@ -39,6 +39,12 @@ class LookupController extends Controller
         $lookup = Lookup::create([
             'type' => $validated['type'],
             'value' => $validated['value'],
+            // Форма (и <CreatableSelect>) не даёт отдельного поля "label" —
+            // пользователь вводит один текст, он же и есть отображаемое
+            // значение. Отдельные value/label (машинный слаг + русский текст)
+            // бывают только у записей, заведённых миграцией/сидером
+            // (work_order_status и т.п.), которые сюда не попадают.
+            'label' => $validated['value'],
             'color' => $validated['color'] ?? null,
             'sort_order' => $nextSortOrder,
             'is_active' => $validated['is_active'] ?? true,
@@ -85,6 +91,14 @@ class LookupController extends Controller
 
         $lookup->update([
             'value' => $validated['value'],
+            // Backfill, НЕ безусловная перезапись: у записей вида
+            // work_order_status label и value специально разведены сидером
+            // (машинный слаг 'new' → человеческий 'Новый') — затирать уже
+            // заполненный label текстом из value было бы регрессом.
+            // Пусто — значит запись создана через этот же контроллер
+            // (quick-add, value===label по построению, см. store()) и её
+            // безопасно донастроить сейчас, раз баг когда-то оставил label пустым.
+            'label' => $lookup->label ?: $validated['value'],
             'color' => $validated['color'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
         ]);
