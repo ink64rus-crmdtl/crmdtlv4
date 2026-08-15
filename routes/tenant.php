@@ -14,6 +14,7 @@ use App\Http\Controllers\Tenant\CommunicationsController;
 use App\Http\Controllers\Tenant\CrmSettingsController;
 use App\Http\Controllers\Tenant\CustomFieldController;
 use App\Http\Controllers\Tenant\DadataController;
+use App\Http\Controllers\Tenant\DashboardController;
 use App\Http\Controllers\Tenant\DealController;
 use App\Http\Controllers\Tenant\DictionaryController;
 use App\Http\Controllers\Tenant\DocumentController;
@@ -86,9 +87,7 @@ Route::middleware([
         Broadcast::routes();
         require base_path('routes/channels.php');
 
-        Route::get('/dashboard', function () {
-            return Inertia::render('Dashboard');
-        })->name('dashboard');
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
         Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');

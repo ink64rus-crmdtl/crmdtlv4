@@ -54,6 +54,7 @@ class DealController extends Controller
                 'columns' => [],
                 'filters' => $request->all(),
                 'owners' => [],
+                'sources' => [],
                 'leadsWithoutDeals' => 0,
             ]);
         }
@@ -75,6 +76,13 @@ class DealController extends Controller
             // Нужны прямо на доске: перетаскивание в «Проигрыш» открывает
             // модалку с обязательным выбором причины, до перехода на Карточку.
             'lossReasons' => Lookup::where('type', 'deal_loss_reason')
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get(['id', 'label']),
+            // Источник сделки — переиспользуем тот же справочник, что и Client.source
+            // (Lookup type=client_source), но здесь это настоящая FK (Deal.source_lookup_id),
+            // не строка: нужна для отчёта по источникам (Фаза 17, этап 4).
+            'sources' => Lookup::where('type', 'client_source')
                 ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->get(['id', 'label']),
@@ -123,6 +131,7 @@ class DealController extends Controller
             'pipelines' => Pipeline::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
             'owners' => User::orderBy('name')->get(['id', 'name']),
             'lossReasons' => Lookup::where('type', 'deal_loss_reason')->where('is_active', true)->orderBy('sort_order')->get(['id', 'label']),
+            'sources' => Lookup::where('type', 'client_source')->where('is_active', true)->orderBy('sort_order')->get(['id', 'label']),
             'taskTypes' => Lookup::where('type', 'task_type')->where('is_active', true)->orderBy('sort_order')->get(['id', 'value', 'label']),
             'activities' => $feed['activities'],
             'comments' => $feed['comments'],

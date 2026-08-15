@@ -18,6 +18,7 @@ const props = defineProps({
     owners: { type: Array, default: () => [] },
     leadsWithoutDeals: { type: Number, default: 0 },
     lossReasons: { type: Array, default: () => [] },
+    sources: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -466,6 +467,15 @@ const branchLegalEntities = computed(() => {
                                 <option v-for="o in owners" :key="o.id" :value="o.id" class="bg-white dark:bg-gray-800">{{ o.name }}</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник</label>
+                        <select v-model="dealForm.source_lookup_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="" class="bg-white dark:bg-gray-800">Не указан</option>
+                            <option v-for="s in sources" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ s.label }}</option>
+                        </select>
+                        <p class="text-[11px] text-gray-400 mt-1">Для отчёта по источникам на дашборде — откуда реально приходят сделки.</p>
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
