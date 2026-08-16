@@ -11,6 +11,7 @@ import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import PointBadge from '@/Components/PointBadge.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import DataTable from '@/Components/DataTable.vue';
+import WorkOrderReopenModal from '@/Components/WorkOrderReopenModal.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -441,7 +442,13 @@ const submit = () => {
 // "Завершён" — особый случай: у него есть побочные эффекты (списание
 // склада, расчёт ЗП), которые делает только operations.work-orders.complete
 // (см. WorkOrderController::completeOrder()) — обычный PATCH статуса их не
-// выполняет. Тот же принцип, что и в Operations/WorkOrders/Show.vue::changeStatus().
+// выполняет. Уход СО статуса "Выдан" (completed) — тоже особый случай: сервер
+// требует обязательный комментарий, поэтому вместо прямого PATCH открываем
+// модалку. Тот же принцип, что и в Operations/WorkOrders/Show.vue::changeStatus().
+const isReopenModalOpen = ref(false);
+const reopenOrder = ref(null);
+const reopenTargetStatus = ref('');
+
 const changeStatus = (order, status) => {
     if (status === 'completed') {
         if (confirm(`Завершить заказ #${String(order.id).padStart(6, '0')}? Это действие спишет все материалы со склада и зафиксирует статус.`)) {
@@ -449,10 +456,22 @@ const changeStatus = (order, status) => {
         }
         return;
     }
+    if (order.status === 'completed') {
+        reopenOrder.value = order;
+        reopenTargetStatus.value = status;
+        isReopenModalOpen.value = true;
+        return;
+    }
     router.patch(route('operations.work-orders.status.update', order.id), { status }, {
         preserveScroll: true,
         preserveState: true,
     });
+};
+
+const closeReopenModal = () => {
+    isReopenModalOpen.value = false;
+    reopenOrder.value = null;
+    reopenTargetStatus.value = '';
 };
 
 // --- Смена статуса иконкой действия (см. CLAUDE.md — эталон иконок списка) ---
@@ -678,10 +697,9 @@ const deleteOrder = (order) => {
                                 <i class="ri-money-dollar-circle-line"></i>
                             </button>
                             <button
-                                v-if="order.status !== 'completed'"
                                 @click.stop="openStatusModal(order)"
                                 class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white"
-                                title="Сменить статус"
+                                :title="order.status === 'completed' ? 'Вернуть на доработку' : 'Сменить статус'"
                             >
                                 <i class="ri-flag-2-line"></i>
                             </button>
@@ -1227,6 +1245,14 @@ const deleteOrder = (order) => {
                 </div>
             </div>
         </Modal>
+
+        <WorkOrderReopenModal
+            :show="isReopenModalOpen"
+            :work-order="reopenOrder"
+            :target-status="reopenTargetStatus"
+            :statuses="workOrderStatuses"
+            @close="closeReopenModal"
+        />
 
     </AuthenticatedLayout>
 </template>

@@ -38,6 +38,7 @@ const close = () => emit('close');
 const submit = () => {
     form.patch(route('operations.work-orders.status.update', props.workOrder.id), {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => close(),
     });
 };

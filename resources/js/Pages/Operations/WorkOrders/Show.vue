@@ -987,8 +987,7 @@ const formatMoney = (amount) => {
                         <StatusBadgeSelect
                             :model-value="workOrder.status"
                             :options="workOrderStatuses"
-                            :disabled="workOrder.status === 'completed'"
-                            :title="workOrder.status === 'completed' ? 'Заказ завершён — статус зафиксирован, изменение недоступно' : ''"
+                            :title="workOrder.status === 'completed' ? 'Заказ выдан — смена статуса вернёт его на доработку (потребуется указать причину)' : ''"
                             @update:model-value="changeStatus"
                         />
                         <PointBadge :branch="workOrder.branch" :legal-entity="workOrder.legal_entity" />
