@@ -23,6 +23,7 @@ class Product extends Model
         'base_price',
         'markup_percent',
         'discount_percent',
+        'affects_payroll_by_default',
     ];
 
     public array $translatable = ['name'];
@@ -34,6 +35,7 @@ class Product extends Model
             'base_price' => 'integer',
             'markup_percent' => 'decimal:2',
             'discount_percent' => 'decimal:2',
+            'affects_payroll_by_default' => 'boolean',
         ];
     }
 

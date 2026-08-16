@@ -3,17 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Translatable\HasTranslations;
 
 class Service extends Model
 {
-    use SoftDeletes, HasTranslations;
+    use HasTranslations, SoftDeletes;
 
     protected $fillable = [
-        'service_category_id', 'business_direction_id', 'name', 'price', 'prices', 'currency_id', 'duration_minutes', 'is_active'
+        'service_category_id', 'business_direction_id', 'name', 'price', 'prices', 'currency_id', 'duration_minutes', 'is_active',
     ];
+
     public array $translatable = ['name'];
 
     protected function casts(): array
@@ -35,5 +37,15 @@ class Service extends Model
     public function businessDirection(): BelongsTo
     {
         return $this->belongsTo(BusinessDirection::class, 'business_direction_id');
+    }
+
+    /**
+     * Материалы, автоматически предлагаемые при добавлении этой услуги в
+     * заказ (CLAUDE.md, «Материалы на услугу», Setting
+     * service_material_auto_add_mode).
+     */
+    public function defaultMaterials(): HasMany
+    {
+        return $this->hasMany(ServiceDefaultMaterial::class);
     }
 }

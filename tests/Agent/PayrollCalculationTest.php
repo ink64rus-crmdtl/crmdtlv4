@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Employee;
 use App\Models\PayrollRule;
 use App\Models\Position;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\Setting;
@@ -123,6 +124,35 @@ class PayrollCalculationTest extends TenantAgentTestCase
             'type' => 'b2b',
             'name' => $name,
         ]);
+    }
+
+    /**
+     * Материал, привязанный к позиции-услуге (CLAUDE.md «Материалы на
+     * услугу»). is_billable=false и affects_payroll=true по умолчанию —
+     * ровно то, что ставит контроллер при добавлении материала.
+     */
+    private function makeMaterial(WorkOrderItem $linkedItem, int $price = 5000, float $quantity = 1, array $overrides = []): WorkOrderItem
+    {
+        $product = Product::create([
+            'name' => 'Тестовый материал',
+            'unit' => 'шт',
+            'accounting_type' => 'average',
+            'is_active' => true,
+        ]);
+
+        return WorkOrderItem::create(array_merge([
+            'work_order_id' => $this->workOrder->id,
+            'itemable_type' => Product::class,
+            'itemable_id' => $product->id,
+            'linked_item_id' => $linkedItem->id,
+            'name' => 'Тестовый материал',
+            'quantity' => $quantity,
+            'price' => $price,
+            'discount_amount' => 0,
+            'total' => (int) round($price * $quantity),
+            'is_billable' => false,
+            'affects_payroll' => true,
+        ], $overrides));
     }
 
     // --- Штатная бригада: поведение, существовавшее до подрядчиков ---
@@ -449,5 +479,115 @@ class PayrollCalculationTest extends TenantAgentTestCase
         $this->assertSame(53000, $rows->firstWhere('employee_id', $selfEmployed->id)['amount']);
         // Подрядчику — ровно оговоренная сумма, без гросс-апа.
         $this->assertSame(50000, $rows->firstWhere('client_id', $contractor->id)['amount']);
+    }
+
+    // --- Материалы на услугу (CLAUDE.md «Материалы на услугу») ---
+
+    #[Test]
+    public function material_with_affects_payroll_disabled_does_not_reduce_worker_base(): void
+    {
+        $position = Position::create(['name' => 'Мастер', 'is_active' => true, 'payroll_role' => 'worker']);
+        PayrollRule::create([
+            'position_id' => $position->id,
+            'type' => 'percentage',
+            'percentage_value' => 40,
+            'is_default_for_unlisted' => true,
+            'is_active' => true,
+        ]);
+
+        $item = $this->makeItem(100000);
+        $item->employees()->attach($this->makeEmployee('staff', $position)->id);
+        $this->makeMaterial($item, price: 30000, overrides: ['affects_payroll' => false]);
+
+        $result = PayrollCalculationService::calculate($this->workOrder->fresh());
+
+        // 1000 ₽ * 40% = 400 ₽ — материал НЕ вычтен, т.к. affects_payroll=false.
+        $this->assertSame(40000, $result['rows'][0]['amount']);
+    }
+
+    #[Test]
+    public function material_with_payroll_uses_cost_only_deducts_cost_not_price(): void
+    {
+        $position = Position::create(['name' => 'Мастер', 'is_active' => true, 'payroll_role' => 'worker']);
+        PayrollRule::create([
+            'position_id' => $position->id,
+            'type' => 'percentage',
+            'percentage_value' => 100,
+            'is_default_for_unlisted' => true,
+            'is_active' => true,
+        ]);
+
+        $item = $this->makeItem(100000);
+        $item->employees()->attach($this->makeEmployee('staff', $position)->id);
+        // Материал продан клиенту (billable) по 300 ₽, реальная себестоимость — 100 ₽.
+        $this->makeMaterial($item, price: 30000, overrides: [
+            'cost_price' => 10000,
+            'payroll_uses_cost_only' => true,
+        ]);
+
+        $result = PayrollCalculationService::calculate($this->workOrder->fresh());
+
+        // База = 1000 - 100 (себестоимость, не 300 цены) = 900 ₽, ставка 100%.
+        $this->assertSame(90000, $result['rows'][0]['amount']);
+    }
+
+    #[Test]
+    public function material_without_cost_only_flag_deducts_full_total(): void
+    {
+        $position = Position::create(['name' => 'Мастер', 'is_active' => true, 'payroll_role' => 'worker']);
+        PayrollRule::create([
+            'position_id' => $position->id,
+            'type' => 'percentage',
+            'percentage_value' => 100,
+            'is_default_for_unlisted' => true,
+            'is_active' => true,
+        ]);
+
+        $item = $this->makeItem(100000);
+        $item->employees()->attach($this->makeEmployee('staff', $position)->id);
+        $this->makeMaterial($item, price: 30000, overrides: ['cost_price' => 10000]);
+
+        $result = PayrollCalculationService::calculate($this->workOrder->fresh());
+
+        // payroll_uses_cost_only не включён — вычитается полная total (300 ₽), не себестоимость.
+        $this->assertSame(70000, $result['rows'][0]['amount']);
+    }
+
+    #[Test]
+    public function service_without_assigned_employee_skips_payroll_but_material_is_untouched(): void
+    {
+        $item = $this->makeItem(100000);
+        $material = $this->makeMaterial($item, price: 30000);
+        // Исполнитель НЕ назначен.
+
+        $result = PayrollCalculationService::calculate($this->workOrder->fresh());
+
+        $this->assertEmpty($result['rows']);
+        $this->assertEmpty($result['skipped']);
+        $this->assertNotNull($material->fresh());
+    }
+
+    #[Test]
+    public function tenant_wide_materials_setting_disabled_ignores_per_line_affects_payroll(): void
+    {
+        $this->setPayrollSettings(['payroll_worker_base_excludes_materials' => '0']);
+
+        $position = Position::create(['name' => 'Мастер', 'is_active' => true, 'payroll_role' => 'worker']);
+        PayrollRule::create([
+            'position_id' => $position->id,
+            'type' => 'percentage',
+            'percentage_value' => 100,
+            'is_default_for_unlisted' => true,
+            'is_active' => true,
+        ]);
+
+        $item = $this->makeItem(100000);
+        $item->employees()->attach($this->makeEmployee('staff', $position)->id);
+        $this->makeMaterial($item, price: 30000, overrides: ['affects_payroll' => true]);
+
+        $result = PayrollCalculationService::calculate($this->workOrder->fresh());
+
+        // Тенантский тумблер выключен — материал не вычитается, несмотря на affects_payroll=true на линии.
+        $this->assertSame(100000, $result['rows'][0]['amount']);
     }
 }

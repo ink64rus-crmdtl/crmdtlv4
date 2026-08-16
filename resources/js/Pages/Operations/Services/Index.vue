@@ -7,6 +7,7 @@ import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Modal from '@/Components/Modal.vue';
 import DataTable from '@/Components/DataTable.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -20,6 +21,7 @@ const props = defineProps({
     pricingBasis: String,
     lookups: Object,
     filters: Object,
+    materialProducts: { type: Array, default: () => [] },
 });
 
 const isModalOpen = ref(false);
@@ -209,6 +211,32 @@ const submitCategory = () => {
     categoryForm.post(route('operations.service-categories.store'), {
         onSuccess: () => closeCategoryModal(),
     });
+};
+
+// --- Материалы по умолчанию (CLAUDE.md «Материалы на услугу») ---
+const materialForm = useForm({ product_id: '', quantity: 1 });
+
+const materialProductOptions = computed(() => props.materialProducts.map(p => ({ value: p.id, label: `${getLocalizedLabel(p.name)} (${p.unit})` })));
+
+// editingService — снэпшот на момент открытия модалки; после добавления/удаления
+// материала Inertia обновляет props.services, а не сам этот снэпшот — поэтому
+// список материалов читаем из СВЕЖЕГО props.services по id, а не из снэпшота.
+const currentServiceMaterials = computed(() => {
+    if (!editingService.value) return [];
+    return props.services.data.find(s => s.id === editingService.value.id)?.default_materials || [];
+});
+
+const addDefaultMaterial = () => {
+    if (!editingService.value || !materialForm.product_id) return;
+    materialForm.post(route('operations.services.materials.store', editingService.value.id), {
+        preserveScroll: true,
+        onSuccess: () => { materialForm.reset(); materialForm.quantity = 1; },
+    });
+};
+
+const removeDefaultMaterial = (material) => {
+    if (!confirm(`Убрать «${getLocalizedLabel(material.product?.name)}» из правила автодобавления?`)) return;
+    router.delete(route('operations.services.materials.destroy', material.id), { preserveScroll: true });
 };
 </script>
 
@@ -452,6 +480,38 @@ const submitCategory = () => {
                             <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
                                 Услуга активна (доступна в заказах)
                             </label>
+                        </div>
+
+                        <!-- Материалы по умолчанию (CLAUDE.md «Материалы на услугу») —
+                             доступно только для уже сохранённой услуги: правило
+                             ссылается на её id, для новой его ещё нет. -->
+                        <div v-if="editingService" class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+                            <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Материалы по умолчанию</h4>
+                            <p class="text-xs text-gray-500 mb-3">При добавлении этой услуги в заказ система предложит (или сразу добавит — зависит от настройки в Настройки → Склад) эти материалы в заданном количестве. Материалы скрыты от клиента и по умолчанию уменьшают базу расчёта ЗП.</p>
+
+                            <div v-if="currentServiceMaterials.length > 0" class="space-y-1.5 mb-3">
+                                <div v-for="material in currentServiceMaterials" :key="material.id" class="flex items-center justify-between gap-2 p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                                    <span class="text-sm text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(material.product?.name) }}</span>
+                                    <div class="flex items-center gap-2 shrink-0">
+                                        <span class="text-xs text-gray-500">{{ parseFloat(material.quantity) }} {{ material.product?.unit }}</span>
+                                        <button type="button" @click="removeDefaultMaterial(material)" class="text-gray-400 hover:text-danger transition-colors p-1" title="Убрать"><i class="ri-delete-bin-line"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <p v-else class="text-xs text-gray-400 mb-3">Материалы по умолчанию не заданы.</p>
+
+                            <div class="flex items-end gap-2">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Материал</label>
+                                    <SearchableSelect v-model="materialForm.product_id" :options="materialProductOptions" placeholder="Выберите товар" />
+                                </div>
+                                <div class="w-24">
+                                    <label class="block text-xs font-medium text-gray-500 mb-1">Кол-во</label>
+                                    <input v-model.number="materialForm.quantity" type="number" step="any" min="0.001" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                </div>
+                                <button type="button" @click="addDefaultMaterial" :disabled="!materialForm.product_id || materialForm.processing" class="inline-flex items-center justify-center rounded px-3 py-2 text-sm font-medium bg-primary/10 text-primary hover:bg-primary hover:text-white disabled:opacity-50 shrink-0"><i class="ri-add-line"></i></button>
+                            </div>
+                            <p v-if="materialForm.errors.product_id" class="text-xs text-danger mt-1">{{ materialForm.errors.product_id }}</p>
                         </div>
                     </div>
 

@@ -371,24 +371,30 @@ class StockService
 
     /**
      * Списывает товар со склада с учетом типа учета (Средневзвешенный или Партионный/FIFO).
+     *
+     * $allowNegative — ТОЛЬКО для материалов, потраченных на услугу
+     * (WorkOrderItem.allow_negative_stock, см. CLAUDE.md «Материалы на
+     * услугу»). Дефолт false сохраняет исходное поведение для всех
+     * остальных вызовов (обычные проданные клиенту товары) без изменений —
+     * недостаток остатка там по-прежнему жёстко блокирует завершение заказа.
      */
-    public static function deduct(Product $product, Warehouse $warehouse, int $branchId, float $quantity, ?int $workOrderId = null, ?int $userId = null): void
+    public static function deduct(Product $product, Warehouse $warehouse, int $branchId, float $quantity, ?int $workOrderId = null, ?int $userId = null, bool $allowNegative = false): void
     {
         if ($product->accounting_type === 'batch') {
-            self::deductFIFO($product, $warehouse, $branchId, $quantity, $workOrderId, $userId);
+            self::deductFIFO($product, $warehouse, $branchId, $quantity, $workOrderId, $userId, $allowNegative);
         } else {
-            self::deductAverage($product, $warehouse, $branchId, $quantity, $workOrderId, $userId);
+            self::deductAverage($product, $warehouse, $branchId, $quantity, $workOrderId, $userId, $allowNegative);
         }
     }
 
-    private static function deductAverage(Product $product, Warehouse $warehouse, int $branchId, float $quantity, ?int $workOrderId, ?int $userId): void
+    private static function deductAverage(Product $product, Warehouse $warehouse, int $branchId, float $quantity, ?int $workOrderId, ?int $userId, bool $allowNegative = false): void
     {
         $balance = StockBalance::firstOrCreate(
             ['warehouse_id' => $warehouse->id, 'product_id' => $product->id],
             ['quantity' => 0, 'avg_cost' => 0]
         );
 
-        if ($balance->quantity < $quantity) {
+        if (! $allowNegative && $balance->quantity < $quantity) {
             $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
             throw new Exception("Недостаточно остатков для товара: {$productName}. В наличии: {$balance->quantity} {$product->unit}");
         }
@@ -409,7 +415,7 @@ class StockService
         $balance->save();
     }
 
-    private static function deductFIFO(Product $product, Warehouse $warehouse, int $branchId, float $quantity, ?int $workOrderId, ?int $userId): void
+    private static function deductFIFO(Product $product, Warehouse $warehouse, int $branchId, float $quantity, ?int $workOrderId, ?int $userId, bool $allowNegative = false): void
     {
         $batches = ProductBatch::where('product_id', $product->id)
             ->where('warehouse_id', $warehouse->id)
@@ -418,6 +424,7 @@ class StockService
             ->get();
 
         $remaining = $quantity;
+        $lastCostPrice = 0;
 
         foreach ($batches as $batch) {
             if ($remaining <= 0) {
@@ -425,6 +432,7 @@ class StockService
             }
 
             $take = min($batch->current_quantity, $remaining);
+            $lastCostPrice = $batch->cost_price;
 
             StockMovement::create([
                 'warehouse_id' => $warehouse->id,
@@ -446,8 +454,26 @@ class StockService
         }
 
         if ($remaining > 0) {
-            $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
-            throw new Exception("Недостаточно остатков в партиях для товара: {$productName}. Не хватает: {$remaining} {$product->unit}");
+            if (! $allowNegative) {
+                $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
+                throw new Exception("Недостаточно остатков в партиях для товара: {$productName}. Не хватает: {$remaining} {$product->unit}");
+            }
+
+            // Партии физически исчерпаны — недостающий остаток списываем без
+            // привязки к конкретной партии (product_batch_id=null), себестоимость
+            // берём от последней использованной партии (или 0, если партий не
+            // было вовсе). Разрешено ТОЛЬКО для материалов на услугу, см. deduct().
+            StockMovement::create([
+                'warehouse_id' => $warehouse->id,
+                'branch_id' => $branchId,
+                'product_id' => $product->id,
+                'work_order_id' => $workOrderId,
+                'type' => 'out',
+                'quantity' => $remaining,
+                'cost_price' => $lastCostPrice,
+                'created_by' => $userId,
+                'comment' => $workOrderId ? "Списание по заказ-наряду #{$workOrderId} (сверх остатка партий)" : 'Ручное списание (сверх остатка партий)',
+            ]);
         }
 
         // Обновляем общий баланс для быстрого доступа

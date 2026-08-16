@@ -83,6 +83,7 @@ class ProductController extends Controller
             'base_price' => ['nullable', 'numeric', 'min:0'],
             'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'affects_payroll_by_default' => ['boolean'],
         ]);
 
         Product::create([
@@ -96,6 +97,7 @@ class ProductController extends Controller
             'base_price' => isset($validated['base_price']) ? (int) round($validated['base_price'] * 100) : null,
             'markup_percent' => $validated['markup_percent'] ?? null,
             'discount_percent' => $validated['discount_percent'] ?? null,
+            'affects_payroll_by_default' => $validated['affects_payroll_by_default'] ?? true,
         ]);
 
         return redirect()->back()->with('success', 'Товар успешно добавлен');
@@ -114,6 +116,7 @@ class ProductController extends Controller
             'base_price' => ['nullable', 'numeric', 'min:0'],
             'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'affects_payroll_by_default' => ['boolean'],
         ]);
 
         $name = $product->getTranslations('name');
@@ -130,6 +133,7 @@ class ProductController extends Controller
             'base_price' => isset($validated['base_price']) ? (int) round($validated['base_price'] * 100) : null,
             'markup_percent' => $validated['markup_percent'] ?? null,
             'discount_percent' => $validated['discount_percent'] ?? null,
+            'affects_payroll_by_default' => $validated['affects_payroll_by_default'] ?? true,
         ]);
 
         return redirect()->back()->with('success', 'Товар обновлен');

@@ -25,6 +25,12 @@ class WorkOrderItem extends Model
         'sort_order',
         'admin_override',
         'linked_item_id',
+        'is_billable',
+        'cost_price',
+        'affects_payroll',
+        'payroll_uses_cost_only',
+        'stock_deduction_disabled',
+        'allow_negative_stock',
     ];
 
     protected function casts(): array
@@ -37,6 +43,12 @@ class WorkOrderItem extends Model
             'total' => 'integer',
             'currency_id' => 'integer',
             'sort_order' => 'integer',
+            'is_billable' => 'boolean',
+            'cost_price' => 'integer',
+            'affects_payroll' => 'boolean',
+            'payroll_uses_cost_only' => 'boolean',
+            'stock_deduction_disabled' => 'boolean',
+            'allow_negative_stock' => 'boolean',
         ];
     }
 
@@ -131,5 +143,27 @@ class WorkOrderItem extends Model
     public function materials(): HasMany
     {
         return $this->hasMany(WorkOrderItem::class, 'linked_item_id');
+    }
+
+    /** Позиция-материал — та, что привязана к услуге, а не сама услуга/товар. */
+    public function isMaterial(): bool
+    {
+        return $this->linked_item_id !== null;
+    }
+
+    /**
+     * Сумма, вычитаемая из базы ЗП исполнителя за этот материал
+     * (PayrollCalculationService::calculate(), CLAUDE.md «Материалы на услугу»).
+     * payroll_uses_cost_only — вычитать себестоимость, а не цену (если
+     * материал продан клиенту с наценкой, наценка не должна теряться из
+     * заработка мастера/бизнеса просто из-за списания материала).
+     */
+    public function payrollDeductionAmount(): int
+    {
+        if ($this->payroll_uses_cost_only && $this->cost_price !== null) {
+            return (int) round($this->cost_price * (float) $this->quantity);
+        }
+
+        return $this->total;
     }
 }

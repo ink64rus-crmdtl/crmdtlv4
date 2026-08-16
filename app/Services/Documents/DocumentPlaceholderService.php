@@ -170,8 +170,12 @@ class DocumentPlaceholderService
         // считаем валовую сумму заново, а не берём готовую колонку — иначе
         // при позиционной скидке в документе "Сумма позиций - Скидка"
         // переставало бы сходиться с "Итого".
-        $itemsDiscountTotal = $workOrder->items->sum('discount_amount');
-        $grossTotal = $workOrder->items->sum(fn ($item) => (int) round($item->quantity * $item->price));
+        // is_billable=false — материал на услугу (CLAUDE.md «Материалы на
+        // услугу»), скрытый от клиента: не входит ни в сумму позиций, ни в
+        // печатную табличную секцию (см. workOrderItemRows() ниже).
+        $billableItems = $workOrder->items->where('is_billable', true);
+        $itemsDiscountTotal = $billableItems->sum('discount_amount');
+        $grossTotal = $billableItems->sum(fn ($item) => (int) round($item->quantity * $item->price));
         $effectiveDiscount = $workOrder->discount_amount + $itemsDiscountTotal;
 
         return [
@@ -204,7 +208,7 @@ class DocumentPlaceholderService
 
     private static function workOrderItemRows(WorkOrder $workOrder): array
     {
-        return $workOrder->items->values()->map(fn ($item, $index) => [
+        return $workOrder->items->where('is_billable', true)->values()->map(fn ($item, $index) => [
             'item.index' => (string) ($index + 1),
             'item.name' => $item->name,
             'item.quantity' => rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ''), '0'), '.'),

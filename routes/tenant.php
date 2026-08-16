@@ -361,6 +361,9 @@ Route::middleware([
         Route::patch('/operations/work-orders/{workOrder}/admin', [WorkOrderController::class, 'updateAdmin'])->name('operations.work-orders.admin.update');
         Route::put('/operations/work-orders/{workOrder}/items/{item}/payout', [WorkOrderController::class, 'updateItemPayout'])->name('operations.work-orders.items.payout');
         Route::get('/operations/work-orders/{workOrder}/payroll-preview', [WorkOrderController::class, 'payrollPreview'])->name('operations.work-orders.payroll-preview');
+        // Материалы на услугу (CLAUDE.md «Материалы на услугу»)
+        Route::put('/operations/work-orders/{workOrder}/items/{item}/material-settings', [WorkOrderController::class, 'updateItemMaterialSettings'])->name('operations.work-orders.items.material-settings');
+        Route::post('/operations/work-orders/{workOrder}/items/{item}/materials/auto-add', [WorkOrderController::class, 'autoAddMaterials'])->name('operations.work-orders.items.materials.auto-add');
 
         // Operations: Прайс-лист услуг (Перенесено из Warehouse в Operations)
         Route::get('/operations/services', [ServiceController::class, 'index'])->name('operations.services.index');
@@ -370,6 +373,10 @@ Route::middleware([
         Route::post('/operations/services/bulk-delete', [ServiceController::class, 'bulkDestroy'])->name('operations.services.bulk-destroy');
         Route::post('/operations/services/bulk-export', [ServiceController::class, 'bulkExport'])->name('operations.services.bulk-export');
         Route::post('/operations/service-categories', [ServiceController::class, 'storeCategory'])->name('operations.service-categories.store');
+        // Материалы по умолчанию (CLAUDE.md «Материалы на услугу»)
+        Route::post('/operations/services/{service}/materials', [ServiceController::class, 'storeDefaultMaterial'])->name('operations.services.materials.store');
+        Route::put('/operations/service-materials/{material}', [ServiceController::class, 'updateDefaultMaterial'])->name('operations.services.materials.update');
+        Route::delete('/operations/service-materials/{material}', [ServiceController::class, 'destroyDefaultMaterial'])->name('operations.services.materials.destroy');
 
         // Operations: Быстрое добавление номенклатуры (услуги теперь через items.store с is_custom/save_to_catalog)
         Route::post('/operations/work-orders/quick-product', [WorkOrderController::class, 'storeProductQuick'])->name('operations.work-orders.quick-product');

@@ -115,8 +115,14 @@ class PayrollCalculationService
                 $rows[] = self::row($adminEmployee, 'admin', $amount, $item);
             }
 
+            // Тенантский тумблер worker_base_excludes_materials — мастер-выключатель;
+            // affects_payroll на самой линии материала сужает его точечно (CLAUDE.md
+            // «Материалы на услугу»). payrollDeductionAmount() сам решает — вычитать
+            // цену или себестоимость (WorkOrderItem.payroll_uses_cost_only).
             $materialsCost = $settings['worker_base_excludes_materials']
-                ? (int) $item->materials->sum('total')
+                ? (int) $item->materials
+                    ->where('affects_payroll', true)
+                    ->sum(fn (WorkOrderItem $material) => $material->payrollDeductionAmount())
                 : 0;
 
             $workerBase = $base - $materialsCost;

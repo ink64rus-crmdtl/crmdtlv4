@@ -19,11 +19,13 @@ use App\Models\Lookup;
 use App\Models\MessageTemplate;
 use App\Models\Payroll;
 use App\Models\Product;
+use App\Models\ProductBatch;
 use App\Models\ProductCategory;
 use App\Models\Scopes\BranchScope;
 use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\Setting;
+use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\Vehicle;
 use App\Models\VehicleMake;
@@ -203,8 +205,11 @@ class WorkOrderController extends Controller
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
 
-        $services = Service::where('is_active', true)->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
-        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id', 'base_price', 'discount_percent']);
+        // defaultMaterials — правило автодобавления материала (CLAUDE.md
+        // «Материалы на услугу»), нужно фронту для запуска ServiceMaterialAutoAddModal
+        // сразу при добавлении услуги в заказ, без отдельного запроса.
+        $services = Service::where('is_active', true)->with('defaultMaterials.product:id,name,unit')->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
+        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id', 'base_price', 'discount_percent', 'affects_payroll_by_default']);
 
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']);
 
@@ -276,6 +281,7 @@ class WorkOrderController extends Controller
             'activities' => $activities,
             'comments' => $comments,
             'documentTemplates' => DocumentTemplate::where('entity_type', 'work_order')->where('is_active', true)->get(['id', 'name']),
+            'serviceMaterialAutoAddMode' => Setting::where('key', 'service_material_auto_add_mode')->value('value') ?? 'confirm',
         ]);
     }
 
@@ -584,6 +590,46 @@ class WorkOrderController extends Controller
     }
 
     /**
+     * Настройки материала на услуге (CLAUDE.md «Материалы на услугу») —
+     * выделенный эндпоинт по образцу updateItemPayout(), а не часть общего
+     * updateItem(): состав полей и их смысл принципиально другие (склад/ЗП/
+     * биллинг материала, а не распределение выплат исполнителям).
+     */
+    public function updateItemMaterialSettings(Request $request, WorkOrder $workOrder, WorkOrderItem $item)
+    {
+        if ($item->work_order_id !== $workOrder->id) {
+            abort(403);
+        }
+
+        if (! $item->isMaterial()) {
+            abort(403, 'Настройки материала доступны только позициям, привязанным к услуге.');
+        }
+
+        $validated = $request->validate([
+            'stock_deduction_disabled' => ['boolean'],
+            'allow_negative_stock' => ['boolean'],
+            'affects_payroll' => ['boolean'],
+            'payroll_uses_cost_only' => ['boolean'],
+            'is_billable' => ['boolean'],
+        ]);
+
+        // Серверный бэкстоп поверх условного показа тумблера в UI (виден
+        // только если price > cost_price) — не доверяем, что фронт не
+        // отправит его включённым в обход условия.
+        if (! empty($validated['payroll_uses_cost_only']) && ($item->cost_price === null || $item->cost_price >= $item->price)) {
+            $validated['payroll_uses_cost_only'] = false;
+        }
+
+        $item->update($validated);
+
+        // Видимость материала в счёте клиента изменилась — сумма к оплате
+        // должна пересчитаться немедленно, не дожидаясь следующего addItem().
+        $this->recalculateTotals($workOrder);
+
+        return redirect()->back()->with('success', 'Настройки материала сохранены');
+    }
+
+    /**
      * Предварительный расчёт ЗП для вкладки "Зарплата" — считается заново
      * при каждом открытии вкладки (PayrollCalculationService::calculate()
      * дешёвый и детерминированный, кэш не используется намеренно: закешированный
@@ -710,9 +756,25 @@ class WorkOrderController extends Controller
             'quantity' => ['required', 'numeric', 'min:0.001'],
             'price' => ['required', 'numeric', 'min:0'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            // Материал на услугу (CLAUDE.md «Материалы на услугу») — привязка
+            // к позиции-услуге ЭТОГО ЖЕ заказа, не к чужой.
+            'linked_item_id' => ['nullable', 'integer', Rule::exists('work_order_items', 'id')->where('work_order_id', $workOrder->id)],
+            'cost_price' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         $this->assertAssigneeIdsExist($validated['assignee_type'] ?? 'employee', $validated['employee_ids'] ?? []);
+
+        if (! empty($validated['linked_item_id'])) {
+            $linkedItem = WorkOrderItem::find($validated['linked_item_id']);
+
+            if ($linkedItem->linked_item_id !== null) {
+                return redirect()->back()->withErrors(['linked_item_id' => 'Материал можно привязать только к услуге, не к другому материалу.']);
+            }
+
+            if ($validated['itemable_type'] !== 'product') {
+                return redirect()->back()->withErrors(['itemable_type' => 'Материалом на услугу может быть только товар.']);
+            }
+        }
 
         $isCustom = $validated['is_custom'] ?? false;
 
@@ -754,6 +816,22 @@ class WorkOrderController extends Controller
 
             $nextSortOrder = (int) $workOrder->items()->max('sort_order') + 1;
 
+            // Материал на услугу (CLAUDE.md «Материалы на услугу») — скрыт от
+            // клиента по умолчанию (is_billable=false), учитывается при ЗП по
+            // умолчанию каталога товара, себестоимость снэпшотится СЕЙЧАС, а
+            // не берётся заново при печати документа (тот же принцип, что и
+            // у Document::isStale() — зафиксированный во времени артефакт).
+            $materialFields = [];
+            if (! empty($validated['linked_item_id'])) {
+                $product = Product::find($itemableId);
+                $materialFields = [
+                    'linked_item_id' => $validated['linked_item_id'],
+                    'is_billable' => false,
+                    'affects_payroll' => $product?->affects_payroll_by_default ?? true,
+                    'cost_price' => $this->resolveMaterialCostPrice($product, $workOrder->branch, isset($validated['cost_price']) ? (float) $validated['cost_price'] : null),
+                ];
+            }
+
             $item = $workOrder->items()->create([
                 'itemable_type' => $validated['itemable_type'] === 'service' ? Service::class : Product::class,
                 'itemable_id' => $itemableId,
@@ -763,6 +841,7 @@ class WorkOrderController extends Controller
                 'discount_amount' => $discountCents,
                 'total' => $totalCents,
                 'sort_order' => $nextSortOrder,
+                ...$materialFields,
             ]);
 
             if (! empty($validated['employee_ids'])) {
@@ -778,6 +857,110 @@ class WorkOrderController extends Controller
         $this->recalculateTotals($workOrder);
 
         return redirect()->back()->with('success', 'Позиция добавлена');
+    }
+
+    /**
+     * Подтверждённое автодобавление материалов по правилу услуги
+     * (ServiceDefaultMaterial, Setting service_material_auto_add_mode,
+     * CLAUDE.md «Материалы на услугу») — вызывается из модалки
+     * подтверждения на фронте ПОСЛЕ того, как менеджер выбрал, какие
+     * материалы реально добавлять. Одна транзакция на все строки.
+     *
+     * Нехватка остатка без force_negative — материал молча НЕ добавляется
+     * (не бросаем исключение, не блокируем остальные материалы) и пишется
+     * в «Историю» заказа — рабочего toast/flash в проекте нет (см. план),
+     * а История уже читается и всегда видна.
+     */
+    public function autoAddMaterials(Request $request, WorkOrder $workOrder, WorkOrderItem $serviceItem)
+    {
+        if ($serviceItem->work_order_id !== $workOrder->id) {
+            abort(403);
+        }
+
+        if ($serviceItem->isMaterial()) {
+            abort(403, 'Материалы можно привязать только к услуге, не к другому материалу.');
+        }
+
+        $validated = $request->validate([
+            'materials' => ['required', 'array', 'min:1'],
+            'materials.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'materials.*.quantity' => ['required', 'numeric', 'min:0.001'],
+            'materials.*.force_negative' => ['boolean'],
+        ]);
+
+        $branch = $workOrder->branch;
+        $createdCount = 0;
+        $skippedNames = [];
+
+        DB::transaction(function () use ($validated, $workOrder, $serviceItem, $branch, &$createdCount, &$skippedNames) {
+            $nextSortOrder = (int) $workOrder->items()->max('sort_order') + 1;
+
+            foreach ($validated['materials'] as $row) {
+                $product = Product::find($row['product_id']);
+                if (! $product) {
+                    continue;
+                }
+
+                $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
+                $forceNegative = ! empty($row['force_negative']);
+
+                if (WarehouseResolver::isEnabled() && ! $forceNegative) {
+                    $warehouse = WarehouseResolver::resolveFor($product, $branch);
+                    $available = $warehouse
+                        ? (float) (StockBalance::where('warehouse_id', $warehouse->id)->where('product_id', $product->id)->value('quantity') ?? 0)
+                        : 0;
+
+                    if ($available < (float) $row['quantity']) {
+                        $skippedNames[] = $productName;
+
+                        continue;
+                    }
+                }
+
+                // Материал скрыт от клиента по умолчанию — price=cost_price
+                // (нет отдельной "цены продажи" для позиции, которую клиент
+                // никогда не увидит).
+                $costPrice = $this->resolveMaterialCostPrice($product, $branch, null) ?? 0;
+
+                $workOrder->items()->create([
+                    'itemable_type' => Product::class,
+                    'itemable_id' => $product->id,
+                    'linked_item_id' => $serviceItem->id,
+                    'name' => $productName,
+                    'quantity' => $row['quantity'],
+                    'price' => $costPrice,
+                    'discount_amount' => 0,
+                    'total' => (int) round((float) $row['quantity'] * $costPrice),
+                    'sort_order' => $nextSortOrder++,
+                    'is_billable' => false,
+                    'affects_payroll' => $product->affects_payroll_by_default,
+                    'cost_price' => $costPrice,
+                    'allow_negative_stock' => $forceNegative,
+                ]);
+
+                $createdCount++;
+            }
+
+            foreach ($skippedNames as $productName) {
+                ActivityLogger::log(
+                    $workOrder,
+                    "Материал «{$productName}» не добавлен автоматически к услуге «{$serviceItem->name}» — недостаточно на складе",
+                    $this->workOrderLink($workOrder),
+                    'material_auto_add_skipped'
+                );
+            }
+        });
+
+        if ($createdCount > 0) {
+            $this->recalculateTotals($workOrder);
+        }
+
+        $message = "Добавлено материалов: {$createdCount}";
+        if (! empty($skippedNames)) {
+            $message .= '. Пропущено (недостаточно на складе): '.implode(', ', $skippedNames);
+        }
+
+        return redirect()->back()->with('success', $message);
     }
 
     public function updateItem(Request $request, WorkOrder $workOrder, WorkOrderItem $item)
@@ -850,6 +1033,41 @@ class WorkOrderController extends Controller
     }
 
     /**
+     * Себестоимость материала на момент расхода (CLAUDE.md «Материалы на
+     * услугу»). Склад включён — берём реальную себестоимость (avg_cost для
+     * средневзвешенного учёта, себестоимость самой старой партии для FIFO —
+     * та, что реально спишется первой в StockService::deductFIFO()). Склад
+     * выключен — источника себестоимости в системе нет, принимаем то, что
+     * ввёл пользователь вручную (или null, если не ввёл — дозаполнится позже
+     * через иконку настроек материала).
+     */
+    private function resolveMaterialCostPrice(?Product $product, Branch $branch, ?float $manualRubles): ?int
+    {
+        if (! WarehouseResolver::isEnabled()) {
+            return $manualRubles !== null ? (int) round($manualRubles * 100) : null;
+        }
+
+        if (! $product) {
+            return null;
+        }
+
+        $warehouse = WarehouseResolver::resolveFor($product, $branch);
+        if (! $warehouse) {
+            return null;
+        }
+
+        if ($product->accounting_type === 'batch') {
+            return ProductBatch::where('product_id', $product->id)
+                ->where('warehouse_id', $warehouse->id)
+                ->where('current_quantity', '>', 0)
+                ->orderBy('created_at')
+                ->value('cost_price');
+        }
+
+        return StockBalance::where('warehouse_id', $warehouse->id)->where('product_id', $product->id)->value('avg_cost');
+    }
+
+    /**
      * Проверка существования вынесена из правил валидации, потому что таблица
      * зависит от типа исполнителя (employees/clients), а для подрядчика этого
      * мало: назначать можно только клиента, которому реально выдана роль
@@ -919,24 +1137,47 @@ class WorkOrderController extends Controller
     }
 
     /**
-     * Группирует позиции: сначала все услуги, затем все товары — относительный порядок
-     * внутри каждой группы сохраняется (стабильная сортировка по текущему sort_order).
+     * Два режима упорядочивания позиций:
+     * - grouped: сначала все услуги, затем все товары/материалы — относительный порядок
+     *   внутри каждой группы сохраняется (стабильная сортировка по текущему sort_order).
+     * - nested: материалы располагаются сразу после своей услуги (linked_item_id), затем
+     *   следующая услуга/товар в исходном относительном порядке.
      */
-    public function autoSortItems(WorkOrder $workOrder)
+    public function autoSortItems(Request $request, WorkOrder $workOrder)
     {
+        $validated = $request->validate([
+            'mode' => ['nullable', 'string', 'in:grouped,nested'],
+        ]);
+        $mode = $validated['mode'] ?? 'grouped';
+
         $items = $workOrder->items()->get();
 
-        $ordered = $items->sortBy(function (WorkOrderItem $item) {
-            return $item->itemable_type === Service::class ? 0 : 1;
-        })->values();
+        if ($mode === 'nested') {
+            $materialsByParent = $items->whereNotNull('linked_item_id')->groupBy('linked_item_id');
+            $ordered = collect();
+            foreach ($items->whereNull('linked_item_id') as $topItem) {
+                $ordered->push($topItem);
+                foreach ($materialsByParent->get($topItem->id, collect()) as $material) {
+                    $ordered->push($material);
+                }
+            }
+            // Материалы-сироты (родитель почему-то отсутствует в выборке) — в конец, чтобы не потерять позицию.
+            $ordered = $ordered->concat($items->whereNotIn('id', $ordered->pluck('id')));
+            $message = 'Позиции упорядочены: материалы расположены сразу после своей услуги';
+        } else {
+            $ordered = $items->sortBy(function (WorkOrderItem $item) {
+                return $item->itemable_type === Service::class ? 0 : 1;
+            })->values();
+            $message = 'Позиции упорядочены: услуги сверху, товары снизу';
+        }
 
         DB::transaction(function () use ($ordered) {
-            foreach ($ordered as $index => $item) {
+            foreach ($ordered->values() as $index => $item) {
                 $item->update(['sort_order' => $index]);
             }
         });
 
-        return redirect()->back()->with('success', 'Позиции упорядочены: услуги сверху, товары снизу');
+        return redirect()->back()->with('success', $message);
     }
 
     public function reorderItems(Request $request, WorkOrder $workOrder)
@@ -1174,6 +1415,13 @@ class WorkOrderController extends Controller
                 if (WarehouseResolver::isEnabled()) {
                     foreach ($workOrder->items as $item) {
                         if ($item->itemable_type === Product::class) {
+                            // Материал на услугу с отключённым списанием (CLAUDE.md
+                            // «Материалы на услугу») — расход учтён только для ЗП/
+                            // будущей маржи, склад физически не трогаем.
+                            if ($item->isMaterial() && $item->stock_deduction_disabled) {
+                                continue;
+                            }
+
                             $product = $item->itemable;
                             if (! $product) {
                                 continue;
@@ -1192,7 +1440,8 @@ class WorkOrderController extends Controller
                                 $branch->id,
                                 $item->quantity,
                                 $workOrder->id,
-                                auth()->id()
+                                auth()->id(),
+                                $item->isMaterial() && $item->allow_negative_stock
                             );
                             $stockTouched = true;
                         }
@@ -1311,7 +1560,10 @@ class WorkOrderController extends Controller
 
     private function recalculateTotals(WorkOrder $workOrder)
     {
-        $total = $workOrder->items()->sum('total');
+        // is_billable=false — материал на услугу (CLAUDE.md «Материалы на
+        // услугу»), скрытый от клиента: не входит в сумму к оплате, только
+        // в базу ЗП/будущую маржу.
+        $total = $workOrder->items()->where('is_billable', true)->sum('total');
 
         if ($workOrder->discount_is_manual) {
             $discount = $workOrder->discount_amount;

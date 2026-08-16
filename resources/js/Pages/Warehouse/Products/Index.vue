@@ -57,6 +57,7 @@ const form = useForm({
     base_price: '',
     markup_percent: '',
     discount_percent: '',
+    affects_payroll_by_default: true,
 });
 
 const formatMoney = (cents) => {
@@ -174,11 +175,13 @@ const openModal = (product = null) => {
         form.base_price = product.base_price ? product.base_price / 100 : '';
         form.markup_percent = product.markup_percent ?? '';
         form.discount_percent = product.discount_percent ?? '';
+        form.affects_payroll_by_default = product.affects_payroll_by_default !== false;
     } else {
         form.reset();
         form.is_active = true;
         form.unit = 'шт';
         form.accounting_type = 'average';
+        form.affects_payroll_by_default = true;
     }
     isModalOpen.value = true;
 };
@@ -469,6 +472,18 @@ const submitCategory = () => {
                             <label class="ml-2.5 block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.is_active = !form.is_active">
                                 Товар активен
                             </label>
+                        </div>
+
+                        <div class="flex items-start pt-2">
+                            <div @click="form.affects_payroll_by_default = !form.affects_payroll_by_default" :class="[form.affects_payroll_by_default ? 'bg-success' : 'bg-gray-200 dark:bg-gray-700', 'flex items-center h-5 w-9 rounded-full cursor-pointer transition-all duration-200 relative shrink-0 mt-0.5']">
+                                <div :class="[form.affects_payroll_by_default ? 'translate-x-4' : 'translate-x-1', 'h-3.5 w-3.5 bg-white rounded-full shadow transition-all duration-200 absolute']"></div>
+                            </div>
+                            <div class="ml-2.5">
+                                <label class="block text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer" @click="form.affects_payroll_by_default = !form.affects_payroll_by_default">
+                                    Учитывать при расчёте ЗП по умолчанию
+                                </label>
+                                <p class="text-[11px] text-gray-400 mt-0.5">Когда этот товар добавляют на заказ как материал, потраченный на услугу (CLAUDE.md «Материалы на услугу»), вычитать его стоимость из базы ЗП мастера по умолчанию — можно переопределить на каждом заказе отдельно.</p>
+                            </div>
                         </div>
                     </div>
 

@@ -8,8 +8,12 @@ import AssigneeMultiSelect from '@/Components/AssigneeMultiSelect.vue';
 import CollapsiblePanel from '@/Components/CollapsiblePanel.vue';
 import ActivityTimeline from '@/Components/ActivityTimeline.vue';
 import WorkOrderItemPayoutModal from '@/Components/WorkOrderItemPayoutModal.vue';
+import WorkOrderItemMaterialSettingsModal from '@/Components/WorkOrderItemMaterialSettingsModal.vue';
+import AddMaterialModal from '@/Components/AddMaterialModal.vue';
+import ServiceMaterialAutoAddModal from '@/Components/ServiceMaterialAutoAddModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import PointBadge from '@/Components/PointBadge.vue';
+import Dropdown from '@/Components/Dropdown.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
@@ -30,6 +34,7 @@ const props = defineProps({
     businessDirections: Array,
     serviceCategories: Array,
     productCategories: Array,
+    serviceMaterialAutoAddMode: { type: String, default: 'confirm' },
     employees: Array,
     contractors: { type: Array, default: () => [] },
     workOrderStatuses: { type: Array, default: () => [] },
@@ -140,6 +145,75 @@ const closePayoutModal = () => {
     isPayoutModalOpen.value = false;
     payoutItem.value = null;
     refreshPayrollPreviewIfLoaded();
+};
+
+// --- Материалы на услугу (CLAUDE.md «Материалы на услугу») ---
+const isMaterialSettingsModalOpen = ref(false);
+const materialSettingsItem = ref(null);
+
+const openMaterialSettingsModal = (item) => {
+    materialSettingsItem.value = item;
+    isMaterialSettingsModalOpen.value = true;
+};
+
+const closeMaterialSettingsModal = () => {
+    isMaterialSettingsModalOpen.value = false;
+    materialSettingsItem.value = null;
+};
+
+const isAddMaterialModalOpen = ref(false);
+const addMaterialServiceItem = ref(null);
+
+const openAddMaterialModal = (serviceItem) => {
+    addMaterialServiceItem.value = serviceItem;
+    isAddMaterialModalOpen.value = true;
+};
+
+const closeAddMaterialModal = () => {
+    isAddMaterialModalOpen.value = false;
+    addMaterialServiceItem.value = null;
+};
+
+const isAutoAddModalOpen = ref(false);
+const autoAddServiceItem = ref(null);
+const autoAddDefaultMaterials = ref([]);
+
+const closeAutoAddModal = () => {
+    isAutoAddModalOpen.value = false;
+    autoAddServiceItem.value = null;
+    autoAddDefaultMaterials.value = [];
+};
+
+// Вызывается ПОСЛЕ успешного добавления услуги в заказ (см. addItemDirect()
+// и submitItem() — оба места, где услуга реально может быть добавлена,
+// см. CLAUDE.md о живом баге "цена в двух местах" с тем же классом риска).
+// Новая позиция ищется диффом: та из workOrder.items с этим itemable_id,
+// у которой максимальный id (только что созданная).
+const maybeTriggerMaterialAutoAdd = (catalogServiceId) => {
+    if (props.serviceMaterialAutoAddMode === 'off' || !catalogServiceId) return;
+
+    const service = props.services.find(s => s.id === catalogServiceId);
+    const defaultMaterials = service?.default_materials || [];
+    if (defaultMaterials.length === 0) return;
+
+    const candidates = (props.workOrder.items || []).filter(
+        i => i.itemable_type.includes('Service') && i.itemable_id === catalogServiceId
+    );
+    const newItem = candidates.reduce((max, i) => (!max || i.id > max.id ? i : max), null);
+    if (!newItem) return;
+
+    if (props.serviceMaterialAutoAddMode === 'confirm') {
+        autoAddServiceItem.value = newItem;
+        autoAddDefaultMaterials.value = defaultMaterials;
+        isAutoAddModalOpen.value = true;
+    } else {
+        // silent — без диалога, но нехватка на складе всё равно не блокирует
+        // добавление услуги: сервер молча пропустит недостающий материал и
+        // запишет это в «Историю» заказа (см. autoAddMaterials()).
+        router.post(route('operations.work-orders.items.materials.auto-add', [props.workOrder.id, newItem.id]), {
+            materials: defaultMaterials.map(m => ({ product_id: m.product_id, quantity: Number(m.quantity) })),
+        }, { preserveScroll: true });
+    }
 };
 
 const statusColorClasses = {
@@ -330,6 +404,12 @@ const groupedDrawerProducts = computed(() => {
     return Object.values(groups);
 });
 
+// Опции для SearchableSelect в AddMaterialModal (ручное добавление материала).
+const materialProductOptions = computed(() => (props.products || []).map(p => ({
+    value: p.id,
+    label: getLocalizedLabel(p.name) + (p.sku ? ` (${p.sku})` : ''),
+})));
+
 // Добавление позиции напрямую из слайдера без закрытия
 const addItemDirect = (type, item) => {
     let finalPrice = 0;
@@ -367,6 +447,9 @@ const addItemDirect = (type, item) => {
         preserveScroll: true,
         onSuccess: () => {
             triggerToast(`"${name}" добавлено в заказ!`);
+            if (type === 'service') {
+                maybeTriggerMaterialAutoAdd(item.id);
+            }
         }
     });
 };
@@ -442,8 +525,16 @@ const closeItemModal = () => {
 };
 
 const submitItem = () => {
+    const wasService = itemForm.itemable_type === 'service';
+    const catalogServiceId = itemForm.itemable_id;
+
     itemForm.post(route('operations.work-orders.items.store', props.workOrder.id), {
-        onSuccess: () => closeItemModal(),
+        onSuccess: () => {
+            closeItemModal();
+            if (wasService) {
+                maybeTriggerMaterialAutoAdd(catalogServiceId);
+            }
+        },
     });
 };
 
@@ -465,9 +556,29 @@ const onItemsReordered = () => {
     }, { preserveScroll: true, preserveState: true });
 };
 
-const autoSortItems = () => {
-    router.post(route('operations.work-orders.items.auto-sort', props.workOrder.id), {}, { preserveScroll: true });
+const autoSortItems = (mode) => {
+    router.post(route('operations.work-orders.items.auto-sort', props.workOrder.id), { mode }, { preserveScroll: true });
 };
+
+// Название услуги, к которой привязан материал — материалы после сортировки "сначала услуги, затем
+// материалы" оказываются далеко от своей услуги, и без явной подписи непонятно, к чему они относятся.
+const parentItemName = (item) => {
+    if (!item.linked_item_id) return null;
+    const parent = (props.workOrder.items || []).find(i => i.id === item.linked_item_id);
+    return parent ? parent.name : null;
+};
+
+// Фильтр корзины в дровере "Пакетный набор услуг и товаров" — при большом составе заказа
+// сложно разобраться, где услуги, а где товары/материалы вперемешку.
+const cartFilter = ref('all'); // 'all' | 'service' | 'product'
+const cartServiceCount = computed(() => (props.workOrder.items || []).filter(i => i.itemable_type.includes('Service')).length);
+const cartProductCount = computed(() => (props.workOrder.items || []).filter(i => !i.itemable_type.includes('Service')).length);
+const filteredCartItems = computed(() => {
+    const items = props.workOrder.items || [];
+    if (cartFilter.value === 'service') return items.filter(i => i.itemable_type.includes('Service'));
+    if (cartFilter.value === 'product') return items.filter(i => !i.itemable_type.includes('Service'));
+    return items;
+});
 
 watch(() => itemForm.itemable_id, (newId) => {
     if (!newId) return;
@@ -938,14 +1049,39 @@ const formatMoney = (amount) => {
                                 <button v-if="workOrder.status !== 'completed'" @click="openItemModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5">
                                     <i class="ri-search-line"></i> Быстрый поиск
                                 </button>
-                                <button
+                                <Dropdown
                                     v-if="workOrder.status !== 'completed' && workOrder.items && workOrder.items.length > 1"
-                                    @click="autoSortItems"
-                                    title="Услуги сверху, товары снизу"
-                                    class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5"
+                                    align="right"
+                                    width="80"
+                                    content-classes="w-80 py-1 bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700"
                                 >
-                                    <i class="ri-sort-desc"></i> Упорядочить
-                                </button>
+                                    <template #trigger>
+                                        <button
+                                            title="Упорядочить позиции"
+                                            class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5"
+                                        >
+                                            <i class="ri-sort-desc"></i> Упорядочить
+                                        </button>
+                                    </template>
+                                    <template #content>
+                                        <button
+                                            type="button"
+                                            @click="autoSortItems('grouped')"
+                                            class="block w-full px-4 py-2.5 text-start text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        >
+                                            <div class="font-medium">Сначала услуги, затем материалы</div>
+                                            <div class="text-[11px] text-gray-400 mt-0.5">Все услуги — одним блоком сверху, товары и материалы — снизу</div>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="autoSortItems('nested')"
+                                            class="block w-full px-4 py-2.5 text-start text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        >
+                                            <div class="font-medium">Материалы после своей услуги</div>
+                                            <div class="text-[11px] text-gray-400 mt-0.5">После каждой услуги сразу идут прикреплённые к ней материалы, затем следующая услуга</div>
+                                        </button>
+                                    </template>
+                                </Dropdown>
                             </div>
                         </div>
                         
@@ -985,10 +1121,12 @@ const formatMoney = (amount) => {
                                             <td class="py-3 px-2 text-center">
                                                 <i v-if="workOrder.status !== 'completed'" class="ri-draggable item-drag-handle text-gray-400 cursor-grab active:cursor-grabbing" title="Перетащить для сортировки"></i>
                                             </td>
-                                            <td class="py-3 px-3 text-sm font-medium text-gray-800 dark:text-gray-200">
+                                            <td class="py-3 px-3 text-sm font-medium text-gray-800 dark:text-gray-200" :class="item.linked_item_id ? 'pl-8' : ''">
                                                 <div>{{ item.name }}</div>
+                                                <div v-if="item.linked_item_id" class="text-[11px] text-gray-400 font-normal mt-0.5">к услуге «{{ parentItemName(item) }}»</div>
                                                 <div class="mt-1">
-                                                    <span v-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 uppercase tracking-wider"><i class="ri-tools-line"></i> Услуга</span>
+                                                    <span v-if="item.linked_item_id" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 uppercase tracking-wider"><i class="ri-flask-line"></i> Материал<span v-if="!item.is_billable" class="normal-case font-normal opacity-70"> · скрыт</span></span>
+                                                    <span v-else-if="item.itemable_type.includes('Service')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 uppercase tracking-wider"><i class="ri-tools-line"></i> Услуга</span>
                                                     <span v-else class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 uppercase tracking-wider"><i class="ri-box-3-line"></i> Товар</span>
                                                 </div>
                                             </td>
@@ -1015,6 +1153,8 @@ const formatMoney = (amount) => {
                                             <td class="py-3 px-3 text-sm font-bold text-gray-800 dark:text-gray-200 text-right whitespace-nowrap">{{ formatMoney(item.total) }}</td>
                                             <td class="py-3 px-3 text-sm text-right whitespace-nowrap">
                                                 <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-team-line text-lg"></i></button>
+                                                <button v-if="item.itemable_type.includes('Service')" @click="openAddMaterialModal(item)" title="Добавить материал к услуге" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-flask-line text-lg"></i></button>
+                                                <button v-if="item.linked_item_id" @click="openMaterialSettingsModal(item)" title="Настройки материала" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-settings-3-line text-lg"></i></button>
                                                 <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                             </td>
                                         </tr>
@@ -1412,19 +1552,50 @@ const formatMoney = (amount) => {
 
                     <!-- Правая часть (8 столбцов / 2/3): Живая корзина состава заказа -->
                     <div class="col-span-12 lg:col-span-8 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col h-full overflow-hidden">
-                        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Состав заказа ({{ workOrder.items?.length || 0 }})</span>
+                        <div class="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-100/50 dark:bg-gray-800/50 flex justify-between items-center gap-3 flex-wrap">
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <span class="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Состав заказа ({{ workOrder.items?.length || 0 }})</span>
+                                <div class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden text-[11px] font-semibold">
+                                    <button
+                                        type="button"
+                                        @click="cartFilter = 'all'"
+                                        :class="cartFilter === 'all' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                        class="px-2.5 py-1 transition-colors"
+                                    >Все ({{ workOrder.items?.length || 0 }})</button>
+                                    <button
+                                        type="button"
+                                        @click="cartFilter = 'service'"
+                                        :class="cartFilter === 'service' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                        class="px-2.5 py-1 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                                    >Услуги ({{ cartServiceCount }})</button>
+                                    <button
+                                        type="button"
+                                        @click="cartFilter = 'product'"
+                                        :class="cartFilter === 'product' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                        class="px-2.5 py-1 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                                    >Товары ({{ cartProductCount }})</button>
+                                </div>
+                            </div>
                             <span class="text-xs font-bold text-primary">{{ formatMoney(workOrder.final_amount) }}</span>
                         </div>
 
                         <!-- Список добавленных позиций с прямым редактированием -->
-                        <div class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar">
-                            <div v-for="item in workOrder.items" :key="item.id" class="p-3 bg-white dark:bg-[#313a46] border border-gray-200 dark:border-gray-700 rounded-md shadow-sm space-y-2.5">
+                        <div v-if="filteredCartItems.length === 0" class="flex-1 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400 p-6 text-center">
+                            {{ cartFilter === 'service' ? 'В заказе нет услуг' : cartFilter === 'product' ? 'В заказе нет товаров и материалов' : 'В заказ ещё ничего не добавлено' }}
+                        </div>
+                        <div v-else class="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar">
+                            <div
+                                v-for="item in filteredCartItems"
+                                :key="item.id"
+                                :class="[item.linked_item_id ? 'ml-4 border-dashed opacity-90' : '', 'p-3 bg-white dark:bg-[#313a46] border border-gray-200 dark:border-gray-700 rounded-md shadow-sm space-y-2.5']"
+                            >
                                 <!-- Наименование, количество и сумма — в одну строку -->
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="min-w-0">
                                         <p class="text-sm font-bold text-gray-800 dark:text-gray-200 leading-tight truncate" :title="item.name">{{ item.name }}</p>
-                                        <span v-if="item.itemable_type.includes('Service')" class="text-[11px] text-blue-600 font-semibold uppercase">Услуга</span>
+                                        <p v-if="item.linked_item_id" class="text-[11px] text-gray-400 leading-tight truncate" :title="parentItemName(item)">к услуге «{{ parentItemName(item) }}»</p>
+                                        <span v-if="item.linked_item_id" class="text-[11px] text-purple-600 font-semibold uppercase inline-flex items-center gap-1"><i class="ri-flask-line"></i> Материал<span v-if="!item.is_billable" class="text-gray-400 normal-case font-normal"> · скрыт от клиента</span></span>
+                                        <span v-else-if="item.itemable_type.includes('Service')" class="text-[11px] text-blue-600 font-semibold uppercase">Услуга</span>
                                         <span v-else class="text-[11px] text-orange-600 font-semibold uppercase">Товар</span>
                                     </div>
                                     <div class="flex items-center gap-1.5 shrink-0">
@@ -1450,6 +1621,8 @@ const formatMoney = (amount) => {
                                         <span class="text-gray-400">=</span>
                                         <span class="text-sm font-bold text-primary w-20 text-right">{{ formatMoney(item.total) }}</span>
                                         <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-team-line text-lg"></i></button>
+                                        <button v-if="item.itemable_type.includes('Service')" @click="openAddMaterialModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Добавить материал к услуге"><i class="ri-flask-line text-lg"></i></button>
+                                        <button v-if="item.linked_item_id" @click="openMaterialSettingsModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настройки материала"><i class="ri-settings-3-line text-lg"></i></button>
                                         <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-lg"></i></button>
                                     </div>
                                 </div>
@@ -1990,6 +2163,29 @@ const formatMoney = (amount) => {
             :work-order="workOrder"
             :employees="employees"
             @close="closePayoutModal"
+        />
+
+        <WorkOrderItemMaterialSettingsModal
+            :show="isMaterialSettingsModalOpen"
+            :item="materialSettingsItem"
+            :work-order="workOrder"
+            @close="closeMaterialSettingsModal"
+        />
+
+        <AddMaterialModal
+            :show="isAddMaterialModalOpen"
+            :service-item="addMaterialServiceItem"
+            :work-order="workOrder"
+            :product-options="materialProductOptions"
+            @close="closeAddMaterialModal"
+        />
+
+        <ServiceMaterialAutoAddModal
+            :show="isAutoAddModalOpen"
+            :service-item="autoAddServiceItem"
+            :work-order="workOrder"
+            :default-materials="autoAddDefaultMaterials"
+            @close="closeAutoAddModal"
         />
 
     </AuthenticatedLayout>

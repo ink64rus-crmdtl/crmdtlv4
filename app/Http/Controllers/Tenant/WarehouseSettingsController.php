@@ -26,6 +26,10 @@ class WarehouseSettingsController extends Controller
         return Inertia::render('Settings/Warehouse/Index', [
             'warehouseMode' => $mode,
             'warehouseEnabled' => WarehouseResolver::isEnabled(),
+            // Автодобавление материала на услугу (CLAUDE.md «Материалы на
+            // услугу») — доступно и без склада (себестоимость тогда вводится
+            // вручную), поэтому дефолт не зависит от warehouseEnabled.
+            'serviceMaterialAutoAddMode' => Setting::where('key', 'service_material_auto_add_mode')->value('value') ?? 'confirm',
             'warehouses' => Warehouse::with('branches:id,name')
                 ->orderBy('name')
                 ->get(['id', 'name', 'owner_type', 'owner_id', 'is_default', 'is_active']),
@@ -38,6 +42,7 @@ class WarehouseSettingsController extends Controller
         $validated = $request->validate([
             'warehouse_mode' => ['required', 'string', 'in:per_branch,shared,mixed'],
             'warehouse_enabled' => ['boolean'],
+            'service_material_auto_add_mode' => ['required', 'string', 'in:off,confirm,silent'],
         ]);
 
         Setting::updateOrCreate(
@@ -48,6 +53,11 @@ class WarehouseSettingsController extends Controller
         Setting::updateOrCreate(
             ['key' => 'warehouse_enabled'],
             ['value' => ($validated['warehouse_enabled'] ?? true) ? '1' : '0']
+        );
+
+        Setting::updateOrCreate(
+            ['key' => 'service_material_auto_add_mode'],
+            ['value' => $validated['service_material_auto_add_mode']]
         );
 
         return redirect()->back()->with('success', 'Настройки склада успешно сохранены');

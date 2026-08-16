@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ExportEntitiesJob;
 use App\Models\BusinessDirection;
 use App\Models\Lookup;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceCategory;
+use App\Models\ServiceDefaultMaterial;
 use App\Models\Setting;
 use App\Services\QueryFilterService;
 use Illuminate\Http\Request;
@@ -17,7 +19,9 @@ class ServiceController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Service::with(['category', 'businessDirection']);
+        // defaultMaterials — правило автодобавления материала (CLAUDE.md
+        // «Материалы на услугу»), нужно фронту для CRUD прямо на карточке услуги.
+        $query = Service::with(['category', 'businessDirection', 'defaultMaterials.product:id,name,unit']);
 
         $query = QueryFilterService::apply(
             $query,
@@ -49,7 +53,55 @@ class ServiceController extends Controller
             'pricingBasis' => $pricingBasis,
             'lookups' => $lookups,
             'filters' => $request->all(),
+            'materialProducts' => Product::where('is_active', true)->get(['id', 'name', 'unit']),
         ]);
+    }
+
+    /**
+     * Материал по умолчанию для услуги (ServiceDefaultMaterial, CLAUDE.md
+     * «Материалы на услугу») — правило автодобавления при добавлении услуги
+     * в заказ, не сама позиция заказа.
+     */
+    public function storeDefaultMaterial(Request $request, Service $service)
+    {
+        $validated = $request->validate([
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'quantity' => ['required', 'numeric', 'min:0.001'],
+        ]);
+
+        $existing = ServiceDefaultMaterial::where('service_id', $service->id)
+            ->where('product_id', $validated['product_id'])
+            ->first();
+
+        if ($existing) {
+            return redirect()->back()->withErrors(['product_id' => 'Этот материал уже добавлен в правило — измените количество у существующей строки.']);
+        }
+
+        ServiceDefaultMaterial::create([
+            'service_id' => $service->id,
+            'product_id' => $validated['product_id'],
+            'quantity' => $validated['quantity'],
+        ]);
+
+        return redirect()->back()->with('success', 'Материал добавлен в правило автодобавления');
+    }
+
+    public function updateDefaultMaterial(Request $request, ServiceDefaultMaterial $material)
+    {
+        $validated = $request->validate([
+            'quantity' => ['required', 'numeric', 'min:0.001'],
+        ]);
+
+        $material->update($validated);
+
+        return redirect()->back()->with('success', 'Количество обновлено');
+    }
+
+    public function destroyDefaultMaterial(ServiceDefaultMaterial $material)
+    {
+        $material->delete();
+
+        return redirect()->back()->with('success', 'Материал убран из правила автодобавления');
     }
 
     public function store(Request $request)

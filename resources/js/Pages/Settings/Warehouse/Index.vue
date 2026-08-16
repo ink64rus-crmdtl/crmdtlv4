@@ -12,6 +12,7 @@ import { useClientSort } from '@/Composables/useClientSort.js';
 const props = defineProps({
     warehouseMode: String,
     warehouseEnabled: { type: Boolean, default: true },
+    serviceMaterialAutoAddMode: { type: String, default: 'confirm' },
     warehouses: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
 });
@@ -19,6 +20,7 @@ const props = defineProps({
 const form = useForm({
     warehouse_mode: props.warehouseMode || 'per_branch',
     warehouse_enabled: props.warehouseEnabled,
+    service_material_auto_add_mode: props.serviceMaterialAutoAddMode || 'confirm',
 });
 
 const submit = () => {
@@ -243,10 +245,45 @@ const deleteWarehouse = (warehouse) => {
 
                     </div>
 
+                    <!-- Автодобавление материала на услугу -->
+                    <div class="pt-6 mt-6 border-t border-gray-200 dark:border-gray-700">
+                        <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">Автодобавление материалов</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                            Если у услуги в каталоге заданы материалы по умолчанию (Настройки → Услуги), при её добавлении в заказ система может сама предложить или сразу добавить их.
+                            Работает и без складского учёта — тогда себестоимость материала вводится вручную.
+                        </p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <label :class="[form.service_material_auto_add_mode === 'off' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-4 shadow-sm transition-all']">
+                                <input type="radio" v-model="form.service_material_auto_add_mode" value="off" class="sr-only" />
+                                <span class="flex flex-col">
+                                    <span class="block text-sm font-semibold text-gray-900 dark:text-white mb-1"><i class="ri-close-circle-line mr-1"></i> Выключено</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Материалы добавляются только вручную.</span>
+                                </span>
+                                <i v-if="form.service_material_auto_add_mode === 'off'" class="ri-checkbox-circle-fill text-primary text-xl absolute top-4 right-4"></i>
+                            </label>
+                            <label :class="[form.service_material_auto_add_mode === 'confirm' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-4 shadow-sm transition-all']">
+                                <input type="radio" v-model="form.service_material_auto_add_mode" value="confirm" class="sr-only" />
+                                <span class="flex flex-col">
+                                    <span class="block text-sm font-semibold text-gray-900 dark:text-white mb-1"><i class="ri-question-line mr-1"></i> Спрашивать</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">При добавлении услуги — список материалов на подтверждение.</span>
+                                </span>
+                                <i v-if="form.service_material_auto_add_mode === 'confirm'" class="ri-checkbox-circle-fill text-primary text-xl absolute top-4 right-4"></i>
+                            </label>
+                            <label :class="[form.service_material_auto_add_mode === 'silent' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-[#2d333c]', 'relative flex cursor-pointer rounded-lg border p-4 shadow-sm transition-all']">
+                                <input type="radio" v-model="form.service_material_auto_add_mode" value="silent" class="sr-only" />
+                                <span class="flex flex-col">
+                                    <span class="block text-sm font-semibold text-gray-900 dark:text-white mb-1"><i class="ri-flashlight-line mr-1"></i> Автоматически</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">Добавляются сразу, без вопроса. Нехватка на складе — пропускается, запись в Истории заказа.</span>
+                                </span>
+                                <i v-if="form.service_material_auto_add_mode === 'silent'" class="ri-checkbox-circle-fill text-primary text-xl absolute top-4 right-4"></i>
+                            </label>
+                        </div>
+                    </div>
+
                     <div class="flex justify-end pt-6 border-t border-gray-200 dark:border-gray-700">
-                        <button 
-                            type="submit" 
-                            :disabled="form.processing || !form.isDirty" 
+                        <button
+                            type="submit"
+                            :disabled="form.processing || !form.isDirty"
                             class="inline-flex items-center justify-center rounded px-6 py-2.5 text-sm font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50 tracking-wide"
                         >
                             <span v-if="form.processing">Сохранение...</span>
