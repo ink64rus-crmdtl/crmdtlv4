@@ -11,6 +11,7 @@ import WorkOrderItemPayoutModal from '@/Components/WorkOrderItemPayoutModal.vue'
 import WorkOrderItemMaterialSettingsModal from '@/Components/WorkOrderItemMaterialSettingsModal.vue';
 import AddMaterialModal from '@/Components/AddMaterialModal.vue';
 import ServiceMaterialAutoAddModal from '@/Components/ServiceMaterialAutoAddModal.vue';
+import WorkOrderReopenModal from '@/Components/WorkOrderReopenModal.vue';
 import StatusBadgeSelect from '@/Components/StatusBadgeSelect.vue';
 import PointBadge from '@/Components/PointBadge.vue';
 import Dropdown from '@/Components/Dropdown.vue';
@@ -45,6 +46,7 @@ const props = defineProps({
     activities: { type: Array, default: () => [] },
     comments: { type: Array, default: () => [] },
     documentTemplates: { type: Array, default: () => [] },
+    wasReopenedAfterCompletion: { type: Boolean, default: false },
 });
 
 const page = usePage();
@@ -879,14 +881,30 @@ const completeOrder = () => {
 // побочные эффекты (списание склада, расчёт ЗП), которые делает только
 // completeOrder() — обычный PATCH их не выполняет, поэтому выбор этого пункта
 // в списке перенаправляется на тот же поток, что и кнопка "Завершить заказ".
+// Уход СО статуса "Выдан" (completed) — тоже особый случай: сервер требует
+// обязательный комментарий, поэтому вместо прямого PATCH открываем модалку
+// (CLAUDE.md «Закрытие заказ-наряда после выдачи»).
+const isReopenModalOpen = ref(false);
+const reopenTargetStatus = ref('');
+
 const changeStatus = (status) => {
     if (status === 'completed') {
         completeOrder();
         return;
     }
+    if (props.workOrder.status === 'completed') {
+        reopenTargetStatus.value = status;
+        isReopenModalOpen.value = true;
+        return;
+    }
     router.patch(route('operations.work-orders.status.update', props.workOrder.id), { status }, {
         preserveScroll: true,
     });
+};
+
+const closeReopenModal = () => {
+    isReopenModalOpen.value = false;
+    reopenTargetStatus.value = '';
 };
 
 // Вспомогательные функции
@@ -924,7 +942,7 @@ const formatMoney = (amount) => {
                     <button v-if="workOrder.status !== 'completed'" @click="completeOrder" :disabled="completeOrderForm.processing" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success text-white hover:bg-success-600 shadow-sm disabled:opacity-50">
                         <i class="ri-check-double-line mr-1.5"></i> Завершить заказ
                     </button>
-                    <button @click="openModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                    <button v-if="workOrder.status !== 'completed'" @click="openModal" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
                         <i class="ri-pencil-line mr-1.5"></i> Редактировать форму
                     </button>
                 </div>
@@ -938,6 +956,14 @@ const formatMoney = (amount) => {
                 <p class="font-bold mb-1">Ошибка выполнения операции:</p>
                 <p>{{ page.props.errors.error }}</p>
             </div>
+        </div>
+
+        <!-- Заказ хотя бы раз возвращался на доработку после "Выдан" (CLAUDE.md
+             «Закрытие заказ-наряда после выдачи») — производный факт из Истории,
+             не пропадает даже после повторной выдачи. -->
+        <div v-if="wasReopenedAfterCompletion" class="w-[99%] mx-auto mb-4 bg-warning/10 border border-warning/30 rounded-md p-4 flex items-start gap-3">
+            <i class="ri-history-line text-warning text-lg shrink-0 mt-0.5"></i>
+            <p class="text-sm text-gray-700 dark:text-gray-300">Заказ изменялся после выдачи клиенту — как минимум один раз возвращался на доработку. Подробности и причины — во вкладке «История».</p>
         </div>
 
         <!-- TRI-STATE 2: Карточка (w-[99%] mx-auto для Fluid-дизайна) -->
@@ -1177,9 +1203,9 @@ const formatMoney = (amount) => {
                                             </td>
                                             <td class="py-3 px-3 text-sm font-bold text-gray-800 dark:text-gray-200 text-right whitespace-nowrap">{{ formatMoney(item.total) }}</td>
                                             <td class="py-3 px-3 text-sm text-right whitespace-nowrap">
-                                                <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-team-line text-lg"></i></button>
-                                                <button v-if="item.itemable_type.includes('Service')" @click="openAddMaterialModal(item)" title="Добавить материал к услуге" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-flask-line text-lg"></i></button>
-                                                <button v-if="canConfigureItemStock(item)" @click="openMaterialSettingsModal(item)" :title="item.linked_item_id ? 'Настройки материала' : 'Настройки списания'" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-settings-3-line text-lg"></i></button>
+                                                <button v-if="item.itemable_type.includes('Service') && workOrder.status !== 'completed'" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-team-line text-lg"></i></button>
+                                                <button v-if="item.itemable_type.includes('Service') && workOrder.status !== 'completed'" @click="openAddMaterialModal(item)" title="Добавить материал к услуге" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-flask-line text-lg"></i></button>
+                                                <button v-if="canConfigureItemStock(item) && workOrder.status !== 'completed'" @click="openMaterialSettingsModal(item)" :title="item.linked_item_id ? 'Настройки материала' : 'Настройки списания'" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-settings-3-line text-lg"></i></button>
                                                 <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                             </td>
                                         </tr>
@@ -1370,9 +1396,11 @@ const formatMoney = (amount) => {
                         <EmployeeMultiSelect
                             :model-value="(workOrder.admins || []).map(e => e.id)"
                             :options="adminEligibleEmployees"
+                            :disabled="workOrder.status === 'completed'"
                             @update:model-value="updateOrderAdmins"
                         />
-                        <p class="text-xs text-gray-400">Может быть несколько — по умолчанию делят ЗП поровну на каждой услуге заказа. ЗП считается по каждой услуге заказа. Для отдельной услуги можно назначить других администраторов, настроить доли или убрать их — клик на позицию в таблице услуг.</p>
+                        <p v-if="workOrder.status === 'completed'" class="text-xs text-warning">Заказ выдан — состав администраторов зафиксирован, изменение недоступно.</p>
+                        <p v-else class="text-xs text-gray-400">Может быть несколько — по умолчанию делят ЗП поровну на каждой услуге заказа. ЗП считается по каждой услуге заказа. Для отдельной услуги можно назначить других администраторов, настроить доли или убрать их — клик на позицию в таблице услуг.</p>
                     </div>
                 </div>
 
@@ -1651,9 +1679,9 @@ const formatMoney = (amount) => {
                                         />
                                         <span class="text-gray-400">=</span>
                                         <span class="text-sm font-bold text-primary w-20 text-right">{{ formatMoney(item.total) }}</span>
-                                        <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-team-line text-lg"></i></button>
-                                        <button v-if="item.itemable_type.includes('Service')" @click="openAddMaterialModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Добавить материал к услуге"><i class="ri-flask-line text-lg"></i></button>
-                                        <button v-if="canConfigureItemStock(item)" @click="openMaterialSettingsModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" :title="item.linked_item_id ? 'Настройки материала' : 'Настройки списания'"><i class="ri-settings-3-line text-lg"></i></button>
+                                        <button v-if="item.itemable_type.includes('Service') && workOrder.status !== 'completed'" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-team-line text-lg"></i></button>
+                                        <button v-if="item.itemable_type.includes('Service') && workOrder.status !== 'completed'" @click="openAddMaterialModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Добавить материал к услуге"><i class="ri-flask-line text-lg"></i></button>
+                                        <button v-if="canConfigureItemStock(item) && workOrder.status !== 'completed'" @click="openMaterialSettingsModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" :title="item.linked_item_id ? 'Настройки материала' : 'Настройки списания'"><i class="ri-settings-3-line text-lg"></i></button>
                                         <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-lg"></i></button>
                                     </div>
                                 </div>
@@ -2218,6 +2246,14 @@ const formatMoney = (amount) => {
             :work-order="workOrder"
             :default-materials="autoAddDefaultMaterials"
             @close="closeAutoAddModal"
+        />
+
+        <WorkOrderReopenModal
+            :show="isReopenModalOpen"
+            :work-order="workOrder"
+            :target-status="reopenTargetStatus"
+            :statuses="workOrderStatuses"
+            @close="closeReopenModal"
         />
 
     </AuthenticatedLayout>

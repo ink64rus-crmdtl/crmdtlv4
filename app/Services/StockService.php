@@ -9,6 +9,7 @@ use App\Models\ProductBatch;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Models\WorkOrder;
 use App\Services\Documents\DocumentPlaceholderService;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -367,6 +368,56 @@ class StockService
         }
 
         return (int) round($lineTotal * $rate / (100 + $rate));
+    }
+
+    /**
+     * Реверс ВСЕХ списаний конкретного заказ-наряда (type=out, work_order_id) — при
+     * возврате заказа с "Выдан" на доработку (CLAUDE.md, "Закрытие заказ-наряда после
+     * выдачи"). Полный реверс, не диффом: состав заказа при доработке может измениться
+     * как угодно, а при повторном завершении completeOrder() спишет заново по
+     * АКТУАЛЬНОМУ составу — частичная/дифф-логика здесь только добавила бы риск
+     * рассинхрона, не пользы.
+     *
+     * Реверсит движение ПО ЕГО СОБСТВЕННЫМ warehouse_id/product_batch_id (не
+     * пере-резолвит через WarehouseResolver::resolveFor() заново) — конфигурация
+     * склада могла измениться между списанием и возвратом, а реверсить нужно ровно
+     * то, что реально произошло, а не то, что резолвер выбрал бы сегодня.
+     *
+     * avg_cost НЕ откатывается назад — та же оговорка, что и у reverseReceipt():
+     * точный откат средней цены математически невозможен без переигровки всей
+     * истории движений после списания. Количество восстанавливается корректно
+     * независимо от порядка операций (чистое сложение), поэтому в отличие от
+     * reverseReceipt()/reverseItemStockEffect() здесь НЕ нужен guard на "партия уже
+     * тронута" — мы не удаляем партию, а просто прибавляем к current_quantity.
+     */
+    public static function reverseWorkOrderDeduction(WorkOrder $workOrder, ?int $userId = null): void
+    {
+        $movements = StockMovement::where('work_order_id', $workOrder->id)->where('type', 'out')->get();
+
+        foreach ($movements as $movement) {
+            StockMovement::create([
+                'warehouse_id' => $movement->warehouse_id,
+                'branch_id' => $movement->branch_id,
+                'product_id' => $movement->product_id,
+                'product_batch_id' => $movement->product_batch_id,
+                'work_order_id' => $workOrder->id,
+                'type' => 'out_reversal',
+                'quantity' => $movement->quantity,
+                'cost_price' => $movement->cost_price,
+                'created_by' => $userId,
+                'comment' => "Реверс списания по возврату заказа №{$workOrder->id} на доработку",
+            ]);
+
+            $balance = StockBalance::where('warehouse_id', $movement->warehouse_id)->where('product_id', $movement->product_id)->first();
+            if ($balance) {
+                $balance->quantity += $movement->quantity;
+                $balance->save();
+            }
+
+            if ($movement->product_batch_id) {
+                ProductBatch::where('id', $movement->product_batch_id)->increment('current_quantity', $movement->quantity);
+            }
+        }
     }
 
     /**

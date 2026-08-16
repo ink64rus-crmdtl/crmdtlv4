@@ -30,6 +30,7 @@ use App\Models\StockMovement;
 use App\Models\Vehicle;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
+use App\Models\Warehouse;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderItem;
 use App\Services\ActivityLogger;
@@ -52,6 +53,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Activitylog\Models\Activity;
 
 class WorkOrderController extends Controller
 {
@@ -299,6 +301,13 @@ class WorkOrderController extends Controller
             'comments' => $comments,
             'documentTemplates' => DocumentTemplate::where('entity_type', 'work_order')->where('is_active', true)->get(['id', 'name']),
             'serviceMaterialAutoAddMode' => Setting::where('key', 'service_material_auto_add_mode')->value('value') ?? 'confirm',
+            // Производный факт из Истории (не отдельная колонка — CLAUDE.md
+            // "Закрытие заказ-наряда после выдачи"): заказ хотя бы раз
+            // возвращали на доработку после "Выдан".
+            'wasReopenedAfterCompletion' => Activity::where('subject_type', WorkOrder::class)
+                ->where('subject_id', $workOrder->id)
+                ->where('event', 'reopened_after_completion')
+                ->exists(),
         ]);
     }
 
@@ -321,6 +330,20 @@ class WorkOrderController extends Controller
                 $fail('Выбранное юрлицо не привязано к этой локации.');
             }
         };
+    }
+
+    /**
+     * Заказ в статусе "Выдан" (= completed, см. CLAUDE.md "Закрытие заказ-наряда
+     * после выдачи") закрыт для любых правок состава/данных — вызывается первой
+     * строкой во всех мутирующих методах, кроме processPayment() (оплату можно
+     * принимать всегда) и updateStatus() (это единственная дверь, через которую
+     * заказ вообще может покинуть completed — там своя, более сложная логика).
+     */
+    private function assertNotLocked(WorkOrder $workOrder): void
+    {
+        if ($workOrder->status === 'completed') {
+            abort(403, 'Заказ выдан клиенту — состав и данные заказа менять нельзя. Чтобы внести правки, сначала верните заказ на доработку (смените статус).');
+        }
     }
 
     public function store(Request $request)
@@ -379,6 +402,8 @@ class WorkOrderController extends Controller
 
     public function update(Request $request, WorkOrder $workOrder)
     {
+        $this->assertNotLocked($workOrder);
+
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'legal_entity_id' => ['nullable', 'exists:legal_entities,id', $this->legalEntityBelongsToBranchRule($request)],
@@ -434,9 +459,50 @@ class WorkOrderController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
+            'reopen_comment' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        // "Выдан" — это completed (см. CLAUDE.md "Закрытие заказ-наряда после
+        // выдачи"), в этот статус можно попасть ТОЛЬКО через completeOrder() —
+        // только там корректно спишется склад и начислится ЗП. Обычный PATCH
+        // сюда не пускаем, даже если фронт (в обход штатного UI) его пришлёт.
+        if ($validated['status'] === 'completed') {
+            return redirect()->back()->withErrors(['status' => 'Перевести заказ в статус «Выдан» можно только кнопкой «Завершить заказ» — так корректно спишется склад и начислится ЗП.']);
+        }
+
         $previousStatus = $workOrder->status;
+        $wasCompleted = $previousStatus === 'completed';
+
+        // Возврат заказа на доработку (уход С "Выдан") — обязателен комментарий,
+        // блокировка при уже выплаченной ЗП (сознательно оставлено вне
+        // автоматики — деньги руками уже отданы, без ручного разбора это не
+        // трогаем) и полный откат склада/ещё не выплаченных начислений, иначе
+        // заказ и склад/ЗП молча разъедутся при повторном изменении состава.
+        if ($wasCompleted) {
+            $comment = trim((string) ($validated['reopen_comment'] ?? ''));
+            if ($comment === '') {
+                return redirect()->back()->withErrors(['reopen_comment' => 'Укажите причину возврата заказа на доработку.']);
+            }
+
+            if (Payroll::where('work_order_id', $workOrder->id)->where('status', 'paid')->exists()) {
+                return redirect()->back()->withErrors(['status' => 'По заказу уже выплачена часть зарплаты — автоматический возврат на доработку заблокирован. Обратитесь к администратору для ручного решения по выплаченным суммам.']);
+            }
+
+            DB::transaction(function () use ($workOrder, $comment, $validated) {
+                StockService::reverseWorkOrderDeduction($workOrder, auth()->id());
+
+                $canceledCount = Payroll::where('work_order_id', $workOrder->id)->where('status', 'pending')->update(['status' => 'canceled']);
+
+                $workOrder->update(['status' => $validated['status']]);
+
+                $statusLabel = Lookup::where('type', 'work_order_status')->where('value', $validated['status'])->value('label') ?? $validated['status'];
+                $suffix = $canceledCount > 0 ? " Начисленная ЗП ({$canceledCount} записей) отменена." : '';
+                ActivityLogger::log($workOrder, "Заказ №{$workOrder->id} возвращён на доработку (статус «{$statusLabel}»): {$comment}. Списание со склада отменено.{$suffix}", $this->workOrderLink($workOrder), 'reopened_after_completion');
+            });
+
+            return redirect()->back()->with('success', 'Заказ возвращён на доработку');
+        }
+
         $workOrder->update(['status' => $validated['status']]);
 
         $statusLabel = Lookup::where('type', 'work_order_status')->where('value', $validated['status'])->value('label') ?? $validated['status'];
@@ -494,6 +560,8 @@ class WorkOrderController extends Controller
      */
     public function updateAdmin(Request $request, WorkOrder $workOrder)
     {
+        $this->assertNotLocked($workOrder);
+
         $validated = $request->validate([
             'employee_ids' => ['array'],
             'employee_ids.*' => ['integer', 'exists:employees,id'],
@@ -532,6 +600,7 @@ class WorkOrderController extends Controller
         if ($item->work_order_id !== $workOrder->id) {
             abort(403);
         }
+        $this->assertNotLocked($workOrder);
 
         $validated = $request->validate([
             'admin_override' => ['required', 'string', 'in:inherit,custom,none'],
@@ -617,6 +686,7 @@ class WorkOrderController extends Controller
         if ($item->work_order_id !== $workOrder->id) {
             abort(403);
         }
+        $this->assertNotLocked($workOrder);
 
         // allow_negative_stock доступен любой позиции-товару (материал или обычный
         // товар на продажу — CLAUDE.md «Отдельные тумблеры... для материалов и для
@@ -768,6 +838,8 @@ class WorkOrderController extends Controller
 
     public function addItem(Request $request, WorkOrder $workOrder)
     {
+        $this->assertNotLocked($workOrder);
+
         $validated = $request->validate([
             'itemable_type' => ['required', 'string', 'in:service,product'],
             'itemable_id' => ['nullable', 'integer'],
@@ -912,6 +984,7 @@ class WorkOrderController extends Controller
         if ($serviceItem->work_order_id !== $workOrder->id) {
             abort(403);
         }
+        $this->assertNotLocked($workOrder);
 
         if ($serviceItem->isMaterial()) {
             abort(403, 'Материалы можно привязать только к услуге, не к другому материалу.');
@@ -1006,6 +1079,7 @@ class WorkOrderController extends Controller
         if ($item->work_order_id !== $workOrder->id) {
             abort(403);
         }
+        $this->assertNotLocked($workOrder);
 
         $validated = $request->validate([
             'employee_ids' => ['nullable', 'array'],
@@ -1165,6 +1239,7 @@ class WorkOrderController extends Controller
         if ($item->work_order_id !== $workOrder->id) {
             abort(403);
         }
+        $this->assertNotLocked($workOrder);
 
         $itemName = $item->name;
         $item->delete();
@@ -1183,6 +1258,8 @@ class WorkOrderController extends Controller
      */
     public function autoSortItems(Request $request, WorkOrder $workOrder)
     {
+        $this->assertNotLocked($workOrder);
+
         $validated = $request->validate([
             'mode' => ['nullable', 'string', 'in:grouped,nested'],
         ]);
@@ -1220,6 +1297,8 @@ class WorkOrderController extends Controller
 
     public function reorderItems(Request $request, WorkOrder $workOrder)
     {
+        $this->assertNotLocked($workOrder);
+
         $validated = $request->validate([
             'ids' => ['required', 'array'],
             'ids.*' => ['integer', 'exists:work_order_items,id'],
@@ -1238,6 +1317,8 @@ class WorkOrderController extends Controller
 
     public function updateDiscount(Request $request, WorkOrder $workOrder)
     {
+        $this->assertNotLocked($workOrder);
+
         $validated = $request->validate([
             'discount_amount' => ['required_if:auto,false', 'nullable', 'numeric', 'min:0'],
             'auto' => ['nullable', 'boolean'],
