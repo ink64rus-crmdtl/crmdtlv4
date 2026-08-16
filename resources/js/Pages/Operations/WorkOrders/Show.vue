@@ -27,6 +27,7 @@ const props = defineProps({
     vehicles: Array,
     services: Array,
     products: Array,
+    warehouses: { type: Array, default: () => [] },
     accounts: Array,
     customFieldDefs: Array,
     pricingBasis: String,
@@ -345,6 +346,28 @@ const getItemCountInOrder = (type, itemId) => {
         .reduce((sum, item) => sum + parseFloat(item.quantity), 0);
 };
 
+const warehouseEnabled = computed(() => page.props.warehouse_enabled !== false);
+
+// Фильтр каталога товаров/материалов по остаткам на складе — при включённом
+// складском учёте в списке добавления должны быть видны только позиции,
+// реально присутствующие на складе (не пустой каталог из карточек без остатка).
+// catalogWarehouseFilter = '' значит "любой склад" (суммарный остаток по всем
+// складам > 0); при нескольких активных складах в системе можно сузить до
+// остатка на конкретном складе — тогда используется только его баланс.
+const catalogWarehouseFilter = ref('');
+const productStockQuantity = (product, warehouseId) => {
+    const balances = product.stock_balances || [];
+    if (warehouseId) {
+        const match = balances.find(b => b.warehouse_id === Number(warehouseId));
+        return match ? parseFloat(match.quantity) : 0;
+    }
+    return balances.reduce((sum, b) => sum + parseFloat(b.quantity), 0);
+};
+const stockFilteredProducts = computed(() => {
+    if (!warehouseEnabled.value) return props.products || [];
+    return (props.products || []).filter(p => productStockQuantity(p, catalogWarehouseFilter.value) > 0);
+});
+
 // Фильтрация услуг в слайдере по поиску и направлению бизнеса
 const filteredDrawerServices = computed(() => {
     let list = props.services;
@@ -358,9 +381,9 @@ const filteredDrawerServices = computed(() => {
     return list;
 });
 
-// Фильтрация товаров в слайдере по поиску
+// Фильтрация товаров в слайдере по поиску (база — уже отфильтрованные по остатку на складе)
 const filteredDrawerProducts = computed(() => {
-    let list = props.products;
+    let list = stockFilteredProducts.value;
     if (drawerSearch.value) {
         const query = drawerSearch.value.toLowerCase();
         list = list.filter(p => getLocalizedLabel(p.name).toLowerCase().includes(query) || (p.sku && p.sku.toLowerCase().includes(query)));
@@ -403,12 +426,6 @@ const groupedDrawerProducts = computed(() => {
     });
     return Object.values(groups);
 });
-
-// Опции для SearchableSelect в AddMaterialModal (ручное добавление материала).
-const materialProductOptions = computed(() => (props.products || []).map(p => ({
-    value: p.id,
-    label: getLocalizedLabel(p.name) + (p.sku ? ` (${p.sku})` : ''),
-})));
 
 // Добавление позиции напрямую из слайдера без закрытия
 const addItemDirect = (type, item) => {
@@ -566,6 +583,14 @@ const parentItemName = (item) => {
     if (!item.linked_item_id) return null;
     const parent = (props.workOrder.items || []).find(i => i.id === item.linked_item_id);
     return parent ? parent.name : null;
+};
+
+// Иконка "Настройки списания" — у материала всегда (там ещё 4 тумблера про ЗП/видимость
+// клиенту), у обычного товара только если включён склад (иначе там нечего показывать,
+// единственный релевантный тумблер allow_negative_stock скрыт при выключенном складе).
+const canConfigureItemStock = (item) => {
+    if (item.linked_item_id) return true;
+    return !item.itemable_type.includes('Service') && warehouseEnabled.value;
 };
 
 // Фильтр корзины в дровере "Пакетный набор услуг и товаров" — при большом составе заказа
@@ -1154,7 +1179,7 @@ const formatMoney = (amount) => {
                                             <td class="py-3 px-3 text-sm text-right whitespace-nowrap">
                                                 <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" title="Настроить выплаты" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-team-line text-lg"></i></button>
                                                 <button v-if="item.itemable_type.includes('Service')" @click="openAddMaterialModal(item)" title="Добавить материал к услуге" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-flask-line text-lg"></i></button>
-                                                <button v-if="item.linked_item_id" @click="openMaterialSettingsModal(item)" title="Настройки материала" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-settings-3-line text-lg"></i></button>
+                                                <button v-if="canConfigureItemStock(item)" @click="openMaterialSettingsModal(item)" :title="item.linked_item_id ? 'Настройки материала' : 'Настройки списания'" class="text-gray-400 hover:text-primary transition-colors p-1"><i class="ri-settings-3-line text-lg"></i></button>
                                                 <button v-if="workOrder.status !== 'completed'" @click="deleteItem(item)" class="text-danger hover:text-danger-600 transition-colors p-1"><i class="ri-delete-bin-line text-lg"></i></button>
                                             </td>
                                         </tr>
@@ -1445,6 +1470,12 @@ const formatMoney = (amount) => {
                             <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id">{{ dir.name }}</option>
                         </select>
                     </div>
+                    <div v-if="drawerTab === 'products' && warehouseEnabled && warehouses.length > 1" class="w-48 shrink-0">
+                        <select v-model="catalogWarehouseFilter" title="Показывать только остаток на выбранном складе" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="">Все склады</option>
+                            <option v-for="wh in warehouses" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Вкладки Услуги / Товары -->
@@ -1622,7 +1653,7 @@ const formatMoney = (amount) => {
                                         <span class="text-sm font-bold text-primary w-20 text-right">{{ formatMoney(item.total) }}</span>
                                         <button v-if="item.itemable_type.includes('Service')" @click="openPayoutModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настроить выплаты"><i class="ri-team-line text-lg"></i></button>
                                         <button v-if="item.itemable_type.includes('Service')" @click="openAddMaterialModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Добавить материал к услуге"><i class="ri-flask-line text-lg"></i></button>
-                                        <button v-if="item.linked_item_id" @click="openMaterialSettingsModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" title="Настройки материала"><i class="ri-settings-3-line text-lg"></i></button>
+                                        <button v-if="canConfigureItemStock(item)" @click="openMaterialSettingsModal(item)" class="text-gray-400 hover:text-primary p-1 shrink-0" :title="item.linked_item_id ? 'Настройки материала' : 'Настройки списания'"><i class="ri-settings-3-line text-lg"></i></button>
                                         <button @click="deleteItem(item)" class="text-danger hover:text-danger-600 p-1 shrink-0" title="Удалить"><i class="ri-delete-bin-line text-lg"></i></button>
                                     </div>
                                 </div>
@@ -1912,7 +1943,7 @@ const formatMoney = (amount) => {
                                             <option v-for="s in services" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(s.name) }}</option>
                                         </template>
                                         <template v-else>
-                                            <option v-for="p in products" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(p.name) }}</option>
+                                            <option v-for="p in stockFilteredProducts" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(p.name) }}</option>
                                         </template>
                                     </select>
                                 </div>
@@ -2176,7 +2207,8 @@ const formatMoney = (amount) => {
             :show="isAddMaterialModalOpen"
             :service-item="addMaterialServiceItem"
             :work-order="workOrder"
-            :product-options="materialProductOptions"
+            :products="products"
+            :warehouses="warehouses"
             @close="closeAddMaterialModal"
         />
 

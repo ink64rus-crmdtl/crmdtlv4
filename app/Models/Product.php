@@ -24,6 +24,7 @@ class Product extends Model
         'markup_percent',
         'discount_percent',
         'affects_payroll_by_default',
+        'allow_negative_stock_by_default',
     ];
 
     public array $translatable = ['name'];
@@ -36,6 +37,7 @@ class Product extends Model
             'markup_percent' => 'decimal:2',
             'discount_percent' => 'decimal:2',
             'affects_payroll_by_default' => 'boolean',
+            'allow_negative_stock_by_default' => 'boolean',
         ];
     }
 

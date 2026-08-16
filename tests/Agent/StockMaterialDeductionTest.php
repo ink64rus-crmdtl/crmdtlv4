@@ -139,6 +139,35 @@ class StockMaterialDeductionTest extends TenantAgentTestCase
     }
 
     #[Test]
+    public function allow_negative_stock_now_also_applies_to_regular_sold_products_not_only_materials(): void
+    {
+        // CLAUDE.md «Отдельные тумблеры разрешения списания в минус для материалов
+        // и для товаров на продажу» — allow_negative_stock больше не ограничен
+        // isMaterial(), обычная (не привязанная к услуге) позиция тоже может уйти
+        // в минус, если так решили на уровне карточки товара/этой строки.
+        $product = Product::create(['name' => 'Плёнка', 'unit' => 'шт', 'accounting_type' => 'average', 'is_active' => true]);
+        StockBalance::create(['warehouse_id' => $this->warehouse->id, 'product_id' => $product->id, 'quantity' => 2, 'avg_cost' => 300000]);
+
+        WorkOrderItem::create([
+            'work_order_id' => $this->workOrder->id,
+            'itemable_type' => Product::class,
+            'itemable_id' => $product->id,
+            'name' => 'Плёнка',
+            'quantity' => 5,
+            'price' => 500000,
+            'discount_amount' => 0,
+            'total' => 2500000,
+            'allow_negative_stock' => true,
+        ]);
+
+        $this->completeOrder();
+
+        $this->assertSame('completed', $this->workOrder->fresh()->status);
+        $balance = StockBalance::where('warehouse_id', $this->warehouse->id)->where('product_id', $product->id)->first();
+        $this->assertSame('-3.000', (string) $balance->quantity);
+    }
+
+    #[Test]
     public function stock_deduction_disabled_creates_no_movement_regardless_of_balance(): void
     {
         $product = Product::create(['name' => 'Скотч', 'unit' => 'шт', 'accounting_type' => 'average', 'is_active' => true]);

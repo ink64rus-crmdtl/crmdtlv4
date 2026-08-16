@@ -84,6 +84,7 @@ class ProductController extends Controller
             'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'affects_payroll_by_default' => ['boolean'],
+            'allow_negative_stock_by_default' => ['boolean'],
         ]);
 
         Product::create([
@@ -98,6 +99,7 @@ class ProductController extends Controller
             'markup_percent' => $validated['markup_percent'] ?? null,
             'discount_percent' => $validated['discount_percent'] ?? null,
             'affects_payroll_by_default' => $validated['affects_payroll_by_default'] ?? true,
+            'allow_negative_stock_by_default' => $validated['allow_negative_stock_by_default'] ?? false,
         ]);
 
         return redirect()->back()->with('success', 'Товар успешно добавлен');
@@ -117,6 +119,7 @@ class ProductController extends Controller
             'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
             'discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'affects_payroll_by_default' => ['boolean'],
+            'allow_negative_stock_by_default' => ['boolean'],
         ]);
 
         $name = $product->getTranslations('name');
@@ -134,6 +137,7 @@ class ProductController extends Controller
             'markup_percent' => $validated['markup_percent'] ?? null,
             'discount_percent' => $validated['discount_percent'] ?? null,
             'affects_payroll_by_default' => $validated['affects_payroll_by_default'] ?? true,
+            'allow_negative_stock_by_default' => $validated['allow_negative_stock_by_default'] ?? false,
         ]);
 
         return redirect()->back()->with('success', 'Товар обновлен');

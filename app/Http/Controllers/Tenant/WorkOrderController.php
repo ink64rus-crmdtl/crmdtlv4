@@ -209,7 +209,23 @@ class WorkOrderController extends Controller
         // «Материалы на услугу»), нужно фронту для запуска ServiceMaterialAutoAddModal
         // сразу при добавлении услуги в заказ, без отдельного запроса.
         $services = Service::where('is_active', true)->with('defaultMaterials.product:id,name,unit')->get(['id', 'name', 'price', 'prices', 'service_category_id', 'business_direction_id']);
-        $products = Product::where('is_active', true)->get(['id', 'name', 'sku', 'unit', 'product_category_id', 'base_price', 'discount_percent', 'affects_payroll_by_default']);
+
+        // stockBalances — нужны фронту, чтобы отфильтровать каталог до товаров/материалов,
+        // реально присутствующих на складе (CLAUDE.md «Фильтр каталога по остаткам»), и дать
+        // фильтр по конкретному складу при их нескольких. Только при включённом складе —
+        // при выключенном фронт фильтрацию вообще не применяет, тащить пустые данные незачем.
+        $productsQuery = Product::where('is_active', true);
+        if (WarehouseResolver::isEnabled()) {
+            $productsQuery->with('stockBalances:id,product_id,warehouse_id,quantity');
+        }
+        $products = $productsQuery->get(['id', 'name', 'sku', 'unit', 'product_category_id', 'base_price', 'discount_percent', 'affects_payroll_by_default']);
+        // Список складов для UI-фильтра каталога — не "все активные склады системы",
+        // а только те, между которыми реально выбирает WarehouseResolver::resolveFor()
+        // для ЭТОЙ локации в текущем режиме склада (см. candidateWarehousesFor()) —
+        // иначе фильтр предлагал бы выбор, который ни на что не влияет.
+        $warehouses = WarehouseResolver::isEnabled()
+            ? WarehouseResolver::candidateWarehousesFor($workOrder->branch)->map(fn (Warehouse $w) => ['id' => $w->id, 'name' => $w->name])->values()
+            : collect();
 
         $accounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type', 'accounts.commission_percent']);
 
@@ -265,6 +281,7 @@ class WorkOrderController extends Controller
             'vehicles' => $vehicles,
             'services' => $services,
             'products' => $products,
+            'warehouses' => $warehouses,
             'accounts' => $accounts,
             'customFieldDefs' => $customFieldDefs,
             'pricingBasis' => $pricingBasis,
@@ -601,17 +618,27 @@ class WorkOrderController extends Controller
             abort(403);
         }
 
-        if (! $item->isMaterial()) {
-            abort(403, 'Настройки материала доступны только позициям, привязанным к услуге.');
+        // allow_negative_stock доступен любой позиции-товару (материал или обычный
+        // товар на продажу — CLAUDE.md «Отдельные тумблеры... для материалов и для
+        // товаров на продажу»); остальные поля осмысленны только для материала
+        // (is_billable/ЗП завязаны на привязку к услуге), поэтому валидируются
+        // и принимаются ТОЛЬКО когда позиция реально материал — иначе, например,
+        // is_billable=false молча спрятал бы от клиента обычный проданный товар.
+        if ($item->itemable_type !== Product::class) {
+            abort(403, 'Настройки списания доступны только позициям-товарам.');
         }
 
-        $validated = $request->validate([
-            'stock_deduction_disabled' => ['boolean'],
-            'allow_negative_stock' => ['boolean'],
-            'affects_payroll' => ['boolean'],
-            'payroll_uses_cost_only' => ['boolean'],
-            'is_billable' => ['boolean'],
-        ]);
+        $rules = ['allow_negative_stock' => ['boolean']];
+        if ($item->isMaterial()) {
+            $rules += [
+                'stock_deduction_disabled' => ['boolean'],
+                'affects_payroll' => ['boolean'],
+                'payroll_uses_cost_only' => ['boolean'],
+                'is_billable' => ['boolean'],
+            ];
+        }
+
+        $validated = $request->validate($rules);
 
         // Серверный бэкстоп поверх условного показа тумблера в UI (виден
         // только если price > cost_price) — не доверяем, что фронт не
@@ -626,7 +653,7 @@ class WorkOrderController extends Controller
         // должна пересчитаться немедленно, не дожидаясь следующего addItem().
         $this->recalculateTotals($workOrder);
 
-        return redirect()->back()->with('success', 'Настройки материала сохранены');
+        return redirect()->back()->with('success', 'Настройки сохранены');
     }
 
     /**
@@ -816,20 +843,29 @@ class WorkOrderController extends Controller
 
             $nextSortOrder = (int) $workOrder->items()->max('sort_order') + 1;
 
+            // Разрешение на списание в минус — дефолт с карточки товара
+            // (Product.allow_negative_stock_by_default), для ЛЮБОЙ позиции-товара,
+            // не только материала: конкретный заказ может переопределить его
+            // per-line через updateItemMaterialSettings().
+            //
             // Материал на услугу (CLAUDE.md «Материалы на услугу») — скрыт от
             // клиента по умолчанию (is_billable=false), учитывается при ЗП по
             // умолчанию каталога товара, себестоимость снэпшотится СЕЙЧАС, а
             // не берётся заново при печати документа (тот же принцип, что и
             // у Document::isStale() — зафиксированный во времени артефакт).
-            $materialFields = [];
-            if (! empty($validated['linked_item_id'])) {
+            $productFields = [];
+            if ($validated['itemable_type'] === 'product') {
                 $product = Product::find($itemableId);
-                $materialFields = [
-                    'linked_item_id' => $validated['linked_item_id'],
-                    'is_billable' => false,
-                    'affects_payroll' => $product?->affects_payroll_by_default ?? true,
-                    'cost_price' => $this->resolveMaterialCostPrice($product, $workOrder->branch, isset($validated['cost_price']) ? (float) $validated['cost_price'] : null),
-                ];
+                $productFields['allow_negative_stock'] = $product?->allow_negative_stock_by_default ?? false;
+
+                if (! empty($validated['linked_item_id'])) {
+                    $productFields += [
+                        'linked_item_id' => $validated['linked_item_id'],
+                        'is_billable' => false,
+                        'affects_payroll' => $product?->affects_payroll_by_default ?? true,
+                        'cost_price' => $this->resolveMaterialCostPrice($product, $workOrder->branch, isset($validated['cost_price']) ? (float) $validated['cost_price'] : null),
+                    ];
+                }
             }
 
             $item = $workOrder->items()->create([
@@ -841,7 +877,7 @@ class WorkOrderController extends Controller
                 'discount_amount' => $discountCents,
                 'total' => $totalCents,
                 'sort_order' => $nextSortOrder,
-                ...$materialFields,
+                ...$productFields,
             ]);
 
             if (! empty($validated['employee_ids'])) {
@@ -902,7 +938,9 @@ class WorkOrderController extends Controller
                 }
 
                 $productName = is_array($product->name) ? ($product->name['ru'] ?? current($product->name)) : $product->name;
-                $forceNegative = ! empty($row['force_negative']);
+                // Дефолт с карточки товара (allow_negative_stock_by_default) действует так же,
+                // как и при ручном добавлении — не только явная отметка в модалке подтверждения.
+                $forceNegative = ! empty($row['force_negative']) || (bool) $product->allow_negative_stock_by_default;
 
                 if (WarehouseResolver::isEnabled() && ! $forceNegative) {
                     $warehouse = WarehouseResolver::resolveFor($product, $branch);
@@ -1434,6 +1472,11 @@ class WorkOrderController extends Controller
                                 throw new Exception("Не удалось определить склад для списания товара: {$productName}");
                             }
 
+                            // allow_negative_stock не ограничен материалами (CLAUDE.md
+                            // «Отдельные тумблеры разрешения списания в минус для
+                            // материалов и для товаров на продажу») — дефолт с карточки
+                            // товара (Product.allow_negative_stock_by_default) применяется
+                            // к любой позиции-товару, per-line можно переопределить.
                             StockService::deduct(
                                 $product,
                                 $warehouse,
@@ -1441,7 +1484,7 @@ class WorkOrderController extends Controller
                                 $item->quantity,
                                 $workOrder->id,
                                 auth()->id(),
-                                $item->isMaterial() && $item->allow_negative_stock
+                                $item->allow_negative_stock
                             );
                             $stockTouched = true;
                         }

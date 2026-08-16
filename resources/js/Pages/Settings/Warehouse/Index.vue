@@ -5,8 +5,10 @@ import SettingsNav from '@/Components/SettingsNav.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import Modal from '@/Components/Modal.vue';
 import DataTable from '@/Components/DataTable.vue';
-import { Head, useForm, Link } from '@inertiajs/vue3';
+import { Head, useForm, Link, usePage } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+
+const page = usePage();
 import { useClientSort } from '@/Composables/useClientSort.js';
 
 const props = defineProps({
@@ -15,6 +17,7 @@ const props = defineProps({
     serviceMaterialAutoAddMode: { type: String, default: 'confirm' },
     warehouses: { type: Array, default: () => [] },
     branches: { type: Array, default: () => [] },
+    coverageWarning: { type: String, default: null },
 });
 
 const form = useForm({
@@ -147,6 +150,27 @@ const deleteWarehouse = (warehouse) => {
                 <p><strong>Смешанный:</strong> Комбинация. Расходники хранятся локально на локациях, а дорогие материалы — на центральном складе.</p>
             </PageHelper>
 
+            <!-- Диагностика уже сохранённой конфигурации: локации/компания без склада,
+                 который резолвер реально мог бы использовать в текущем режиме — не
+                 блокирует ничего, просто вскрывает уже существующий разрыв заранее,
+                 а не в момент завершения реального заказа. -->
+            <div v-if="coverageWarning" class="bg-warning/10 border border-warning/30 rounded-md p-4 flex items-start gap-3">
+                <i class="ri-error-warning-line text-warning text-lg shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">Текущая конфигурация склада неполна</p>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{{ coverageWarning }}</p>
+                </div>
+            </div>
+
+            <!-- Блок ошибок (удаление/деактивация склада, единственного покрывающего свою область) -->
+            <div v-if="page.props.errors.error" class="p-4 bg-danger/10 border border-danger/20 rounded-md text-sm text-danger font-medium flex items-start gap-3">
+                <i class="ri-error-warning-fill text-xl shrink-0"></i>
+                <div>
+                    <p class="font-bold mb-1">Ошибка:</p>
+                    <p>{{ page.props.errors.error }}</p>
+                </div>
+            </div>
+
             <!-- Header Card -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
@@ -244,6 +268,10 @@ const deleteWarehouse = (warehouse) => {
                         </label>
 
                     </div>
+
+                    <p v-if="form.errors.warehouse_mode" class="text-xs text-danger flex items-start gap-1.5 -mt-2">
+                        <i class="ri-error-warning-line shrink-0 mt-0.5"></i> {{ form.errors.warehouse_mode }}
+                    </p>
 
                     <!-- Автодобавление материала на услугу -->
                     <div class="pt-6 mt-6 border-t border-gray-200 dark:border-gray-700">

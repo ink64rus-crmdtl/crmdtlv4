@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Tenant;
 use App\Http\Controllers\Controller;
 use App\Jobs\ExportEntitiesJob;
 use App\Models\Branch;
+use App\Models\Setting;
+use App\Models\Warehouse;
 use App\Services\QueryFilterService;
+use App\Services\WarehouseResolver;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -65,6 +68,25 @@ class BranchController extends Controller
 
         if ($request->hasFile('logo')) {
             $branch->addMediaFromRequest('logo')->toMediaCollection('logo');
+        }
+
+        // Автосоздание склада точки (CLAUDE.md, "Настройка складов и режимов") —
+        // самый частый в жизни сценарий дрейфа конфигурации: завели вторую локацию
+        // в режиме per_branch/mixed, забыли завести под неё склад, и списание для
+        // неё молча упало бы в null при первом же завершённом заказе. Только когда
+        // это реально на что-то повлияет — при выключенном складе или в 'shared'
+        // (там branch-склады resolveFor() вообще не смотрит) заводить его незачем.
+        if (WarehouseResolver::isEnabled()) {
+            $mode = Setting::where('key', 'warehouse_mode')->value('value') ?? 'per_branch';
+            if (in_array($mode, ['per_branch', 'mixed'], true)) {
+                Warehouse::create([
+                    'name' => "Склад «{$branch->name}»",
+                    'owner_type' => 'branch',
+                    'owner_id' => $branch->id,
+                    'is_default' => true,
+                    'is_active' => true,
+                ]);
+            }
         }
 
         return redirect()->back()->with('success', 'Локация успешно создана');
