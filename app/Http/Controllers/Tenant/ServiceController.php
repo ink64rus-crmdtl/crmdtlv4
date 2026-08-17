@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ExportEntitiesJob;
 use App\Models\BusinessDirection;
 use App\Models\Lookup;
+use App\Models\ListView;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceCategory;
@@ -40,8 +41,19 @@ class ServiceController extends Controller
         }
 
         $services = $query->paginate(15)->withQueryString();
-        $categories = ServiceCategory::orderBy('id')->get();
+        $categories = ServiceCategory::withCount('services')->with('businessDirection')->orderBy('id')->get();
         $businessDirections = BusinessDirection::where('is_active', true)->get(['id', 'name']);
+
+        $availableColumns = [
+            ['key' => 'category', 'label' => 'Категория', 'is_default' => true],
+            ['key' => 'business_direction', 'label' => 'Направление', 'is_default' => true],
+            ['key' => 'name', 'label' => 'Название услуги', 'is_default' => true],
+            ['key' => 'price', 'label' => 'Базовая цена', 'is_default' => true],
+            ['key' => 'duration_minutes', 'label' => 'Нормо-время', 'is_default' => true],
+            ['key' => 'status', 'label' => 'Статус', 'is_default' => true],
+        ];
+        $listView = ListView::where('entity_type', 'service')->where('user_id', auth()->id())->first();
+        $visibleColumns = $listView ? $listView->visible_columns : array_column($availableColumns, 'key');
 
         $pricingBasis = Setting::where('key', 'pricing_basis')->value('value') ?? 'none';
         $lookups = Lookup::whereIn('type', ['vehicle_body', 'vehicle_class'])->where('is_active', true)->get()->groupBy('type');
@@ -53,6 +65,8 @@ class ServiceController extends Controller
             'pricingBasis' => $pricingBasis,
             'lookups' => $lookups,
             'filters' => $request->all(),
+            'availableColumns' => $availableColumns,
+            'listView' => ['visible_columns' => $visibleColumns],
             'materialProducts' => Product::where('is_active', true)->get(['id', 'name', 'unit']),
         ]);
     }
@@ -170,14 +184,41 @@ class ServiceController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
+            'business_direction_id' => ['nullable', 'exists:business_directions,id'],
         ]);
 
         ServiceCategory::create([
             'name' => [app()->getLocale() => $validated['name']],
+            'business_direction_id' => $validated['business_direction_id'],
             'is_active' => true,
         ]);
 
         return redirect()->back()->with('success', 'Категория добавлена');
+    }
+
+    public function updateCategory(Request $request, ServiceCategory $category)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'business_direction_id' => ['nullable', 'exists:business_directions,id'],
+        ]);
+
+        $name = $category->getTranslations('name');
+        $name[app()->getLocale()] = $validated['name'];
+
+        $category->update([
+            'name' => $name,
+            'business_direction_id' => $validated['business_direction_id'],
+        ]);
+
+        return redirect()->back()->with('success', 'Категория обновлена');
+    }
+
+    public function destroyCategory(ServiceCategory $category)
+    {
+        $category->delete();
+
+        return redirect()->back()->with('success', 'Категория удалена');
     }
 
     public function bulkDestroy(Request $request)

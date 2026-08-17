@@ -377,6 +377,8 @@ Route::middleware([
         Route::post('/operations/services/bulk-delete', [ServiceController::class, 'bulkDestroy'])->name('operations.services.bulk-destroy');
         Route::post('/operations/services/bulk-export', [ServiceController::class, 'bulkExport'])->name('operations.services.bulk-export');
         Route::post('/operations/service-categories', [ServiceController::class, 'storeCategory'])->name('operations.service-categories.store');
+        Route::put('/operations/service-categories/{category}', [ServiceController::class, 'updateCategory'])->name('operations.service-categories.update');
+        Route::delete('/operations/service-categories/{category}', [ServiceController::class, 'destroyCategory'])->name('operations.service-categories.destroy');
         // Материалы по умолчанию (CLAUDE.md «Материалы на услугу»)
         Route::post('/operations/services/{service}/materials', [ServiceController::class, 'storeDefaultMaterial'])->name('operations.services.materials.store');
         Route::put('/operations/service-materials/{material}', [ServiceController::class, 'updateDefaultMaterial'])->name('operations.services.materials.update');

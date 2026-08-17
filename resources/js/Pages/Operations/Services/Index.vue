@@ -6,10 +6,12 @@ import BulkActions from '@/Components/BulkActions.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Modal from '@/Components/Modal.vue';
+import Offcanvas from '@/Components/Offcanvas.vue';
+import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import DataTable from '@/Components/DataTable.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
@@ -21,12 +23,15 @@ const props = defineProps({
     pricingBasis: String,
     lookups: Object,
     filters: Object,
+    availableColumns: { type: Array, default: () => [] },
+    listView: { type: Object, default: () => ({ visible_columns: [] }) },
     materialProducts: { type: Array, default: () => [] },
 });
 
 const isModalOpen = ref(false);
 const isCategoryModalOpen = ref(false);
 const editingService = ref(null);
+const editingCategory = ref(null);
 
 const pricesInput = ref({});
 
@@ -48,17 +53,36 @@ const categoryForm = useForm({
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
 
+const initialFilters = {
+    service_category_id: props.filters?.filters?.service_category_id || '',
+    business_direction_id: props.filters?.filters?.business_direction_id || '',
+    is_active: props.filters?.filters?.is_active ?? '',
+};
+const filtersForm = reactive(initialFilters);
+const isFiltersOpen = ref(false);
+const isColumnsModalOpen = ref(false);
+
+const hasActiveFilters = computed(() => Object.values(filtersForm).some(v => v !== '' && v !== null));
+
 const fetchFiltered = useDebounceFn(() => {
     router.get(route('operations.services.index'), {
         search: search.value,
+        filters: filtersForm,
         sort_by: sort.value.map(s => s.key),
         sort_dir: sort.value.map(s => s.dir),
     }, { preserveState: true, preserveScroll: true });
 }, 300);
 
 watch(search, () => fetchFiltered());
+watch(filtersForm, () => fetchFiltered(), { deep: true });
 
-const { sort, onSort } = useServerSort('operations.services.index', () => props.filters, () => ({ search: search.value }));
+const resetFilters = () => {
+    Object.keys(filtersForm).forEach(key => {
+        filtersForm[key] = '';
+    });
+};
+
+const { sort, onSort } = useServerSort('operations.services.index', () => props.filters, () => ({ search: search.value, filters: filtersForm }));
 
 // --- МАССОВЫЕ ОПЕРАЦИИ (BULK ACTIONS) ---
 const selectedIds = ref([]);
@@ -129,14 +153,20 @@ const totalColumns = computed(() => 7 + (matrixActive.value ? matrixLookups.valu
 // справочника) DataTable не поддерживает (один заголовочный ряд) — остаётся
 // raw-таблицей ниже, см. docs/table-refactor/baseline/operations-services.md.
 // category/business_direction (связи) и name (translatable, JSON) — не сортируются простым orderBy.
-const flatColumns = [
-    { key: 'category', label: 'Категория' },
-    { key: 'business_direction', label: 'Направление' },
-    { key: 'name', label: 'Название услуги' },
-    { key: 'price', label: 'Базовая цена', align: 'right', sortable: true },
-    { key: 'duration_minutes', label: 'Нормо-время', align: 'right', sortable: true },
-    { key: 'status', label: 'Статус', sortable: true, sortKey: 'is_active' },
-];
+const activeColumns = computed(() => {
+    const visibleKeys = props.listView?.visible_columns || [];
+    return visibleKeys.map(key => props.availableColumns.find(c => c.key === key)).filter(Boolean);
+});
+
+const SORTABLE_COLUMN_KEYS = ['price', 'duration_minutes', 'status'];
+const SORT_KEY_MAP = { status: 'is_active' };
+const COLUMN_ALIGN = { price: 'right', duration_minutes: 'right' };
+const dataTableColumns = computed(() => activeColumns.value.map(col => ({
+    ...col,
+    align: COLUMN_ALIGN[col.key],
+    sortable: SORTABLE_COLUMN_KEYS.includes(col.key),
+    ...(SORT_KEY_MAP[col.key] ? { sortKey: SORT_KEY_MAP[col.key] } : {}),
+})));
 
 const openModal = (service = null) => {
     editingService.value = service;
@@ -203,14 +233,56 @@ const openCategoryModal = () => {
 
 const closeCategoryModal = () => {
     isCategoryModalOpen.value = false;
+    editingCategory.value = null;
+    categoryForm.reset();
+    categoryForm.clearErrors();
+};
+
+const editCategory = (category) => {
+    editingCategory.value = category;
+    categoryForm.name = getLocalizedLabel(category.name);
+    categoryForm.business_direction_id = category.business_direction_id || '';
+    categoryForm.clearErrors();
+};
+
+const cancelCategoryEdit = () => {
+    editingCategory.value = null;
     categoryForm.reset();
     categoryForm.clearErrors();
 };
 
 const submitCategory = () => {
-    categoryForm.post(route('operations.service-categories.store'), {
-        onSuccess: () => closeCategoryModal(),
-    });
+    if (editingCategory.value) {
+        categoryForm.put(route('operations.service-categories.update', editingCategory.value.id), {
+            onSuccess: () => cancelCategoryEdit(),
+        });
+    } else {
+        categoryForm.post(route('operations.service-categories.store'), {
+            onSuccess: () => closeCategoryModal(),
+        });
+    }
+};
+
+const pluralize = (n) => {
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'услуга';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'услуги';
+    return 'услуг';
+};
+
+const categoryDirectionFilter = ref('');
+
+const filteredCategories = computed(() => {
+    if (!categoryDirectionFilter.value) return props.categories;
+    return props.categories.filter(cat => cat.business_direction_id === categoryDirectionFilter.value);
+});
+
+const deleteCategory = (category) => {
+    const count = category.services_count || 0;
+    const warning = count > 0 ? `\nВнутри ${count} ${pluralize(count)} — они останутся без категории.` : '';
+    if (confirm(`Удалить категорию "${getLocalizedLabel(category.name)}"?${warning}`)) {
+        categoryForm.delete(route('operations.service-categories.destroy', category.id));
+    }
 };
 
 // --- Материалы по умолчанию (CLAUDE.md «Материалы на услугу») ---
@@ -272,7 +344,9 @@ const removeDefaultMaterial = (material) => {
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 overflow-hidden">
                 <DataTableToolbar
                     v-model="search"
-                    :has-filters="false"
+                    :has-filters="hasActiveFilters"
+                    @open-filters="isFiltersOpen = true"
+                    @open-columns="isColumnsModalOpen = true"
                     placeholder="Поиск по названию услуги..."
                 >
                     <template #actions>
@@ -280,7 +354,7 @@ const removeDefaultMaterial = (material) => {
                             @click="openCategoryModal()"
                             class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all bg-secondary/10 text-secondary hover:bg-secondary hover:text-white shadow-sm"
                         >
-                            <i class="ri-folder-add-line mr-1.5"></i> Новая категория
+                            <i class="ri-folder-2-line mr-1.5"></i> Категории услуг
                         </button>
                         <button
                             @click="openModal()"
@@ -294,7 +368,7 @@ const removeDefaultMaterial = (material) => {
                 <!-- Плоский режим (без матрицы цен по кузову/классу) — DataTable.vue -->
                 <div v-if="!matrixActive" class="overflow-x-auto w-full">
                     <DataTable
-                        :columns="flatColumns"
+                        :columns="dataTableColumns"
                         :rows="services.data"
                         selectable
                         v-model="selectedIds"
@@ -523,13 +597,52 @@ const removeDefaultMaterial = (material) => {
             </div>
         </Modal>
 
-        <!-- Модалка Категории -->
-        <Modal :show="isCategoryModalOpen" @close="closeCategoryModal">
+        <!-- Модалка управления категориями услуг -->
+        <Modal :show="isCategoryModalOpen" @close="closeCategoryModal" maxWidth="2xl">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center">
-                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новая категория услуг</h3>
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingCategory ? 'Редактирование категории' : 'Категории услуг' }}</h3>
                     <button @click="closeCategoryModal()" class="text-gray-400 hover:text-gray-600"><i class="ri-close-line text-xl"></i></button>
                 </div>
+
+                <!-- Список существующих категорий -->
+                <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between gap-3 mb-4">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">
+                            Существующие категории
+                            <span class="text-xs font-medium text-gray-400 ml-1">({{ filteredCategories.length }})</span>
+                        </h4>
+                        <select v-model="categoryDirectionFilter" class="block w-56 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2.5 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="" class="bg-white dark:bg-gray-800">Все направления</option>
+                            <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                        </select>
+                    </div>
+                    <div class="max-h-72 overflow-y-auto space-y-2">
+                        <p v-if="filteredCategories.length === 0" class="text-sm text-gray-400">
+                            {{ categoryDirectionFilter ? 'По выбранному направлению категорий нет.' : 'Категорий пока нет — добавьте первую ниже.' }}
+                        </p>
+                        <div v-else v-for="cat in filteredCategories" :key="cat.id" class="flex items-center justify-between gap-3 p-2.5 rounded border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <i class="ri-folder-line text-gray-400 shrink-0"></i>
+                            <div class="min-w-0">
+                                <p class="text-sm font-bold text-gray-800 dark:text-gray-200 truncate">{{ getLocalizedLabel(cat.name) }}</p>
+                                <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    <span v-if="cat.business_direction" class="inline-flex items-center gap-1 bg-info/10 text-info px-2 py-0.5 rounded text-xs font-medium">
+                                        <i class="ri-node-tree"></i> {{ cat.business_direction.name }}
+                                    </span>
+                                    <span v-else class="text-xs text-gray-400">Общая категория</span>
+                                    <span class="text-xs text-gray-500">{{ cat.services_count }} {{ pluralize(cat.services_count) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button @click="editCategory(cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
+                            <button @click="deleteCategory(cat)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
                 <form @submit.prevent="submitCategory">
                     <div class="p-6 space-y-4">
                         <div>
@@ -543,14 +656,68 @@ const removeDefaultMaterial = (material) => {
                                 <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
                             </select>
                         </div>
+                        <p v-if="categoryForm.errors.name" class="text-xs text-danger">{{ categoryForm.errors.name }}</p>
                     </div>
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50">
-                        <button type="button" @click="closeCategoryModal()" class="px-4 py-2 text-sm font-medium bg-secondary/10 text-secondary rounded">Отмена</button>
-                        <button type="submit" :disabled="categoryForm.processing" class="px-4 py-2 text-sm font-medium bg-primary text-white rounded">Создать</button>
+                        <button type="button" @click="editingCategory ? cancelCategoryEdit() : closeCategoryModal()" class="px-4 py-2 text-sm font-medium bg-secondary/10 text-secondary rounded">{{ editingCategory ? 'Отменить редактирование' : 'Закрыть' }}</button>
+                        <button type="submit" :disabled="categoryForm.processing" class="px-4 py-2 text-sm font-medium bg-primary text-white rounded">{{ editingCategory ? 'Сохранить' : 'Создать' }}</button>
                     </div>
                 </form>
             </div>
         </Modal>
+
+        <!-- Offcanvas Фильтры -->
+        <Offcanvas :show="isFiltersOpen" @close="isFiltersOpen = false" maxWidth="sm">
+            <div class="flex flex-col h-full">
+                <div class="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Фильтры</h3>
+                    <button @click="isFiltersOpen = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Категория</label>
+                        <select v-model="filtersForm.service_category_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="" class="bg-white dark:bg-gray-800">Все категории</option>
+                            <option v-for="cat in categories" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Направление бизнеса</label>
+                        <select v-model="filtersForm.business_direction_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="" class="bg-white dark:bg-gray-800">Все направления</option>
+                            <option v-for="dir in businessDirections" :key="dir.id" :value="dir.id" class="bg-white dark:bg-gray-800">{{ dir.name }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статус</label>
+                        <select v-model="filtersForm.is_active" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                            <option value="" class="bg-white dark:bg-gray-800">Любой</option>
+                            <option :value="1" class="bg-white dark:bg-gray-800">Активные</option>
+                            <option :value="0" class="bg-white dark:bg-gray-800">Неактивные</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 flex gap-3">
+                    <button @click="resetFilters" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm">
+                        Сбросить
+                    </button>
+                    <button @click="isFiltersOpen = false" class="flex-1 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 shadow-sm">
+                        Применить
+                    </button>
+                </div>
+            </div>
+        </Offcanvas>
+
+        <ColumnSettingsModal
+            :show="isColumnsModalOpen"
+            entity-type="service"
+            :available-columns="availableColumns"
+            :visible-columns="listView.visible_columns"
+            @close="isColumnsModalOpen = false"
+            @saved="isColumnsModalOpen = false"
+        />
 
     </AuthenticatedLayout>
 </template>
