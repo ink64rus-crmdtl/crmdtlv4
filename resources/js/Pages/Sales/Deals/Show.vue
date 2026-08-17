@@ -17,6 +17,7 @@ const props = defineProps({
     lossReasons: { type: Array, default: () => [] },
     sources: { type: Array, default: () => [] },
     taskTypes: { type: Array, default: () => [] },
+    defaultWorkingHours: { type: Array, default: () => null },
     activities: { type: Array, default: () => [] },
     comments: { type: Array, default: () => [] },
 });
@@ -314,7 +315,7 @@ const submitEdit = () => {
 
                         <!-- Задачи -->
                         <div v-show="activeTab === 'tasks'" class="p-6">
-                            <TaskPanel taskable-type="Deal" :taskable-id="deal.id" :branch-id="deal.branch_id" :task-types="taskTypes" />
+                            <TaskPanel taskable-type="Deal" :taskable-id="deal.id" :branch-id="deal.branch_id" :task-types="taskTypes" :default-working-hours="defaultWorkingHours" />
                         </div>
 
                         <!-- Комментарии -->

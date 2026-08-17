@@ -23,6 +23,8 @@ class WorkOrder extends Model
         'status',
         'payment_status',
         'mileage',
+        'order_date',
+        'ready_at',
         'total_amount',
         'discount_amount',
         'discount_is_manual',
@@ -39,6 +41,8 @@ class WorkOrder extends Model
     {
         return [
             'mileage' => 'integer',
+            'order_date' => 'datetime',
+            'ready_at' => 'datetime',
             'total_amount' => 'integer',
             'discount_amount' => 'integer',
             'discount_is_manual' => 'boolean',

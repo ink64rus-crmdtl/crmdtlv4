@@ -6,8 +6,9 @@ import DataTable from '@/Components/DataTable.vue';
 import Pagination from '@/Components/Pagination.vue';
 import Modal from '@/Components/Modal.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import { buildTimeSlots, withCurrentValue } from '@/Composables/useWorkingHoursSlots.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -15,6 +16,7 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
     taskTypes: { type: Array, default: () => [] },
     users: { type: Array, default: () => [] },
+    defaultWorkingHours: { type: Array, default: () => null },
 });
 
 // --- ФИЛЬТРЫ ---
@@ -89,6 +91,28 @@ const submit = () => {
         onSuccess: () => { isModalOpen.value = false; },
     });
 };
+
+// Выбор времени слотами в пределах рабочих часов ОРГАНИЗАЦИИ (не локации —
+// у задачи нет явного выбора точки в форме) — тот же composable, что и в
+// заказ-наряде (CLAUDE.md "Дата/время создания и готовности заказ-наряда").
+const dueDate = computed({
+    get: () => (taskForm.due_at ? taskForm.due_at.slice(0, 10) : ''),
+    set: (val) => {
+        const time = taskForm.due_at ? taskForm.due_at.slice(11, 16) : '';
+        taskForm.due_at = val ? `${val}T${time}` : '';
+    },
+});
+const dueTime = computed({
+    get: () => (taskForm.due_at ? taskForm.due_at.slice(11, 16) : ''),
+    set: (val) => {
+        const date = dueDate.value || new Date().toISOString().slice(0, 10);
+        taskForm.due_at = val ? `${date}T${val}` : '';
+    },
+});
+const dueTimeSlots = computed(() => withCurrentValue(
+    buildTimeSlots(dueDate.value, null, props.defaultWorkingHours),
+    dueTime.value
+));
 </script>
 
 <template>
@@ -200,7 +224,13 @@ const submit = () => {
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Срок</label>
-                            <input v-model="taskForm.due_at" type="datetime-local" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <div class="flex gap-2">
+                                <input v-model="dueDate" type="date" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <select v-model="dueTime" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                    <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                    <option v-for="slot in dueTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div>

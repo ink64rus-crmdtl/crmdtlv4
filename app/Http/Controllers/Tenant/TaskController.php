@@ -7,6 +7,7 @@ use App\Models\Lookup;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Services\WorkingHoursResolver;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -77,6 +78,9 @@ class TaskController extends Controller
             'filters' => $request->only(['mine', 'status', 'assigned_to_user_id', 'search']),
             'taskTypes' => Lookup::where('type', 'task_type')->where('is_active', true)->orderBy('sort_order')->get(['id', 'value', 'label']),
             'users' => User::orderBy('name')->get(['id', 'name']),
+            // Задача общесистемная, без явного выбора локации в форме — время
+            // выбирается в пределах рабочих часов ОРГАНИЗАЦИИ целиком, не точки.
+            'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
         ]);
     }
 

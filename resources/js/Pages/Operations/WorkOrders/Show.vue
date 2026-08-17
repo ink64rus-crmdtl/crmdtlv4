@@ -18,6 +18,7 @@ import Dropdown from '@/Components/Dropdown.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
+import { buildTimeSlots, withCurrentValue } from '@/Composables/useWorkingHoursSlots.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -47,6 +48,7 @@ const props = defineProps({
     comments: { type: Array, default: () => [] },
     documentTemplates: { type: Array, default: () => [] },
     wasReopenedAfterCompletion: { type: Boolean, default: false },
+    defaultWorkingHours: { type: Array, default: () => null },
 });
 
 const page = usePage();
@@ -250,6 +252,8 @@ const form = useForm({
     vehicle_id: '',
     status: '',
     mileage: '',
+    order_date: '',
+    ready_at: '',
     custom_fields: {},
 });
 
@@ -298,6 +302,8 @@ const openModal = () => {
     form.vehicle_id = props.workOrder.vehicle_id || '';
     form.status = props.workOrder.status;
     form.mileage = props.workOrder.mileage || '';
+    form.order_date = props.workOrder.order_date_local || '';
+    form.ready_at = props.workOrder.ready_at_local || '';
 
     const cf = {};
     props.customFieldDefs.forEach(def => {
@@ -310,6 +316,64 @@ const openModal = () => {
     
     isModalOpen.value = true;
 };
+
+// --- Выбор времени слотами в пределах рабочих часов выбранной в форме локации
+// (CLAUDE.md "Дата/время создания и готовности заказ-наряда") — тот же composable,
+// что и в Operations/WorkOrders/Index.vue.
+const effectiveWorkingHours = computed(() => {
+    const branch = props.branches.find(b => b.id === form.branch_id);
+    return (branch && branch.working_hours) || props.defaultWorkingHours || null;
+});
+
+const orderDate = computed({
+    get: () => (form.order_date ? form.order_date.slice(0, 10) : ''),
+    set: (val) => {
+        const time = form.order_date ? form.order_date.slice(11, 16) : '';
+        form.order_date = val ? `${val}T${time}` : '';
+    },
+});
+const orderTime = computed({
+    get: () => (form.order_date ? form.order_date.slice(11, 16) : ''),
+    set: (val) => {
+        const date = orderDate.value || new Date().toISOString().slice(0, 10);
+        form.order_date = val ? `${date}T${val}` : '';
+    },
+});
+const readyDate = computed({
+    get: () => (form.ready_at ? form.ready_at.slice(0, 10) : ''),
+    set: (val) => {
+        const time = form.ready_at ? form.ready_at.slice(11, 16) : '';
+        form.ready_at = val ? `${val}T${time}` : '';
+    },
+});
+const readyTime = computed({
+    get: () => (form.ready_at ? form.ready_at.slice(11, 16) : ''),
+    set: (val) => {
+        const date = readyDate.value || orderDate.value || new Date().toISOString().slice(0, 10);
+        form.ready_at = val ? `${date}T${val}` : '';
+    },
+});
+
+const orderTimeSlots = computed(() => withCurrentValue(
+    buildTimeSlots(orderDate.value, effectiveWorkingHours.value, props.defaultWorkingHours),
+    orderTime.value
+));
+const readyTimeSlots = computed(() => withCurrentValue(
+    buildTimeSlots(readyDate.value, effectiveWorkingHours.value, props.defaultWorkingHours),
+    readyTime.value
+));
+
+// Бейдж "Выполнить до" (CLAUDE.md "Дата/время создания и готовности заказ-наряда") —
+// дедлайн просрочен, только если заказ ещё не выдан (иначе просрочка бессмысленна,
+// заказ уже закрыт).
+const readyAtOverdue = computed(() => {
+    if (!props.workOrder.ready_at || props.workOrder.status === 'completed') return false;
+    return new Date(props.workOrder.ready_at) < new Date();
+});
+const readyAtLabel = computed(() => {
+    if (!props.workOrder.ready_at) return '';
+    return new Date(props.workOrder.ready_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+});
 
 const closeModal = () => {
     isModalOpen.value = false;
@@ -991,6 +1055,13 @@ const formatMoney = (amount) => {
                             @update:model-value="changeStatus"
                         />
                         <PointBadge :branch="workOrder.branch" :legal-entity="workOrder.legal_entity" />
+                        <span
+                            v-if="workOrder.ready_at"
+                            :class="[readyAtOverdue ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning', 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium']"
+                            :title="readyAtOverdue ? 'Срок выполнения уже прошёл' : 'Дедлайн заказа'"
+                        >
+                            <i class="ri-time-line"></i> Выполнить до {{ readyAtLabel }}
+                        </span>
                     </div>
                 </div>
 
@@ -1882,8 +1953,34 @@ const formatMoney = (amount) => {
                                     type="number" 
                                     min="0"
                                     placeholder="Например: 150000" 
-                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500" 
+                                    class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                                 />
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата и время создания</label>
+                                    <div class="flex gap-2">
+                                        <input v-model="orderDate" type="date" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                        <select v-model="orderTime" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                            <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                            <option v-for="slot in orderTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                        </select>
+                                    </div>
+                                    <p v-if="form.errors.order_date" class="mt-1 text-xs text-danger">{{ form.errors.order_date }}</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата и время готовности</label>
+                                    <div class="flex gap-2">
+                                        <input v-model="readyDate" type="date" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                        <select v-model="readyTime" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                            <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                            <option v-for="slot in readyTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                        </select>
+                                    </div>
+                                    <p class="mt-1 text-[11px] text-gray-400">На карточке появится бейдж "Выполнить до …". Можно оставить пустым.</p>
+                                    <p v-if="form.errors.ready_at" class="mt-1 text-xs text-danger">{{ form.errors.ready_at }}</p>
+                                </div>
                             </div>
 
                             <!-- Кастомные поля (EAV) -->

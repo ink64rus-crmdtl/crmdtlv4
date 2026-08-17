@@ -17,6 +17,7 @@ import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { useServerSort } from '@/Composables/useServerSort.js';
+import { buildTimeSlots, withCurrentValue } from '@/Composables/useWorkingHoursSlots.js';
 import axios from 'axios';
 
 const props = defineProps({
@@ -33,6 +34,7 @@ const props = defineProps({
     workOrderStatuses: { type: Array, default: () => [] },
     accounts: { type: Array, default: () => [] },
     bonusRubPerPoint: { type: Number, default: 1 },
+    defaultWorkingHours: { type: Array, default: () => null },
 });
 
 const page = usePage();
@@ -197,6 +199,8 @@ const form = useForm({
     vehicle_id: '',
     status: 'new',
     mileage: '',
+    order_date: '',
+    ready_at: '',
     custom_fields: {},
 });
 
@@ -383,6 +387,15 @@ const closePreview = () => {
     }, 300);
 };
 
+// Дефолт "Дата/время создания" = текущий момент, "Дата/время готовности" = +1 час
+// (CLAUDE.md "Дата/время создания и готовности заказ-наряда") — берём локальное
+// время браузера, как и остальные UI-дефолты дат в проекте (например todayIso()
+// в Finance/Transactions/Index.vue), пользователь может тут же поправить.
+const toLocalDateTimeString = (date) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
 const openModal = (order = null) => {
     if (isOffcanvasOpen.value) {
         isOffcanvasOpen.value = false;
@@ -397,6 +410,8 @@ const openModal = (order = null) => {
         form.vehicle_id = order.vehicle_id || '';
         form.status = order.status;
         form.mileage = order.mileage || '';
+        form.order_date = order.order_date_local || '';
+        form.ready_at = order.ready_at_local || '';
 
         const cf = {};
         props.customFieldDefs.forEach(def => {
@@ -410,6 +425,9 @@ const openModal = (order = null) => {
         form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
         form.legal_entity_id = defaultLegalEntityIdFor(form.branch_id);
         form.status = 'new';
+        const now = new Date();
+        form.order_date = toLocalDateTimeString(now);
+        form.ready_at = toLocalDateTimeString(new Date(now.getTime() + 60 * 60 * 1000));
 
         const cf = {};
         props.customFieldDefs.forEach(def => {
@@ -426,6 +444,52 @@ const closeModal = () => {
     form.reset();
     form.clearErrors();
 };
+
+// --- Выбор времени слотами в пределах рабочих часов выбранной в форме локации
+// (CLAUDE.md "Дата/время создания и готовности заказ-наряда") — переиспользует
+// composable, вынесенный из Operations/Appointments/Index.vue.
+const effectiveWorkingHours = computed(() => {
+    const branch = props.branches.find(b => b.id === form.branch_id);
+    return (branch && branch.working_hours) || props.defaultWorkingHours || null;
+});
+
+const orderDate = computed({
+    get: () => (form.order_date ? form.order_date.slice(0, 10) : ''),
+    set: (val) => {
+        const time = form.order_date ? form.order_date.slice(11, 16) : '';
+        form.order_date = val ? `${val}T${time}` : '';
+    },
+});
+const orderTime = computed({
+    get: () => (form.order_date ? form.order_date.slice(11, 16) : ''),
+    set: (val) => {
+        const date = orderDate.value || toLocalDateTimeString(new Date()).slice(0, 10);
+        form.order_date = val ? `${date}T${val}` : '';
+    },
+});
+const readyDate = computed({
+    get: () => (form.ready_at ? form.ready_at.slice(0, 10) : ''),
+    set: (val) => {
+        const time = form.ready_at ? form.ready_at.slice(11, 16) : '';
+        form.ready_at = val ? `${val}T${time}` : '';
+    },
+});
+const readyTime = computed({
+    get: () => (form.ready_at ? form.ready_at.slice(11, 16) : ''),
+    set: (val) => {
+        const date = readyDate.value || orderDate.value || toLocalDateTimeString(new Date()).slice(0, 10);
+        form.ready_at = val ? `${date}T${val}` : '';
+    },
+});
+
+const orderTimeSlots = computed(() => withCurrentValue(
+    buildTimeSlots(orderDate.value, effectiveWorkingHours.value, props.defaultWorkingHours),
+    orderTime.value
+));
+const readyTimeSlots = computed(() => withCurrentValue(
+    buildTimeSlots(readyDate.value, effectiveWorkingHours.value, props.defaultWorkingHours),
+    readyTime.value
+));
 
 const submit = () => {
     if (editingOrder.value) {
@@ -1009,6 +1073,32 @@ const deleteOrder = (order) => {
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Пробег (км)</label>
                             <input v-model="form.mileage" type="number" min="0" placeholder="Например: 150000" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата и время создания</label>
+                                <div class="flex gap-2">
+                                    <input v-model="orderDate" type="date" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    <select v-model="orderTime" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                        <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                        <option v-for="slot in orderTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                    </select>
+                                </div>
+                                <p v-if="form.errors.order_date" class="mt-1 text-xs text-danger">{{ form.errors.order_date }}</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Дата и время готовности</label>
+                                <div class="flex gap-2">
+                                    <input v-model="readyDate" type="date" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                    <select v-model="readyTime" class="block w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                        <option value="" disabled class="bg-white dark:bg-gray-800">Время</option>
+                                        <option v-for="slot in readyTimeSlots" :key="slot" :value="slot" class="bg-white dark:bg-gray-800">{{ slot }}</option>
+                                    </select>
+                                </div>
+                                <p class="mt-1 text-[11px] text-gray-400">На карточке заказа появится бейдж "Выполнить до …". Можно оставить пустым, если дедлайна нет.</p>
+                                <p v-if="form.errors.ready_at" class="mt-1 text-xs text-danger">{{ form.errors.ready_at }}</p>
+                            </div>
                         </div>
                     </div>
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50">

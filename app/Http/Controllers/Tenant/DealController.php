@@ -14,6 +14,7 @@ use App\Models\Vehicle;
 use App\Models\WorkOrder;
 use App\Services\ActivityLogger;
 use App\Services\Sales\PipelineAutomationService;
+use App\Services\WorkingHoursResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -133,6 +134,10 @@ class DealController extends Controller
             'lossReasons' => Lookup::where('type', 'deal_loss_reason')->where('is_active', true)->orderBy('sort_order')->get(['id', 'label']),
             'sources' => Lookup::where('type', 'client_source')->where('is_active', true)->orderBy('sort_order')->get(['id', 'label']),
             'taskTypes' => Lookup::where('type', 'task_type')->where('is_active', true)->orderBy('sort_order')->get(['id', 'value', 'label']),
+            // Для TaskPanel — время постановки задачи выбирается в пределах
+            // рабочих часов организации (см. CLAUDE.md, "Дата/время создания
+            // и готовности заказ-наряда" — тот же composable).
+            'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
             'activities' => $feed['activities'],
             'comments' => $feed['comments'],
         ]);

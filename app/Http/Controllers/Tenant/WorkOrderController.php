@@ -46,6 +46,8 @@ use App\Services\Sales\PipelineAutomationService;
 use App\Services\StockService;
 use App\Services\TimezoneResolver;
 use App\Services\WarehouseResolver;
+use App\Services\WorkingHoursResolver;
+use Carbon\Carbon;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -103,7 +105,19 @@ class WorkOrderController extends Controller
 
         $workOrders = $query->paginate(15)->withQueryString();
 
-        $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
+        // order_date/ready_at — wall-clock локации заказа, для предзаполнения формы
+        // редактирования из списка (тот же приём, что и в show()).
+        $workOrders->getCollection()->each(function (WorkOrder $order) {
+            $tz = TimezoneResolver::forBranch($order->branch_id);
+            if ($order->order_date) {
+                $order->setAttribute('order_date_local', $order->order_date->copy()->setTimezone($tz)->format('Y-m-d\TH:i'));
+            }
+            if ($order->ready_at) {
+                $order->setAttribute('ready_at_local', $order->ready_at->copy()->setTimezone($tz)->format('Y-m-d\TH:i'));
+            }
+        });
+
+        $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name', 'working_hours']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
         $makes = VehicleMake::where('is_active', true)->orderBy('name')->get(['id', 'name']);
@@ -171,6 +185,7 @@ class WorkOrderController extends Controller
             'workOrders' => $workOrders,
             'filters' => $request->all(),
             'branches' => $branches,
+            'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
             'clients' => $clients,
             'vehicles' => $vehicles,
             'makes' => $makes,
@@ -191,6 +206,16 @@ class WorkOrderController extends Controller
         $workOrder->load(['branch' => fn ($q) => $q->withTrashed(), 'legalEntity' => fn ($q) => $q->withTrashed(), 'client', 'vehicle.make', 'vehicle.vehicleModel', 'items.employees', 'items.contractors', 'items.admins', 'transactions.account', 'admins', 'documents' => fn ($q) => $q->with(['documentable', 'branch.legalEntities', 'supersededBy:id,number'])->orderBy('id', 'desc')]);
         $workOrder->documents->each->append('is_stale');
 
+        // order_date/ready_at — wall-clock локации заказа для предзаполнения формы
+        // редактирования (тот же приём, что и linkedAppointment->start_at_local ниже).
+        $workOrderTz = TimezoneResolver::forBranch($workOrder->branch_id);
+        if ($workOrder->order_date) {
+            $workOrder->setAttribute('order_date_local', $workOrder->order_date->copy()->setTimezone($workOrderTz)->format('Y-m-d\TH:i'));
+        }
+        if ($workOrder->ready_at) {
+            $workOrder->setAttribute('ready_at_local', $workOrder->ready_at->copy()->setTimezone($workOrderTz)->format('Y-m-d\TH:i'));
+        }
+
         $customFieldDefs = CustomFieldDefinition::where('entity_type', 'work_order')->orderBy('sort_order')->get();
         $cfValues = CustomFieldValue::where('entity_type', 'work_order')->where('entity_id', $workOrder->id)->get();
 
@@ -203,7 +228,7 @@ class WorkOrderController extends Controller
             ];
         }
 
-        $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name']);
+        $branches = Branch::forSelect()->with('legalEntities:id,name')->get(['id', 'name', 'working_hours']);
         $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
         $vehicles = Vehicle::with(['make', 'vehicleModel'])->get(['id', 'client_id', 'vehicle_make_id', 'vehicle_model_id', 'plate_number']);
 
@@ -279,6 +304,7 @@ class WorkOrderController extends Controller
             'workOrder' => $workOrder,
             'customFieldsData' => $customFieldsData,
             'branches' => $branches,
+            'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
             'clients' => $clients,
             'vehicles' => $vehicles,
             'services' => $services,
@@ -355,10 +381,14 @@ class WorkOrderController extends Controller
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
             'mileage' => ['nullable', 'integer', 'min:0'],
+            'order_date' => ['nullable', 'date'],
+            'ready_at' => ['nullable', 'date'],
             'custom_fields' => ['nullable', 'array'],
         ]);
 
-        DB::transaction(function () use ($validated) {
+        $dates = $this->resolveOrderDateTimes($validated);
+
+        DB::transaction(function () use ($validated, $dates) {
             // Автоназначение администратора заказа: если создатель — сотрудник
             // на должности с ролью "администратор" (payroll_role), он сразу
             // прикрепляется единственным админом заказа (work_order_admins) —
@@ -379,6 +409,8 @@ class WorkOrderController extends Controller
                 'status' => $validated['status'],
                 'payment_status' => 'unpaid',
                 'mileage' => $validated['mileage'] ?? null,
+                'order_date' => $dates['order_date'],
+                'ready_at' => $dates['ready_at'],
                 'total_amount' => 0,
                 'discount_amount' => 0,
                 'final_amount' => 0,
@@ -400,6 +432,25 @@ class WorkOrderController extends Controller
         return redirect()->back()->with('success', 'Заказ-наряд успешно создан');
     }
 
+    /**
+     * Дата/время создания и дедлайн "выполнить до" (CLAUDE.md, "Дата/время создания и
+     * готовности заказ-наряда") — бизнес-даты, отдельные от технического created_at
+     * (тот же принцип, что и Transaction.transaction_date). Фронт присылает wall-clock
+     * время локации заказа (без TZ, формат datetime-local) — конвертируем в UTC тем же
+     * способом, что и AppointmentController::store() для start_at/end_at.
+     *
+     * @return array{order_date: Carbon, ready_at: ?Carbon}
+     */
+    private function resolveOrderDateTimes(array $validated): array
+    {
+        $branchTz = TimezoneResolver::forBranch($validated['branch_id']);
+
+        return [
+            'order_date' => isset($validated['order_date']) ? Carbon::parse($validated['order_date'], $branchTz)->utc() : now(),
+            'ready_at' => isset($validated['ready_at']) ? Carbon::parse($validated['ready_at'], $branchTz)->utc() : null,
+        ];
+    }
+
     public function update(Request $request, WorkOrder $workOrder)
     {
         $this->assertNotLocked($workOrder);
@@ -411,10 +462,14 @@ class WorkOrderController extends Controller
             'vehicle_id' => ['nullable', 'exists:vehicles,id'],
             'status' => ['required', 'string', Rule::in($this->activeStatusValues())],
             'mileage' => ['nullable', 'integer', 'min:0'],
+            'order_date' => ['nullable', 'date'],
+            'ready_at' => ['nullable', 'date'],
             'custom_fields' => ['nullable', 'array'],
         ]);
 
-        DB::transaction(function () use ($validated, $workOrder) {
+        $dates = $this->resolveOrderDateTimes($validated);
+
+        DB::transaction(function () use ($validated, $workOrder, $dates) {
             $workOrder->update([
                 'branch_id' => $validated['branch_id'],
                 'legal_entity_id' => $validated['legal_entity_id'] ?? null,
@@ -422,6 +477,8 @@ class WorkOrderController extends Controller
                 'vehicle_id' => $validated['vehicle_id'] ?? null,
                 'status' => $validated['status'],
                 'mileage' => $validated['mileage'] ?? null,
+                'order_date' => $dates['order_date'],
+                'ready_at' => $dates['ready_at'],
             ]);
 
             if (isset($validated['custom_fields'])) {
