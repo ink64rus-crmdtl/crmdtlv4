@@ -35,9 +35,43 @@ class PlatformDocumentTemplateService
             ->get(['id', 'country_code', 'name', 'entity_type', 'format']));
     }
 
+    /**
+     * Один шаблон библиотеки, доступный ИМЕННО этому тенанту — та же
+     * фильтрация (is_active + страна), что и в listForCurrentTenant(), но
+     * для одной записи по id. Используется предпросмотром и import() —
+     * раньше import() доверял id, который прислал фронт, без проверки на
+     * бэкенде, что тенант вообще имеет право видеть этот шаблон (чужая
+     * страна/неактивный шаблон технически импортировались бы по прямому
+     * запросу с угаданным id).
+     */
+    public static function findVisibleForCurrentTenant(int $id): PlatformDocumentTemplate
+    {
+        $country = tenant('country_code');
+
+        return tenancy()->central(fn () => PlatformDocumentTemplate::where('is_active', true)
+            ->where(fn ($q) => $q->whereNull('country_code')->orWhere('country_code', $country))
+            ->findOrFail($id));
+    }
+
+    /**
+     * Рендер тела шаблона БЕЗ привязки к реальной записи (превью в
+     * библиотеке — ни у central-админки, ни у тенанта на этапе просмотра
+     * ДО импорта нет конкретного WorkOrder/Client и т.п., от которого можно
+     * было бы построить настоящие плейсхолдеры). DocumentRenderer — чистая
+     * строковая функция, реальной модели не требует: обычные {{ключ}}
+     * подставляются пустотой, {{#if}}-блоки вырезаются как заведомо ложные
+     * (см. DocumentRenderer::stripUnresolvedPlaceholders()) — предпросмотр
+     * не претендует на точность с реальными суммами/условиями, только на
+     * визуальную вёрстку/шрифт/разметку.
+     */
+    public static function renderPreview(PlatformDocumentTemplate $template): string
+    {
+        return (new DocumentRenderer)->render($template->body, [], []);
+    }
+
     public static function import(int $id): DocumentTemplate
     {
-        $source = tenancy()->central(fn () => PlatformDocumentTemplate::findOrFail($id));
+        $source = self::findVisibleForCurrentTenant($id);
 
         $template = DocumentTemplate::create([
             'name' => $source->name,

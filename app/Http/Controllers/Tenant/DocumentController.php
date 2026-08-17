@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentTemplate;
+use App\Models\Employee;
 use App\Models\Transaction;
 use App\Models\WorkOrder;
 use App\Services\Documents\DocumentGenerationService;
@@ -37,6 +38,7 @@ class DocumentController extends Controller
         'transaction' => ['class' => Transaction::class, 'with' => ['branch.legalEntities']],
         'client' => ['class' => Client::class, 'with' => ['branch.legalEntities']],
         'goods_receipt' => ['class' => GoodsReceipt::class, 'with' => ['branch.legalEntities', 'legalEntity', 'supplier', 'items.product']],
+        'employee' => ['class' => Employee::class, 'with' => ['branch.legalEntities', 'position', 'secondaryPosition']],
     ];
 
     public function index(Request $request): Response

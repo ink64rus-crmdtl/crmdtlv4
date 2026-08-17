@@ -35,6 +35,7 @@ class DocumentTemplateController extends Controller
         'transaction' => 'Транзакция',
         'client' => 'Клиент',
         'goods_receipt' => 'Приходная накладная',
+        'employee' => 'Сотрудник',
     ];
 
     /**
@@ -103,6 +104,29 @@ class DocumentTemplateController extends Controller
             'supplier.name' => 'Имя/название поставщика',
             'supplier.phone' => 'Телефон поставщика',
             ...self::SUPPLIER_ORGANIZATION_PLACEHOLDERS,
+        ],
+        'employee' => [
+            'employee.id' => 'Табельный номер сотрудника',
+            'employee.full_name' => 'ФИО полностью (Фамилия Имя Отчество)',
+            'employee.last_name' => 'Фамилия',
+            'employee.first_name' => 'Имя',
+            'employee.middle_name' => 'Отчество',
+            'employee.phone' => 'Телефон',
+            'employee.personal_email' => 'Личный email',
+            'employee.position' => 'Основная должность',
+            'employee.secondary_position' => 'Совмещаемая должность',
+            'employee.type_label' => 'Тип оформления («В штате» / «Самозанятый»)',
+            'employee.birth_date' => 'Дата рождения',
+            'employee.hire_date' => 'Дата приёма на работу',
+            'employee.termination_date' => 'Дата увольнения',
+            'employee.passport_series' => 'Серия паспорта',
+            'employee.passport_number' => 'Номер паспорта',
+            'employee.passport_issued_by' => 'Кем выдан паспорт',
+            'employee.passport_issue_date' => 'Дата выдачи паспорта',
+            'employee.passport_department_code' => 'Код подразделения',
+            'employee.registration_address' => 'Адрес регистрации',
+            'employee.salary_amount' => 'Оклад (в месяц)',
+            'employee.self_employed_tax_percent' => 'Компенсация налога самозанятого',
         ],
     ];
 
@@ -183,6 +207,13 @@ class DocumentTemplateController extends Controller
         'goods_receipt' => [
             'goods_receipt.vat_inclusive' => 'Блок покажется, только если НДС по накладной включён в цену',
             'goods_receipt.vat_exclusive' => 'Блок покажется, только если НДС по накладной начисляется сверх суммы',
+        ],
+        'employee' => [
+            'employee.is_staff' => 'Блок покажется, только если сотрудник оформлен в штат',
+            'employee.is_self_employed' => 'Блок покажется, только если сотрудник — самозанятый',
+            'employee.has_secondary_position' => 'Блок покажется, только если у сотрудника есть совмещаемая должность',
+            'employee.has_termination_date' => 'Блок покажется, только если у сотрудника указана дата увольнения',
+            'employee.is_active' => 'Блок покажется, только если сотрудник активен',
         ],
     ];
 
@@ -275,6 +306,18 @@ class DocumentTemplateController extends Controller
     public function library()
     {
         return response()->json(['templates' => PlatformDocumentTemplateService::listForCurrentTenant()]);
+    }
+
+    /**
+     * Предпросмотр библиотечного шаблона ДО импорта — та же фильтрация
+     * (страна тенанта + is_active), что и в library(), только по одному id
+     * (findVisibleForCurrentTenant() — не доверяем присланному id вслепую).
+     */
+    public function previewLibraryTemplate(int $id)
+    {
+        $template = PlatformDocumentTemplateService::findVisibleForCurrentTenant($id);
+
+        return response()->json(['html' => PlatformDocumentTemplateService::renderPreview($template)]);
     }
 
     /**

@@ -23,9 +23,11 @@ const props = defineProps({
     serviceCategories: { type: Array, default: () => [] },
     services: { type: Array, default: () => [] },
     payrollEntries: { type: Object, default: () => ({ data: [], links: [], per_page: 10 }) },
-    payrollPayouts: { type: Object, default: () => ({ data: [], links: [], per_page: 10 }) },
+    payrollFilter: { type: String, default: 'all' },
     payoutAccounts: { type: Array, default: () => [] },
     payrollBalance: { type: Object, default: () => ({ accrued_total: 0, paid_total: 0, deductions_total: 0, balance: 0 }) },
+    documentTemplates: { type: Array, default: () => [] },
+    documents: { type: Array, default: () => [] },
 });
 
 
@@ -286,6 +288,12 @@ const cancelPayrollEntry = (entry) => {
     }
 };
 
+const reversePayrollEntry = (entry) => {
+    if (confirm(`Откатить выплату на сумму ${formatMoney(entry.amount)}? Деньги вернутся в кассу, начисление снова станет «Ожидает» и его можно будет выплатить заново.`)) {
+        useForm({}).post(route('hr.payroll.reverse-payout', entry.id), { preserveScroll: true });
+    }
+};
+
 const payrollRoleLabels = {
     admin: 'Администратор (заказ)',
     worker: 'Исполнитель (заказ)',
@@ -305,25 +313,40 @@ const payrollStatusLabels = {
     canceled: 'Отменено',
 };
 
+const accountTypeIcon = (type) => ({
+    cash: 'ri-cash-line',
+    bank: 'ri-bank-line',
+    acquiring: 'ri-smartphone-line',
+    bonus: 'ri-gift-line',
+})[type] || 'ri-wallet-3-line';
+
 const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
-// Единый блок карточки на 4 вкладки: «Выплаты»/«Начисления» (Фаза 10.3, у
-// каждой своя серверная пагинация — см. EmployeeController::show(),
-// query-параметры accruals_page/payouts_page, чтобы листание одной не
-// сбивало страницу другой) и «История»/«Комментарии» (лента активности —
-// у них пагинации нет, она им и не нужна). «Выплаты» — главная вкладка:
-// именно она растёт без ограничения с каждой реальной оплатой.
-const payrollTab = ref('payouts'); // 'payouts' | 'accruals' | 'history' | 'comments'
+// Единый блок карточки на вкладки: «Взаиморасчёты» (начисления и выплаты
+// одним списком с фильтром по статусу — см. EmployeeController::show(),
+// query-параметр payroll_filter) + «История»/«Комментарии» (лента активности —
+// пагинации нет, она им и не нужна) + «Документы».
+const payrollTab = ref('settlements'); // 'settlements' | 'history' | 'comments' | 'documents'
 const PAYROLL_PAGE_SIZES = [5, 10, 25, 50];
 const accrualsPerPage = ref(props.payrollEntries.per_page || 10);
-const payoutsPerPage = ref(props.payrollPayouts.per_page || 10);
+const payrollFilter = ref(props.payrollFilter || 'all'); // 'all' | 'paid' | 'pending'
 
-const changePayrollPerPage = (prefix, value) => {
+const changePayrollFilter = (filter) => {
+    payrollFilter.value = filter;
     const currentParams = Object.fromEntries(new URLSearchParams(window.location.search));
     router.get(route('hr.employees.show', props.employee.id), {
         ...currentParams,
-        [`${prefix}_per_page`]: value,
-        [`${prefix}_page`]: 1,
+        payroll_filter: filter,
+        accruals_page: 1,
+    }, { preserveScroll: true, preserveState: true });
+};
+
+const changePayrollPerPage = (value) => {
+    const currentParams = Object.fromEntries(new URLSearchParams(window.location.search));
+    router.get(route('hr.employees.show', props.employee.id), {
+        ...currentParams,
+        accruals_per_page: value,
+        accruals_page: 1,
     }, { preserveScroll: true, preserveState: true });
 };
 
@@ -386,6 +409,39 @@ const submitBulkPayout = () => {
             closeBulkPayoutModal();
         },
     });
+};
+
+// --- Документы (Фаза 12, сущность 'employee') ---
+const selectedDocumentTemplateId = ref(props.documentTemplates[0]?.id ?? '');
+const generatingDocument = ref(false);
+
+const generateDocument = () => {
+    if (!selectedDocumentTemplateId.value) return;
+    generatingDocument.value = true;
+    router.post(route('documents.generate'), {
+        document_template_id: selectedDocumentTemplateId.value,
+        entity_type: 'employee',
+        entity_id: props.employee.id,
+    }, {
+        preserveScroll: true,
+        onFinish: () => { generatingDocument.value = false; },
+    });
+};
+
+const deleteDocument = (doc) => {
+    if (confirm(`Удалить документ №${doc.number}? Если это последний выданный номер — следующий документ получит тот же номер.`)) {
+        router.delete(route('documents.destroy', doc.id), { preserveScroll: true });
+    }
+};
+
+const regenerateAsNew = (doc) => {
+    router.post(route('documents.regenerate-as-new', doc.id), {}, { preserveScroll: true });
+};
+
+const replaceDocument = (doc) => {
+    if (confirm(`Заменить документ №${doc.number} актуальными данными? Номер останется прежним, содержимое и дата формирования обновятся.`)) {
+        router.post(route('documents.replace', doc.id), {}, { preserveScroll: true });
+    }
 };
 </script>
 
@@ -514,84 +570,65 @@ const submitBulkPayout = () => {
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 flex flex-col h-full min-h-[500px]">
                     <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 pr-6">
                         <div class="flex space-x-6 px-6 overflow-x-auto">
-                            <button @click="payrollTab = 'payouts'" :class="[payrollTab === 'payouts' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 text-sm transition-colors focus:outline-none flex items-center gap-2 whitespace-nowrap']">
-                                <i class="ri-wallet-3-line"></i> Выплаты
-                            </button>
-                            <button @click="payrollTab = 'accruals'" :class="[payrollTab === 'accruals' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 text-sm transition-colors focus:outline-none flex items-center gap-2 whitespace-nowrap']">
-                                <i class="ri-file-list-3-line"></i> Начисления
+                            <button @click="payrollTab = 'settlements'" :class="[payrollTab === 'settlements' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 text-sm transition-colors focus:outline-none flex items-center gap-2 whitespace-nowrap']">
+                                <i class="ri-wallet-3-line"></i> Взаиморасчёты
                             </button>
                             <button @click="payrollTab = 'history'" :class="[payrollTab === 'history' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 text-sm transition-colors focus:outline-none flex items-center gap-2 whitespace-nowrap']">
                                 <i class="ri-history-line"></i> История
                             </button>
                             <button @click="payrollTab = 'comments'" :class="[payrollTab === 'comments' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 text-sm transition-colors focus:outline-none flex items-center gap-2 whitespace-nowrap']">
                                 <i class="ri-chat-3-line"></i> Комментарии
-                                <span v-if="comments.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{{ comments.length }}</span>
+                                <span v-if="comments.length > 0" class="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-xs font-bold">{{ comments.length }}</span>
+                            </button>
+                            <button @click="payrollTab = 'documents'" :class="[payrollTab === 'documents' ? 'border-primary text-primary font-bold border-b-2' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 font-medium border-b-2', 'py-3.5 text-sm transition-colors focus:outline-none flex items-center gap-2 whitespace-nowrap']">
+                                <i class="ri-file-list-2-line"></i> Документы
                             </button>
                         </div>
-                        <div v-if="payrollTab === 'payouts' || payrollTab === 'accruals'" class="flex gap-1.5 shrink-0">
+                        <div v-if="payrollTab === 'settlements'" class="flex gap-1.5 shrink-0">
                             <button @click="openAccrualModal('accrual')" title="Начислить премию" class="text-success hover:text-success-600 transition-colors"><i class="ri-add-circle-line text-lg"></i></button>
                             <button @click="openAccrualModal('deduction')" title="Оформить штраф" class="text-danger hover:text-danger-600 transition-colors"><i class="ri-subtract-line text-lg"></i></button>
                         </div>
                     </div>
 
-                    <div v-if="payrollTab === 'payouts' || payrollTab === 'accruals'" class="px-6 py-3 border-b border-gray-100 dark:border-gray-700/50 grid grid-cols-3 gap-2 text-center bg-gray-50/30 dark:bg-gray-800/20">
+                    <div v-if="payrollTab === 'settlements'" class="px-6 py-3 border-b border-gray-100 dark:border-gray-700/50 grid grid-cols-3 gap-2 text-center bg-gray-50/30 dark:bg-gray-800/20">
                         <div>
-                            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Начислено</p>
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Начислено</p>
                             <p class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(payrollBalance.accrued_total) }}</p>
                         </div>
                         <div>
-                            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Выплачено</p>
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Выплачено</p>
                             <p class="text-sm font-bold text-success">{{ formatMoney(payrollBalance.paid_total) }}</p>
                         </div>
                         <div>
-                            <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">К выплате</p>
+                            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">К выплате</p>
                             <p class="text-sm font-bold" :class="payrollBalance.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(payrollBalance.balance) }}</p>
                         </div>
                     </div>
 
-                    <!-- Вкладка «Выплаты» — только реально прошедшие оплаты (Payroll.status=paid),
-                         главная вкладка: именно этот список растёт без ограничения. -->
-                    <template v-if="payrollTab === 'payouts'">
-                        <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
-                            <div v-for="entry in payrollPayouts.data" :key="entry.id" class="p-4 flex justify-between items-start gap-2">
-                                <div>
-                                    <span class="text-xs text-gray-400">{{ payrollRoleLabels[entry.role] || entry.role }}</span>
-                                    <p v-if="entry.comment" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ entry.comment }}</p>
-                                    <p class="text-[11px] text-gray-400 mt-1">Начислено: {{ formatDate(entry.created_at) }}</p>
-                                </div>
-                                <div class="text-right shrink-0">
-                                    <div class="text-sm font-bold text-success">{{ formatMoney(entry.amount) }}</div>
-                                    <p class="text-[11px] text-gray-400 mt-1">Оплачено: {{ formatDate(entry.transaction?.transaction_date) }}</p>
-                                </div>
+                    <!-- Вкладка «Взаиморасчёты» — начисления и выплаты одним списком,
+                         с фильтром по статусу (все / выплаты / начисления). Кнопка
+                         «Откатить выплату» — у выплаченных записей: откатываем именно
+                         выплату (деньги), а не начисление. -->
+                    <template v-if="payrollTab === 'settlements'">
+                        <div class="px-6 py-2 border-b border-gray-100 dark:border-gray-700/50 flex flex-wrap items-center justify-between gap-3 bg-gray-50/30 dark:bg-gray-800/20">
+                            <div class="flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
+                                <button @click="changePayrollFilter('all')" :class="payrollFilter === 'all' ? 'bg-primary text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'" class="px-2.5 py-1 rounded text-xs font-medium transition-colors">Все</button>
+                                <button @click="changePayrollFilter('paid')" :class="payrollFilter === 'paid' ? 'bg-primary text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'" class="px-2.5 py-1 rounded text-xs font-medium transition-colors">Выплаты</button>
+                                <button @click="changePayrollFilter('pending')" :class="payrollFilter === 'pending' ? 'bg-primary text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'" class="px-2.5 py-1 rounded text-xs font-medium transition-colors">Начисления</button>
                             </div>
-                            <div v-if="payrollPayouts.data.length === 0" class="p-6 text-center text-sm text-gray-400">Выплат пока нет.</div>
-                        </div>
-                        <div v-if="payrollPayouts.data.length > 0" class="px-6 py-3 border-t border-gray-100 dark:border-gray-700/50 flex items-center justify-between gap-3">
-                            <label class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 shrink-0">
-                                Строк:
-                                <select v-model.number="payoutsPerPage" @change="changePayrollPerPage('payouts', payoutsPerPage)" class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                                    <option v-for="size in PAYROLL_PAGE_SIZES" :key="size" :value="size">{{ size }}</option>
-                                </select>
-                            </label>
-                        </div>
-                        <Pagination :meta="payrollPayouts" preserve-scroll preserve-state />
-                    </template>
-
-                    <!-- Вкладка «Начисления» — полный журнал решений (все статусы: ожидает/выплачено/отменено),
-                         с массовым выбором pending-начислений для выплаты одной операцией. -->
-                    <template v-else-if="payrollTab === 'accruals'">
-                        <div v-if="payableAccrualEntries.length > 0" class="px-6 py-2 border-b border-gray-100 dark:border-gray-700/50 flex items-center justify-between gap-3 bg-gray-50/30 dark:bg-gray-800/20">
-                            <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
-                                <input type="checkbox" :checked="allPayableSelected" @change="toggleSelectAllPayable" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                Выбрать все ожидающие ({{ payableAccrualEntries.length }})
-                            </label>
-                            <button
-                                v-if="selectedPayrollIds.length > 0"
-                                @click="openBulkPayoutModal"
-                                class="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success text-white hover:bg-success-600 shrink-0"
-                            >
-                                <i class="ri-money-dollar-circle-line"></i> Выплатить выбранные ({{ selectedPayrollIds.length }}) — {{ formatMoney(selectedPayrollTotal) }}
-                            </button>
+                            <div v-if="payableAccrualEntries.length > 0" class="flex items-center gap-3">
+                                <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                                    <input type="checkbox" :checked="allPayableSelected" @change="toggleSelectAllPayable" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                                    Выбрать все ожидающие ({{ payableAccrualEntries.length }})
+                                </label>
+                                <button
+                                    v-if="selectedPayrollIds.length > 0"
+                                    @click="openBulkPayoutModal"
+                                    class="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success text-white hover:bg-success-600 shrink-0"
+                                >
+                                    <i class="ri-money-dollar-circle-line"></i> Выплатить выбранные ({{ selectedPayrollIds.length }}) — {{ formatMoney(selectedPayrollTotal) }}
+                                </button>
+                            </div>
                         </div>
                         <div class="divide-y divide-gray-100 dark:divide-gray-700/50">
                             <div v-for="entry in payrollEntries.data" :key="entry.id" class="p-4 flex items-start gap-3">
@@ -607,29 +644,46 @@ const submitBulkPayout = () => {
                                     <div class="flex justify-between items-start gap-2">
                                         <div>
                                             <div class="flex items-center gap-1.5 flex-wrap">
-                                                <span :class="[entry.type === 'deduction' ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success', 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase']">{{ entry.type === 'deduction' ? 'Штраф' : 'Начисление' }}</span>
+                                                <span :class="[entry.type === 'deduction' ? 'bg-danger/10 text-danger' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400', 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-bold uppercase']">
+                                                <i v-if="entry.type === 'accrual'" class="ri-add-circle-line"></i>
+                                                {{ entry.type === 'deduction' ? 'Штраф' : 'Начисление' }}</span>
                                                 <span class="text-xs text-gray-400">{{ payrollRoleLabels[entry.role] || entry.role }}</span>
                                             </div>
                                             <p v-if="entry.comment" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ entry.comment }}</p>
-                                            <p class="text-[11px] text-gray-400 mt-1">{{ formatDate(entry.created_at) }}</p>
+                                            <p class="text-xs text-gray-400 mt-1">Начислено: {{ formatDate(entry.created_at) }}</p>
                                         </div>
                                         <div class="text-right shrink-0">
                                             <div :class="entry.type === 'deduction' ? 'text-danger' : 'text-gray-800 dark:text-gray-200'" class="text-sm font-bold">{{ entry.type === 'deduction' ? '−' : '' }}{{ formatMoney(entry.amount) }}</div>
-                                            <span :class="[payrollStatusClasses[entry.status], 'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium mt-1']">{{ payrollStatusLabels[entry.status] }}</span>
+                                            <span v-if="entry.status !== 'paid'" :class="[payrollStatusClasses[entry.status], 'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium mt-1']">{{ payrollStatusLabels[entry.status] }}</span>
                                         </div>
                                     </div>
                                     <div v-if="entry.status === 'pending'" class="flex gap-2 mt-2">
                                         <button v-if="entry.type === 'accrual'" @click="openPayoutForm(entry)" class="text-xs font-medium text-primary hover:underline">Выплатить</button>
                                         <button @click="cancelPayrollEntry(entry)" class="text-xs font-medium text-gray-400 hover:text-danger">Отменить</button>
                                     </div>
+                                    <div v-if="entry.status === 'paid'" class="mt-2.5 ml-7 rounded-lg bg-success/5 dark:bg-success/10 border border-success/20 px-3 py-2 flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <i class="ri-checkbox-circle-line text-success shrink-0"></i>
+                                            <span class="inline-flex items-center px-1.5 py-[1px] rounded bg-success/10 text-success text-xs font-bold uppercase shrink-0">Выплачено</span>
+                                            <template v-if="entry.transaction">
+                                                <span class="text-xs text-gray-600 dark:text-gray-300 shrink-0">{{ formatDate(entry.transaction.transaction_date) }}</span>
+                                                <span v-if="entry.transaction.account" class="text-xs text-gray-400 flex items-center gap-1 min-w-0 truncate">
+                                                    <i :class="accountTypeIcon(entry.transaction.account.type)"></i>
+                                                    {{ entry.transaction.account.name }}
+                                                </span>
+                                            </template>
+                                            <span v-else class="text-xs text-gray-400">выплата до привязки к кассе</span>
+                                        </div>
+                                        <button @click="reversePayrollEntry(entry)" class="text-xs font-medium text-warning hover:text-danger shrink-0">Откатить выплату</button>
+                                    </div>
                                 </div>
                             </div>
-                            <div v-if="payrollEntries.data.length === 0" class="p-6 text-center text-sm text-gray-400">Начислений пока нет.</div>
+                            <div v-if="payrollEntries.data.length === 0" class="p-6 text-center text-sm text-gray-400">Записей не найдено.</div>
                         </div>
                         <div v-if="payrollEntries.data.length > 0" class="px-6 py-3 border-t border-gray-100 dark:border-gray-700/50 flex items-center justify-between gap-3">
                             <label class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 shrink-0">
                                 Строк:
-                                <select v-model.number="accrualsPerPage" @change="changePayrollPerPage('accruals', accrualsPerPage)" class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <select v-model.number="accrualsPerPage" @change="changePayrollPerPage(accrualsPerPage)" class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                     <option v-for="size in PAYROLL_PAGE_SIZES" :key="size" :value="size">{{ size }}</option>
                                 </select>
                             </label>
@@ -643,8 +697,46 @@ const submitBulkPayout = () => {
                     </div>
 
                     <!-- Вкладка «Комментарии» -->
-                    <div v-else class="flex-1 flex flex-col min-h-0">
+                    <div v-else-if="payrollTab === 'comments'" class="flex-1 flex flex-col min-h-0">
                         <ActivityTimeline :activities="comments" :comment-url="route('hr.employees.comment', employee.id)" />
+                    </div>
+
+                    <!-- Вкладка «Документы» (Фаза 12, сущность 'employee') -->
+                    <div v-else class="flex-1 flex flex-col min-h-0">
+                        <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#313a46] flex items-center gap-2">
+                            <select v-if="documentTemplates.length > 0" v-model="selectedDocumentTemplateId" class="block w-64 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option v-for="t in documentTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                            <button v-if="documentTemplates.length > 0" @click="generateDocument" :disabled="generatingDocument" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-semibold transition-all duration-300 bg-primary text-white hover:bg-primary-600 gap-1.5 shadow-sm disabled:opacity-50">
+                                <i class="ri-file-add-line"></i> Сформировать документ
+                            </button>
+                            <p v-else class="text-sm text-gray-400">Нет активных шаблонов документов для сотрудников — настройте их в Настройках → Шаблоны документов.</p>
+                        </div>
+                        <div class="flex-1 overflow-auto custom-scrollbar">
+                            <table v-if="documents && documents.length > 0" class="min-w-full text-left">
+                                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                                    <tr v-for="doc in documents" :key="doc.id" :class="[doc.superseded_by_document_id ? 'opacity-50' : '', 'odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors']">
+                                        <td class="py-3 px-6 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                                            {{ doc.number }}
+                                            <span v-if="doc.superseded_by_document_id" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 ml-1" :title="`Заменён документом №${doc.superseded_by?.number ?? ''}`">заменён</span>
+                                            <i v-else-if="doc.is_stale" class="ri-error-warning-line text-warning ml-1" title="Данные сотрудника изменились с момента формирования — рекомендуем обновить документ"></i>
+                                        </td>
+                                        <td class="py-3 px-6 text-sm text-gray-600 dark:text-gray-300">{{ doc.title }}</td>
+                                        <td class="py-3 px-6 text-sm text-gray-400">{{ new Date(doc.created_at).toLocaleDateString('ru-RU') }}</td>
+                                        <td class="py-3 px-6 text-sm text-right space-x-1 whitespace-nowrap">
+                                            <template v-if="doc.is_stale && !doc.superseded_by_document_id">
+                                                <button @click="regenerateAsNew(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Сформировать новый документ (этот сохранится в истории)"><i class="ri-file-add-line"></i></button>
+                                                <button @click="replaceDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-warning/10 text-warning hover:bg-warning hover:text-white" title="Заменить этот документ актуальными данными (номер тот же)"><i class="ri-refresh-line"></i></button>
+                                            </template>
+                                            <a :href="route('documents.print', doc.id)" target="_blank" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Печать"><i class="ri-printer-line"></i></a>
+                                            <a :href="route('documents.download', doc.id)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Скачать PDF"><i class="ri-download-2-line"></i></a>
+                                            <button @click="deleteDocument(doc)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-else class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Документов по этому сотруднику ещё нет.</div>
+                        </div>
                     </div>
                 </div>
             </div>

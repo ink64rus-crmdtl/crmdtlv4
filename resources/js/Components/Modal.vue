@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 const props = defineProps({
     show: {
@@ -18,6 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close']);
 const dialog = ref();
+const scrollRegion = ref();
 const showSlot = ref(props.show);
 
 watch(
@@ -28,6 +29,16 @@ watch(
             showSlot.value = true;
 
             dialog.value?.showModal();
+
+            // dialog не пересоздаётся между открытиями (только слот
+            // демонтируется) — без сброса scrollTop высокий контент
+            // предыдущего открытия оставляет модалку проскроленной, и
+            // следующее открытие (даже с другим/более коротким контентом)
+            // показывается не с начала, а с той же позиции.
+            nextTick(() => {
+                if (dialog.value) dialog.value.scrollTop = 0;
+                if (scrollRegion.value) scrollRegion.value.scrollTop = 0;
+            });
         } else {
             document.body.style.overflow = '';
 
@@ -84,6 +95,7 @@ const maxWidthClass = computed(() => {
             ref="dialog"
         >
             <div
+                ref="scrollRegion"
                 class="fixed inset-0 z-[200] overflow-y-auto px-4 py-6 sm:px-0"
                 scroll-region
             >

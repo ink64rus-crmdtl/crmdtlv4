@@ -26,4 +26,6 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
-.claude/sessions/
+/.claude/sessions/
+/.opencode
+/.cursor

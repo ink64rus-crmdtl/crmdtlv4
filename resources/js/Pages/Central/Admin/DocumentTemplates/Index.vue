@@ -1,10 +1,12 @@
 <script setup>
 import CentralAdminLayout from '@/Layouts/CentralAdminLayout.vue';
 import DocumentTemplateEditor from '@/Components/DocumentTemplateEditor.vue';
+import DocumentPreviewModal from '@/Components/DocumentPreviewModal.vue';
 import DataTable from '@/Components/DataTable.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import { useClientSort } from '@/Composables/useClientSort.js';
+import axios from 'axios';
 
 const props = defineProps({
     templates: { type: Array, default: () => [] },
@@ -89,6 +91,28 @@ const onFileSelected = (e) => {
     form.source_file = e.target.files[0] || null;
 };
 
+// --- Предпросмотр (CLAUDE.md "Предпросмотр библиотеки шаблонов документов") ---
+const isPreviewOpen = ref(false);
+const previewHtml = ref('');
+const previewLoading = ref(false);
+const previewingTemplate = ref(null);
+
+const openPreview = (template) => {
+    previewingTemplate.value = template;
+    previewHtml.value = '';
+    previewLoading.value = true;
+    isPreviewOpen.value = true;
+    axios.get(route('central.admin.document-templates.preview', template.id))
+        .then(({ data }) => { previewHtml.value = data.html; })
+        .finally(() => { previewLoading.value = false; });
+};
+
+const closePreview = () => {
+    isPreviewOpen.value = false;
+    previewingTemplate.value = null;
+    previewHtml.value = '';
+};
+
 const currentPlaceholders = computed(() => ({
     ...props.commonPlaceholders,
     ...(props.entityPlaceholders[form.entity_type] || {}),
@@ -100,8 +124,8 @@ const currentConditions = computed(() => props.entityConditions[form.entity_type
 // См. пояснение в Settings/DocumentTemplates/Index.vue — тот же приём: эта
 // модалка сознательно остаётся hand-rolled div, не переведена на <Modal>.
 const modalContainerClass = computed(() => isFullscreen.value
-    ? 'w-full h-[calc(100vh-2rem)] my-4 mx-auto max-w-none flex flex-col'
-    : 'w-full sm:max-w-5xl my-8 mx-auto flex flex-col');
+    ? 'w-full h-[calc(100vh-2rem)] my-auto mx-auto max-w-none flex flex-col'
+    : 'w-full sm:max-w-5xl my-auto mx-auto flex flex-col');
 
 const editorHeightClass = computed(() => isFullscreen.value ? 'h-[calc(100vh-380px)]' : 'h-[420px]');
 
@@ -171,6 +195,9 @@ const { sort, onSort, sortedRows: sortedTemplates } = useClientSort(filteredTemp
                             <span :class="[template.is_active ? 'bg-success/10 text-success' : 'bg-gray-100 text-gray-600', 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium']">{{ template.is_active ? 'Активен' : 'Выключен' }}</span>
                         </template>
                         <template #actions="{ row: template }">
+                            <button @click="openPreview(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-info/10 text-info hover:bg-info hover:text-white" title="Предпросмотр">
+                                <i class="ri-eye-line"></i>
+                            </button>
                             <button @click="openModal(template)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
                                 <i class="ri-pencil-line"></i>
                             </button>
@@ -187,7 +214,7 @@ const { sort, onSort, sortedRows: sortedTemplates } = useClientSort(filteredTemp
             </div>
         </div>
 
-        <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
+        <div v-if="isModalOpen" class="fixed inset-0 z-50 flex justify-center p-4 sm:p-6 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm overflow-y-auto">
             <div class="bg-white border border-gray-200/80 rounded-md shadow-lg dark:bg-[#313a46] dark:border-gray-700/80" :class="modalContainerClass">
                 <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center shrink-0">
                     <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">{{ editingTemplate ? 'Редактирование шаблона' : 'Новый шаблон' }}</h3>
@@ -258,5 +285,13 @@ const { sort, onSort, sortedRows: sortedTemplates } = useClientSort(filteredTemp
                 </form>
             </div>
         </div>
+
+        <DocumentPreviewModal
+            :show="isPreviewOpen"
+            :title="previewingTemplate ? `Предпросмотр: ${previewingTemplate.name}` : 'Предпросмотр'"
+            :html="previewHtml"
+            :loading="previewLoading"
+            @close="closePreview"
+        />
     </CentralAdminLayout>
 </template>

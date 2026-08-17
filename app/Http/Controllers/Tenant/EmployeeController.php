@@ -9,6 +9,8 @@ use App\Models\Branch;
 use App\Models\BusinessDirection;
 use App\Models\CustomFieldDefinition;
 use App\Models\CustomFieldValue;
+use App\Models\Document;
+use App\Models\DocumentTemplate;
 use App\Models\Employee;
 use App\Models\LegalEntity;
 use App\Models\ListView;
@@ -216,30 +218,40 @@ class EmployeeController extends Controller
             ->orderBy('id', 'desc')
             ->get();
 
-        // Фаза 10.3: начисления/штрафы/оклад и их выплата — две отдельные
-        // вкладки на карточке (см. HR/Employees/Show.vue), каждая со своей
-        // серверной пагинацией и своим query-параметром страницы, чтобы
-        // листание одной не сбивало страницу другой:
-        // «Начисления» — полный журнал решений (все статусы), «Выплаты» —
-        // только уже реально прошедшие оплаты (растёт без ограничения при
-        // каждой выплате, поэтому именно она вынесена главной вкладкой).
+        // Фаза 10.3: начисления/штрафы/оклад и их выплата — единый список с
+        // фильтром по статусу выплаты (все / выплаты / начисления, см.
+        // HR/Employees/Show.vue), одна серверная пагинация. Баланс (KPI)
+        // считается отдельно ниже по ВСЕЙ истории, независимо от фильтра.
         $accrualsPerPage = min(max((int) $request->input('accruals_per_page', 10), 5), 100);
-        $payoutsPerPage = min(max((int) $request->input('payouts_per_page', 10), 5), 100);
+        $payrollFilter = $request->input('payroll_filter', 'all'); // all | paid | pending
 
-        $payrollEntries = Payroll::where('employee_id', $employee->id)
-            ->with('transaction:id,transaction_date')
+        $payrollQuery = Payroll::where('employee_id', $employee->id);
+        if ($payrollFilter === 'paid') {
+            $payrollQuery->where('status', 'paid');
+        } elseif ($payrollFilter === 'pending') {
+            // «Начисления» = ещё не выплаченные (ожидает) + отменённые.
+            $payrollQuery->where('status', '!=', 'paid');
+        }
+
+        $payrollEntries = $payrollQuery
+            ->with(['transaction:id,transaction_date,account_id', 'transaction.account:id,name,type'])
             ->orderBy('id', 'desc')
             ->paginate($accrualsPerPage, ['*'], 'accruals_page')
             ->withQueryString();
 
-        $payrollPayouts = Payroll::where('employee_id', $employee->id)
-            ->where('status', 'paid')
-            ->with('transaction:id,transaction_date')
-            ->orderBy('paid_transaction_id', 'desc')
-            ->paginate($payoutsPerPage, ['*'], 'payouts_page')
-            ->withQueryString();
+        $payoutAccounts = auth()->user()->availableAccounts()->where('is_active', true)->where('type', '!=', 'bonus')->get(['accounts.id', 'accounts.name', 'accounts.type']);
 
-        $payoutAccounts = auth()->user()->availableAccounts()->where('is_active', true)->get(['accounts.id', 'accounts.name', 'accounts.type']);
+        // Документы сотрудника (Фаза 12, сущность 'employee') — активные шаблоны
+        // для кнопки «Сформировать документ» на карточке + уже сгенерированные
+        // документы с пометкой is_stale (требует eager-loaded documentable и
+        // branch.legalEntities — тот же паттерн, что у WorkOrderController::show()).
+        $documentTemplates = DocumentTemplate::where('entity_type', 'employee')->where('is_active', true)->get(['id', 'name']);
+        $documents = Document::where('documentable_type', Employee::class)
+            ->where('documentable_id', $employee->id)
+            ->with(['template', 'branch.legalEntities', 'documentable', 'supersededBy:id,number'])
+            ->orderBy('id', 'desc')
+            ->get();
+        $documents->each->append('is_stale');
 
         // Фаза 10.4: баланс взаиморасчётов — считаем по ВСЕЙ истории начислений
         // отдельным запросом (не по текущей странице $payrollEntries), та же
@@ -278,9 +290,11 @@ class EmployeeController extends Controller
             'serviceCategories' => ServiceCategory::where('is_active', true)->get(['id', 'name']),
             'services' => Service::where('is_active', true)->get(['id', 'name', 'service_category_id']),
             'payrollEntries' => $payrollEntries,
-            'payrollPayouts' => $payrollPayouts,
+            'payrollFilter' => $payrollFilter,
             'payoutAccounts' => $payoutAccounts,
             'payrollBalance' => $payrollBalance,
+            'documentTemplates' => $documentTemplates,
+            'documents' => $documents,
         ]);
     }
 

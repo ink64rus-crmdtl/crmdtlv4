@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Central\PlatformDocumentTemplate;
 use App\Services\CountryConfigService;
 use App\Services\Documents\DocxToHtmlConverter;
+use App\Services\Documents\PlatformDocumentTemplateService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,7 @@ class PlatformDocumentTemplateController extends Controller
         'transaction' => 'Транзакция',
         'client' => 'Клиент',
         'goods_receipt' => 'Приходная накладная',
+        'employee' => 'Сотрудник',
     ];
 
     public const COMMON_PLACEHOLDERS = [
@@ -98,6 +100,29 @@ class PlatformDocumentTemplateController extends Controller
             'supplier.phone' => 'Телефон поставщика',
             ...self::SUPPLIER_ORGANIZATION_PLACEHOLDERS,
         ],
+        'employee' => [
+            'employee.id' => 'Табельный номер сотрудника',
+            'employee.full_name' => 'ФИО полностью (Фамилия Имя Отчество)',
+            'employee.last_name' => 'Фамилия',
+            'employee.first_name' => 'Имя',
+            'employee.middle_name' => 'Отчество',
+            'employee.phone' => 'Телефон',
+            'employee.personal_email' => 'Личный email',
+            'employee.position' => 'Основная должность',
+            'employee.secondary_position' => 'Совмещаемая должность',
+            'employee.type_label' => 'Тип оформления («В штате» / «Самозанятый»)',
+            'employee.birth_date' => 'Дата рождения',
+            'employee.hire_date' => 'Дата приёма на работу',
+            'employee.termination_date' => 'Дата увольнения',
+            'employee.passport_series' => 'Серия паспорта',
+            'employee.passport_number' => 'Номер паспорта',
+            'employee.passport_issued_by' => 'Кем выдан паспорт',
+            'employee.passport_issue_date' => 'Дата выдачи паспорта',
+            'employee.passport_department_code' => 'Код подразделения',
+            'employee.registration_address' => 'Адрес регистрации',
+            'employee.salary_amount' => 'Оклад (в месяц)',
+            'employee.self_employed_tax_percent' => 'Компенсация налога самозанятого',
+        ],
     ];
 
     private const CLIENT_ORGANIZATION_PLACEHOLDERS = [
@@ -154,6 +179,13 @@ class PlatformDocumentTemplateController extends Controller
             'goods_receipt.vat_inclusive' => 'Блок покажется, только если НДС по накладной включён в цену',
             'goods_receipt.vat_exclusive' => 'Блок покажется, только если НДС по накладной начисляется сверх суммы',
         ],
+        'employee' => [
+            'employee.is_staff' => 'Блок покажется, только если сотрудник оформлен в штат',
+            'employee.is_self_employed' => 'Блок покажется, только если сотрудник — самозанятый',
+            'employee.has_secondary_position' => 'Блок покажется, только если у сотрудника есть совмещаемая должность',
+            'employee.has_termination_date' => 'Блок покажется, только если у сотрудника указана дата увольнения',
+            'employee.is_active' => 'Блок покажется, только если сотрудник активен',
+        ],
     ];
 
     public function index(): Response
@@ -206,6 +238,17 @@ class PlatformDocumentTemplateController extends Controller
         $platformDocumentTemplate->delete();
 
         return redirect()->back()->with('success', 'Шаблон удалён');
+    }
+
+    /**
+     * Предпросмотр — рендер тела шаблона БЕЗ привязки к реальной записи
+     * (central-контекст в принципе не видит тенантские WorkOrder/Client и
+     * т.п., см. докблок класса). Возвращает готовый HTML JSON'ом, фронт
+     * показывает его в изолированном <iframe sandbox>.
+     */
+    public function preview(PlatformDocumentTemplate $platformDocumentTemplate)
+    {
+        return response()->json(['html' => PlatformDocumentTemplateService::renderPreview($platformDocumentTemplate)]);
     }
 
     private function attachDocx(PlatformDocumentTemplate $template, Request $request): void

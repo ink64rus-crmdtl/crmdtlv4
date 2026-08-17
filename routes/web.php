@@ -68,4 +68,5 @@ Route::middleware('auth:platform_admin')->prefix('admin')->name('central.admin.'
     Route::post('/document-templates', [PlatformDocumentTemplateController::class, 'store'])->name('document-templates.store');
     Route::put('/document-templates/{platformDocumentTemplate}', [PlatformDocumentTemplateController::class, 'update'])->name('document-templates.update');
     Route::delete('/document-templates/{platformDocumentTemplate}', [PlatformDocumentTemplateController::class, 'destroy'])->name('document-templates.destroy');
+    Route::get('/document-templates/{platformDocumentTemplate}/preview', [PlatformDocumentTemplateController::class, 'preview'])->name('document-templates.preview');
 });

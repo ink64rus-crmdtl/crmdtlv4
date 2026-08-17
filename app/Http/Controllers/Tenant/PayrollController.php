@@ -7,6 +7,8 @@ use App\Models\Account;
 use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Payroll;
+use App\Models\Transaction;
+use App\Services\ActivityLogger;
 use App\Services\FinanceService;
 use App\Services\QueryFilterService;
 use Exception;
@@ -130,6 +132,61 @@ class PayrollController extends Controller
                 'balance' => $accruedTotal - $paidTotal - $deductionsTotal,
             ];
         })->sortBy('name')->values()->all();
+    }
+
+    /**
+     * Детализация начислений конкретного подрядчика (Client) — JSON-эндпоинт
+     * для модалки в HR/Payroll/Index.vue (тот же паттерн ajax-ответа, что и
+     * AccountController::lookupBik()). Подрядчик не имеет карточки с вкладкой
+     * «Начисления» как у сотрудника (EmployeeController::show), поэтому список
+     * его начислений и действия (выплата/откат/отмена) живут здесь. Список
+     * ограничен записями этого client_id и не разрастается вместе с клиентской
+     * базой — тот же принцип, что и у contractorSettlements() (без пагинации).
+     */
+    public function contractorPayroll(Request $request, Client $client)
+    {
+        $entries = Payroll::where('client_id', $client->id)
+            ->with('transaction:id,transaction_date,amount')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (Payroll $p) => [
+                'id' => $p->id,
+                'type' => $p->type,
+                'role' => $p->role,
+                'amount' => $p->amount,
+                'status' => $p->status,
+                'comment' => $p->comment,
+                'created_at' => $p->created_at?->toISOString(),
+                'transaction' => $p->transaction ? [
+                    'id' => $p->transaction->id,
+                    'transaction_date' => $p->transaction->transaction_date?->toDateString(),
+                ] : null,
+            ])
+            ->values();
+
+        $balanceRow = Payroll::where('client_id', $client->id)
+            ->selectRaw("
+                SUM(CASE WHEN type = 'accrual' AND status != 'canceled' THEN amount ELSE 0 END) as accrued_total,
+                SUM(CASE WHEN type = 'accrual' AND status = 'paid' THEN amount ELSE 0 END) as paid_total,
+                SUM(CASE WHEN type = 'deduction' AND status = 'pending' THEN amount ELSE 0 END) as deductions_total
+            ")
+            ->first();
+
+        $accruedTotal = (int) ($balanceRow->accrued_total ?? 0);
+        $paidTotal = (int) ($balanceRow->paid_total ?? 0);
+        $deductionsTotal = (int) ($balanceRow->deductions_total ?? 0);
+
+        return response()->json([
+            'contractor' => ['id' => $client->id, 'name' => $client->name],
+            'entries' => $entries,
+            'balance' => [
+                'accrued_total' => $accruedTotal,
+                'paid_total' => $paidTotal,
+                'deductions_total' => $deductionsTotal,
+                'balance' => $accruedTotal - $paidTotal - $deductionsTotal,
+            ],
+            'accounts' => auth()->user()->availableAccounts()->where('is_active', true)->where('type', '!=', 'bonus')->get(['accounts.id', 'accounts.name', 'accounts.type']),
+        ]);
     }
 
     /**
@@ -281,5 +338,96 @@ class PayrollController extends Controller
         $payroll->update(['status' => 'canceled']);
 
         return redirect()->back()->with('success', 'Запись отменена');
+    }
+
+    /**
+     * Откат уже проведённой выплаты (status=paid) — НЕ «отмена» (cancel() для
+     * ещё не выплаченных), а именно откат: деньги возвращаются в кассу, а
+     * начисление возвращается в 'pending', чтобы его можно было выплатить
+     * заново. Транзакция расхода реверсится ТОЛЬКО через FinanceService::
+     * revertTransaction() — напрямую balance кассы здесь не пишем (то же
+     * правило, что и у payout()).
+     */
+    public function reversePayout(Request $request, Payroll $payroll)
+    {
+        if ($payroll->status !== 'paid') {
+            return redirect()->back()->withErrors(['status' => 'Можно откатить только уже выплаченную запись.']);
+        }
+
+        try {
+            DB::transaction(fn () => $this->reverseOne($payroll));
+
+            return redirect()->back()->with('success', 'Выплата отменена — начисление снова ожидает выплаты');
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => 'Ошибка при откате выплаты: '.$e->getMessage()]);
+        }
+    }
+
+    /**
+     * Массовый откат выплат — обратная операция к bulkPayout(): та же пара
+     * «реверс транзакции + возврат в pending» для каждой выбранной записи,
+     * в одной DB-транзакции (либо все, либо ни одна).
+     */
+    public function reverseBulkPayout(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:payrolls,id'],
+        ]);
+
+        $payrolls = Payroll::whereIn('id', $validated['ids'])->get();
+
+        if ($payrolls->contains(fn (Payroll $p) => $p->status !== 'paid')) {
+            return redirect()->back()->withErrors(['ids' => 'В выборке есть невыплаченные записи — откатывать можно только выплаченные.']);
+        }
+
+        try {
+            DB::transaction(function () use ($payrolls) {
+                foreach ($payrolls as $payroll) {
+                    $this->reverseOne($payroll);
+                }
+            });
+
+            return redirect()->back()->with('success', 'Отменено выплат: '.$payrolls->count());
+        } catch (Exception $e) {
+            return redirect()->back()->withErrors(['error' => 'Ошибка при откате выплат: '.$e->getMessage()]);
+        }
+    }
+
+    /**
+     * Ядро отката ОДНОЙ выплаты. Если транзакции уже нет (кто-то отменил её
+     * из Финансов раньше — revertTransaction сам вернул статус в pending через
+     * Payroll::syncPaymentStatus()), реверсить нечего — просто фиксируем
+     * pending/очистку ссылки. Сверку проверяем явно ради понятного текста
+     * ошибки (revertTransaction() тоже блокирует, но уже общим сообщением).
+     */
+    private function reverseOne(Payroll $payroll): void
+    {
+        $transaction = $payroll->paid_transaction_id
+            ? Transaction::withoutGlobalScopes()->find($payroll->paid_transaction_id)
+            : null;
+
+        if ($transaction) {
+            if ($transaction->is_reconciled) {
+                throw new Exception('Транзакция выплаты сверена с банковской выпиской — снимите отметку сверки, чтобы откатить выплату.');
+            }
+
+            FinanceService::revertTransaction($transaction);
+        }
+
+        $payroll->update([
+            'status' => 'pending',
+            'paid_transaction_id' => null,
+        ]);
+
+        $payee = $payroll->payee();
+        if ($payee) {
+            ActivityLogger::log(
+                $payee,
+                'Отменена выплата «'.$payroll->payeeName().'» на сумму '.number_format($payroll->amount / 100, 2, ',', ' ').' ₽ — начисление снова ожидает выплаты',
+                [],
+                'payout_reversed'
+            );
+        }
     }
 }

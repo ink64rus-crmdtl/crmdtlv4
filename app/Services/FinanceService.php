@@ -117,6 +117,10 @@ class FinanceService
     {
         PeriodClosureService::assertNotClosed($transaction->transaction_date?->toDateString());
 
+        if ($transaction->is_reconciled) {
+            throw new Exception('Транзакция сверена с банковской выпиской — снимите отметку сверки, чтобы отменить операцию.');
+        }
+
         DB::transaction(function () use ($transaction) {
             $account = Account::lockForUpdate()->findOrFail($transaction->account_id);
             $payable = $transaction->payable;

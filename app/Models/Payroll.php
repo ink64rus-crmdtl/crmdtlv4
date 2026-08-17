@@ -87,4 +87,32 @@ class Payroll extends Model
     {
         return $this->belongsTo(Transaction::class, 'paid_transaction_id');
     }
+
+    /**
+     * Синхронизация статуса с реальным наличием транзакции выплаты. Вызывается
+     * FinanceService::revertTransaction() через payable-контракт (method_exists,
+     * как у WorkOrder/GoodsReceipt): если выплата была отменена из Финансов,
+     * транзакция уже физически удалена (paid_transaction_id обнулился по
+     * nullOnDelete), а status мог остаться 'paid' — здесь возвращаем начисление
+     * в 'pending', иначе взаиморасчёты продолжали бы считать долг погашенным,
+     * хотя деньги уже вернулись в кассу (рассинхрон кассы и долга перед
+     * человеком). Отличие от WorkOrder::syncPaymentStatus() — у Payroll ровно
+     * одна транзакция (paid_transaction_id), а не сумма income-движений.
+     */
+    public function syncPaymentStatus(): void
+    {
+        if ($this->status !== 'paid') {
+            return;
+        }
+
+        $transactionExists = $this->paid_transaction_id
+            && Transaction::withoutGlobalScopes()->find($this->paid_transaction_id) !== null;
+
+        if (! $transactionExists) {
+            $this->update([
+                'status' => 'pending',
+                'paid_transaction_id' => null,
+            ]);
+        }
+    }
 }

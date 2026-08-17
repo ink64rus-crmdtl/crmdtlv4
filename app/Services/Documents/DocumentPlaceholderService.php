@@ -5,8 +5,10 @@ namespace App\Services\Documents;
 use App\Models\Account;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Employee;
 use App\Models\GoodsReceipt;
 use App\Models\LegalEntity;
+use App\Models\Position;
 use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\WorkOrder;
@@ -38,6 +40,7 @@ class DocumentPlaceholderService
                 'transaction' => self::transactionPlaceholders($entity),
                 'client' => self::clientPlaceholders($entity),
                 'goods_receipt' => self::goodsReceiptPlaceholders($entity),
+                'employee' => self::employeePlaceholders($entity),
                 default => [],
             },
             self::customFieldPlaceholders($entityType, $entity)
@@ -342,6 +345,81 @@ class DocumentPlaceholderService
         }
 
         $name = $product->name;
+
+        return is_array($name) ? ($name['ru'] ?? current($name) ?: '') : (string) $name;
+    }
+
+    /**
+     * Сотрудник (HR) — источник для трудовых договоров, соглашений о
+     * неразглашении, справок и т.п. Паспортные данные лежат в свободном
+     * passport_data JSON (серия/номер/кем выдан/адрес регистрации — см.
+     * форму HR/Employees/Show.vue), разворачиваем как есть под префиксом
+     * employee.passport_* — какой набор ключей реально введён, тот и станет
+     * доступен. birth_date/hire_date/termination_date — настоящие date-касты,
+     * поэтому форматируются единообразно d.m.Y, как у остальных сущностей.
+     * salary_amount хранится в копейках (integer) — money().
+     */
+    private static function employeePlaceholders(Employee $employee): array
+    {
+        $fullName = implode(' ', array_filter([$employee->last_name, $employee->first_name, $employee->middle_name]));
+        $passport = (array) $employee->passport_data;
+
+        return [
+            'employee.id' => (string) $employee->id,
+            'employee.full_name' => $fullName,
+            'employee.last_name' => $employee->last_name ?? '',
+            'employee.first_name' => $employee->first_name ?? '',
+            'employee.middle_name' => $employee->middle_name ?? '',
+            'employee.phone' => $employee->phone ?? '',
+            'employee.personal_email' => $employee->personal_email ?? '',
+            'employee.position' => self::localizedPositionName($employee->position),
+            'employee.secondary_position' => self::localizedPositionName($employee->secondaryPosition),
+            'employee.type_label' => self::employeeTypeLabel($employee->type),
+            'employee.birth_date' => $employee->birth_date?->format('d.m.Y') ?? '',
+            'employee.hire_date' => $employee->hire_date?->format('d.m.Y') ?? '',
+            'employee.termination_date' => $employee->termination_date?->format('d.m.Y') ?? '',
+            'employee.passport_series' => $passport['series'] ?? '',
+            'employee.passport_number' => $passport['number'] ?? '',
+            'employee.passport_issued_by' => $passport['issued_by'] ?? '',
+            'employee.passport_issue_date' => $passport['issue_date'] ?? '',
+            'employee.passport_department_code' => $passport['department_code'] ?? '',
+            'employee.registration_address' => $passport['registration_address'] ?? '',
+            'employee.salary_amount' => $employee->salary_amount ? self::money($employee->salary_amount) : '',
+            // decimal:2 отдаёт '6.00' — обрезаем хвостовые нули, чтобы в документе
+            // был человекочитаемый «6%», а не «6.00%».
+            'employee.self_employed_tax_percent' => $employee->self_employed_tax_percent !== null ? rtrim(rtrim((string) $employee->self_employed_tax_percent, '0'), '.').'%' : '',
+            // Флаги-условия для {{#if ...}} — не для печати значением, а чтобы
+            // один шаблон одинаково верно показывал нужные блоки для штатного и
+            // самозанятого (тот же приём, что и у work_order.vat_inclusive).
+            'employee.is_staff' => $employee->type === 'staff' ? '1' : '',
+            'employee.is_self_employed' => $employee->type === 'self_employed' ? '1' : '',
+            'employee.has_secondary_position' => $employee->secondary_position_id ? '1' : '',
+            'employee.has_termination_date' => $employee->termination_date ? '1' : '',
+            'employee.is_active' => $employee->is_active ? '1' : '',
+        ];
+    }
+
+    private static function employeeTypeLabel(?string $type): string
+    {
+        return match ($type) {
+            'self_employed' => 'Самозанятый',
+            'staff' => 'В штате',
+            default => (string) $type,
+        };
+    }
+
+    /**
+     * Position.name — spatie/laravel-translatable, тот же защитный паттерн,
+     * что и у localizedProductName(): атрибут отдаёт либо уже отрезолвленную
+     * строку, либо сырой массив локалей в зависимости от контекста загрузки.
+     */
+    private static function localizedPositionName(?Position $position): string
+    {
+        if (! $position) {
+            return '';
+        }
+
+        $name = $position->name;
 
         return is_array($name) ? ($name['ru'] ?? current($name) ?: '') : (string) $name;
     }

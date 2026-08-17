@@ -5,11 +5,13 @@ import Pagination from '@/Components/Pagination.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import HRNav from '@/Components/HRNav.vue';
 import DataTable from '@/Components/DataTable.vue';
-import { Head, Link, router } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import Modal from '@/Components/Modal.vue';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { useServerSort } from '@/Composables/useServerSort.js';
 import { useClientSort } from '@/Composables/useClientSort.js';
+import axios from 'axios';
 
 const props = defineProps({
     employees: Object,
@@ -66,6 +68,106 @@ const contractorColumns = [
     { key: 'paid', label: 'Выплачено', align: 'right', sortable: true, sortKey: 'paid_total' },
     { key: 'balance', label: 'К выплате', align: 'right', sortable: true },
 ];
+
+// --- Начисления подрядчика (модалка детализации) ---
+const contractorModalOpen = ref(false);
+const contractorPayroll = ref(null);
+const contractorPayrollLoading = ref(false);
+const payoutAccountId = ref('');
+const selectedContractorIds = ref([]);
+
+const payableContractorEntries = computed(() =>
+    (contractorPayroll.value?.entries || []).filter(e => e.status === 'pending' && e.type === 'accrual')
+);
+
+const allContractorSelected = computed(() =>
+    payableContractorEntries.value.length > 0
+    && payableContractorEntries.value.every(e => selectedContractorIds.value.includes(e.id))
+);
+
+const selectedContractorTotal = computed(() =>
+    (contractorPayroll.value?.entries || [])
+        .filter(e => selectedContractorIds.value.includes(e.id))
+        .reduce((sum, e) => sum + e.amount, 0)
+);
+
+const contractorStatusLabels = {
+    pending: 'Ожидает',
+    paid: 'Выплачено',
+    canceled: 'Отменено',
+};
+
+const contractorStatusClasses = {
+    pending: 'bg-warning/10 text-warning',
+    paid: 'bg-success/10 text-success',
+    canceled: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
+};
+
+const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+const openContractorPayroll = async (contractor) => {
+    contractorModalOpen.value = true;
+    contractorPayrollLoading.value = true;
+    contractorPayroll.value = null;
+    selectedContractorIds.value = [];
+    try {
+        const res = await axios.get(route('hr.payroll.contractor', contractor.id));
+        contractorPayroll.value = res.data;
+        payoutAccountId.value = res.data.accounts[0]?.id ?? '';
+    } finally {
+        contractorPayrollLoading.value = false;
+    }
+};
+
+const closeContractorPayroll = () => {
+    contractorModalOpen.value = false;
+    contractorPayroll.value = null;
+};
+
+const reloadContractor = () => {
+    const c = contractorPayroll.value?.contractor;
+    if (c) openContractorPayroll(c);
+};
+
+const toggleSelectAllContractor = () => {
+    const ids = payableContractorEntries.value.map(e => e.id);
+    if (allContractorSelected.value) {
+        selectedContractorIds.value = selectedContractorIds.value.filter(id => !ids.includes(id));
+    } else {
+        selectedContractorIds.value = [...new Set([...selectedContractorIds.value, ...ids])];
+    }
+};
+
+const payContractorEntry = (entry) => {
+    if (!payoutAccountId.value) return;
+    useForm({ account_id: payoutAccountId.value }).post(route('hr.payroll.payout', entry.id), {
+        preserveState: true, preserveScroll: true, onSuccess: reloadContractor,
+    });
+};
+
+const reverseContractorEntry = (entry) => {
+    if (confirm(`Откатить выплату на сумму ${formatMoney(entry.amount)}? Деньги вернутся в кассу, начисление снова станет «Ожидает» и его можно будет выплатить заново.`)) {
+        useForm({}).post(route('hr.payroll.reverse-payout', entry.id), {
+            preserveState: true, preserveScroll: true, onSuccess: reloadContractor,
+        });
+    }
+};
+
+const cancelContractorEntry = (entry) => {
+    if (confirm('Отменить эту запись?')) {
+        useForm({}).delete(route('hr.payroll.cancel', entry.id), {
+            preserveState: true, preserveScroll: true, onSuccess: reloadContractor,
+        });
+    }
+};
+
+const bulkPayContractor = () => {
+    if (selectedContractorIds.value.length === 0 || !payoutAccountId.value) return;
+    useForm({ ids: selectedContractorIds.value, account_id: payoutAccountId.value }).post(route('hr.payroll.bulk-payout'), {
+        preserveState: true, preserveScroll: true,
+        onSuccess: () => { selectedContractorIds.value = []; reloadContractor(); },
+    });
+};
 </script>
 
 <template>
@@ -155,10 +257,16 @@ const contractorColumns = [
                         :columns="contractorColumns"
                         :rows="sortedContractors"
                         row-clickable
+                        has-actions
                         @row-click="contractor => router.visit(route('crm.clients.show', contractor.id))"
                         :sort="contractorSort"
                         @sort="onContractorSort"
                     >
+                        <template #actions="{ row: contractor }">
+                            <button @click.stop="openContractorPayroll(contractor)" class="w-8 h-8 rounded-full bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors inline-flex items-center justify-center" title="Начисления и выплаты">
+                                <i class="ri-wallet-3-line"></i>
+                            </button>
+                        </template>
                         <template #cell-name="{ row: contractor }">
                             <span class="font-semibold text-gray-800 dark:text-gray-200">{{ contractor.name }}</span>
                             <span v-if="contractor.is_deleted" class="ml-1 text-xs font-normal text-gray-400">(удалён)</span>
@@ -175,5 +283,82 @@ const contractorColumns = [
                 </div>
             </div>
         </div>
+
+        <Modal :show="contractorModalOpen" @close="closeContractorPayroll" max-width="3xl">
+            <div v-if="contractorPayrollLoading || !contractorPayroll" class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                <i class="ri-loader-4-line animate-spin mr-2"></i> Загружаем начисления...
+            </div>
+            <div v-else class="flex flex-col max-h-[80vh]">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                        <i class="ri-wallet-3-line text-primary"></i> Начисления подрядчика: {{ contractorPayroll.contractor.name }}
+                    </h3>
+                    <button @click="closeContractorPayroll" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors focus:outline-none bg-white dark:bg-gray-800 rounded-md p-1 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <i class="ri-close-line text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="px-6 py-3 border-b border-gray-100 dark:border-gray-700/50 grid grid-cols-3 gap-2 text-center bg-gray-50/30 dark:bg-gray-800/20">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Начислено</p>
+                        <p class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(contractorPayroll.balance.accrued_total) }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Выплачено</p>
+                        <p class="text-sm font-bold text-success">{{ formatMoney(contractorPayroll.balance.paid_total) }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider">К выплате</p>
+                        <p class="text-sm font-bold" :class="contractorPayroll.balance.balance > 0 ? 'text-primary' : 'text-gray-400'">{{ formatMoney(contractorPayroll.balance.balance) }}</p>
+                    </div>
+                </div>
+
+                <div v-if="payableContractorEntries.length > 0" class="px-6 py-2 border-b border-gray-100 dark:border-gray-700/50 flex items-center justify-between gap-3 bg-gray-50/30 dark:bg-gray-800/20">
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                            <input type="checkbox" :checked="allContractorSelected" @change="toggleSelectAllContractor" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
+                            Все ожидающие ({{ payableContractorEntries.length }})
+                        </label>
+                        <label class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                            Счёт:
+                            <select v-model="payoutAccountId" class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1 px-2 text-xs text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option v-for="a in contractorPayroll.accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+                            </select>
+                        </label>
+                    </div>
+                    <button v-if="selectedContractorIds.length > 0" @click="bulkPayContractor" class="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-success text-white hover:bg-success-600 shrink-0">
+                        <i class="ri-money-dollar-circle-line"></i> Выплатить выбранные ({{ selectedContractorIds.length }}) — {{ formatMoney(selectedContractorTotal) }}
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto custom-scrollbar divide-y divide-gray-100 dark:divide-gray-700/50">
+                    <div v-for="entry in contractorPayroll.entries" :key="entry.id" class="p-4 flex items-start gap-3">
+                        <input v-if="entry.status === 'pending' && entry.type === 'accrual'" type="checkbox" :value="entry.id" v-model="selectedContractorIds" class="h-4 w-4 mt-1 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer shrink-0" />
+                        <div v-else class="w-4 shrink-0"></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-start gap-2">
+                                <div>
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold uppercase bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">Начисление</span>
+                                    <p v-if="entry.comment" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ entry.comment }}</p>
+                                    <p class="text-xs text-gray-400 mt-1">{{ formatDate(entry.created_at) }}</p>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <div class="text-sm font-bold text-gray-800 dark:text-gray-200">{{ formatMoney(entry.amount) }}</div>
+                                    <span :class="[contractorStatusClasses[entry.status], 'inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium mt-1']">{{ contractorStatusLabels[entry.status] }}</span>
+                                </div>
+                            </div>
+                            <div v-if="entry.status === 'pending'" class="flex gap-2 mt-2">
+                                <button v-if="entry.type === 'accrual'" @click="payContractorEntry(entry)" class="text-xs font-medium text-primary hover:underline">Выплатить</button>
+                                <button @click="cancelContractorEntry(entry)" class="text-xs font-medium text-gray-400 hover:text-danger">Отменить</button>
+                            </div>
+                            <div v-if="entry.status === 'paid'" class="flex gap-2 mt-2">
+                                <button @click="reverseContractorEntry(entry)" class="text-xs font-medium text-warning hover:text-danger">Откатить выплату</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="contractorPayroll.entries.length === 0" class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">Начислений по этому подрядчику нет.</div>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>

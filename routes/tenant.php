@@ -240,6 +240,7 @@ Route::middleware([
         Route::put('/settings/document-templates/{documentTemplate}', [DocumentTemplateController::class, 'update'])->name('settings.document-templates.update');
         Route::delete('/settings/document-templates/{documentTemplate}', [DocumentTemplateController::class, 'destroy'])->name('settings.document-templates.destroy');
         Route::get('/settings/document-templates/library', [DocumentTemplateController::class, 'library'])->name('settings.document-templates.library');
+        Route::get('/settings/document-templates/library/{id}/preview', [DocumentTemplateController::class, 'previewLibraryTemplate'])->name('settings.document-templates.library.preview');
         Route::post('/settings/document-templates/import', [DocumentTemplateController::class, 'import'])->name('settings.document-templates.import');
 
         // Документы: реестр + генерация печатных форм (Фаза 12)
@@ -272,9 +273,12 @@ Route::middleware([
 
         // HR: Начисления/выплаты ЗП (Фаза 10.3)
         Route::get('/hr/payroll', [PayrollController::class, 'index'])->name('hr.payroll.index');
+        Route::get('/hr/payroll/contractors/{client}/payroll', [PayrollController::class, 'contractorPayroll'])->name('hr.payroll.contractor');
         Route::post('/hr/payroll', [PayrollController::class, 'store'])->name('hr.payroll.store');
         Route::post('/hr/payroll/bulk-payout', [PayrollController::class, 'bulkPayout'])->name('hr.payroll.bulk-payout');
         Route::post('/hr/payroll/{payroll}/payout', [PayrollController::class, 'payout'])->name('hr.payroll.payout');
+        Route::post('/hr/payroll/{payroll}/reverse-payout', [PayrollController::class, 'reversePayout'])->name('hr.payroll.reverse-payout');
+        Route::post('/hr/payroll/reverse-bulk-payout', [PayrollController::class, 'reverseBulkPayout'])->name('hr.payroll.reverse-bulk-payout');
         Route::delete('/hr/payroll/{payroll}', [PayrollController::class, 'cancel'])->name('hr.payroll.cancel');
 
         // CRM: Клиенты
