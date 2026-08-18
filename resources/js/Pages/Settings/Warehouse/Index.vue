@@ -150,15 +150,13 @@ const deleteWarehouse = (warehouse) => {
                 <p><strong>Смешанный:</strong> Комбинация. Расходники хранятся локально на локациях, а дорогие материалы — на центральном складе.</p>
             </PageHelper>
 
-            <!-- Диагностика уже сохранённой конфигурации: локации/компания без склада,
-                 который резолвер реально мог бы использовать в текущем режиме — не
-                 блокирует ничего, просто вскрывает уже существующий разрыв заранее,
-                 а не в момент завершения реального заказа. -->
-            <div v-if="coverageWarning" class="bg-warning/10 border border-warning/30 rounded-md p-4 flex items-start gap-3">
-                <i class="ri-error-warning-line text-warning text-lg shrink-0 mt-0.5"></i>
+            <!-- Header Card -->
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
                 <div>
-                    <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">Текущая конфигурация склада неполна</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{{ coverageWarning }}</p>
+                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Режим работы склада</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Выберите архитектуру складского учета, подходящую для вашего бизнеса
+                    </p>
                 </div>
             </div>
 
@@ -171,32 +169,36 @@ const deleteWarehouse = (warehouse) => {
                 </div>
             </div>
 
-            <!-- Header Card -->
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 flex justify-between items-center">
-                <div>
-                    <h1 class="text-base font-semibold text-gray-800 dark:text-gray-200">Режим работы склада</h1>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Выберите архитектуру складского учета, подходящую для вашего бизнеса
-                    </p>
-                </div>
-            </div>
-
             <!-- Content Card -->
             <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6">
                 <form @submit.prevent="submit" class="space-y-6">
 
-                    <!-- Тумблер: складской учёт целиком -->
-                    <div class="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
-                        <div>
-                            <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">Складской учёт</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
-                                Выключите, если бизнес не ведёт остатки физически (например, только услуги). Каталог товаров и их цены останутся доступны — их можно будет добавлять в заказ-наряды, — но приходные накладные, остатки, движения и списание материалов при завершении заказа вестись не будут.
-                            </p>
+                    <!-- Тумблер: складской учёт целиком. Справа, во второй колонке —
+                         диагностика уже сохранённой конфигурации: локации/компания без
+                         склада, который резолвер реально мог бы использовать в текущем
+                         режиме (WarehouseResolver) — не блокирует ничего, просто вскрывает
+                         уже существующий разрыв заранее, а не в момент завершения заказа. -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="flex items-start justify-between gap-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">Складской учёт</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
+                                    Выключите, если бизнес не ведёт остатки физически (например, только услуги). Каталог товаров и их цены останутся доступны — их можно будет добавлять в заказ-наряды, — но приходные накладные, остатки, движения и списание материалов при завершении заказа вестись не будут.
+                                </p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                                <input type="checkbox" v-model="form.warehouse_enabled" class="sr-only peer" />
+                                <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                            </label>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
-                            <input type="checkbox" v-model="form.warehouse_enabled" class="sr-only peer" />
-                            <div class="w-11 h-6 bg-gray-200 dark:bg-gray-700 rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
-                        </label>
+
+                        <div v-if="coverageWarning" class="bg-warning/10 border border-warning/30 rounded-lg p-4 flex items-start gap-3">
+                            <i class="ri-error-warning-line text-warning text-lg shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">Текущая конфигурация склада неполна</p>
+                                <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{{ coverageWarning }}</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div

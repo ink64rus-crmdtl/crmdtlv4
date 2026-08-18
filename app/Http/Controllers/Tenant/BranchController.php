@@ -8,7 +8,11 @@ use App\Models\Branch;
 use App\Models\Setting;
 use App\Models\Warehouse;
 use App\Services\QueryFilterService;
+use App\Services\TimezoneResolver;
 use App\Services\WarehouseResolver;
+use App\Services\WorkingHoursResolver;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -36,7 +40,40 @@ class BranchController extends Controller
         return Inertia::render('Settings/Branches/Index', [
             'branchesList' => $branchesList,
             'filters' => request()->all(),
+            'timezones' => $this->timezones(),
+            'tenantTimezone' => TimezoneResolver::forTenant(),
+            'defaultWorkingHours' => WorkingHoursResolver::forTenant(),
         ]);
+    }
+
+    /**
+     * Полный список часовых поясов IANA для выбора в форме локации.
+     * Раньше в форме был хардкод из трёх поясов (Moscow/Berlin/Almaty) —
+     * локация в любом другом городе оставалась без корректного времени.
+     * Значения — авторитетный список PHP, не ручной перечень.
+     */
+    private function timezones(): array
+    {
+        $zones = DateTimeZone::listIdentifiers();
+        sort($zones);
+
+        $result = [];
+        $now = new DateTimeImmutable('now');
+        foreach ($zones as $zone) {
+            $offsetSeconds = (new DateTimeZone($zone))->getOffset($now);
+            $sign = $offsetSeconds >= 0 ? '+' : '-';
+            $abs = abs($offsetSeconds);
+            $hours = intdiv($abs, 3600);
+            $minutes = intdiv($abs % 3600, 60);
+            $offset = $minutes ? sprintf('%s%d:%02d', $sign, $hours, $minutes) : sprintf('%s%d', $sign, $hours);
+
+            $result[] = [
+                'value' => $zone,
+                'label' => sprintf('%s (UTC%s)', $zone, $offset),
+            ];
+        }
+
+        return $result;
     }
 
     /**
@@ -183,6 +220,29 @@ class BranchController extends Controller
         ExportEntitiesJob::dispatch('branches', $validated['ids'], auth()->id());
 
         return redirect()->back()->with('success', 'Экспорт запущен. Вы получите уведомление, когда файл будет готов.');
+    }
+
+    /**
+     * Глобальные часы работы детейлинг-центра (раньше жили в CrmSettingsController
+     * на вкладке «Клиенты и Авто»). Перенесено в «Локации», т.к. именно локации
+     * наследуют это расписание по умолчанию (индивидуально — Branch::working_hours).
+     */
+    public function storeDefaultWorkingHours(Request $request)
+    {
+        $validated = $request->validate([
+            'default_working_hours' => ['nullable', 'array', 'size:7'],
+            'default_working_hours.*.day' => ['required_with:default_working_hours', 'string'],
+            'default_working_hours.*.is_open' => ['required_with:default_working_hours', 'boolean'],
+            'default_working_hours.*.open' => ['nullable', 'string'],
+            'default_working_hours.*.close' => ['nullable', 'string'],
+        ]);
+
+        Setting::updateOrCreate(
+            ['key' => 'default_working_hours'],
+            ['value' => isset($validated['default_working_hours']) ? json_encode($validated['default_working_hours']) : null]
+        );
+
+        return redirect()->back()->with('success', 'Часы работы по умолчанию сохранены');
     }
 
     /**

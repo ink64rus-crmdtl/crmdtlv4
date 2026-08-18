@@ -7,6 +7,7 @@ import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Pagination from '@/Components/Pagination.vue';
 import WorkingHoursEditor from '@/Components/WorkingHoursEditor.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -16,6 +17,9 @@ import axios from 'axios';
 const props = defineProps({
     branchesList: Object,
     filters: Object,
+    timezones: { type: Array, default: () => [] },
+    tenantTimezone: { type: String, default: 'UTC' },
+    defaultWorkingHours: { type: Array, default: () => null },
 });
 
 const isModalOpen = ref(false);
@@ -26,7 +30,7 @@ const form = useForm({
     address: '',
     city: '',
     phone: '',
-    timezone: 'Europe/Moscow',
+    timezone: '',
     is_active: true,
     working_hours: null,
     logo: null,
@@ -63,6 +67,17 @@ const removeLogo = () => {
 
 // Свои часы работы для локации (иначе действует расписание по умолчанию всего детейлинг-центра)
 const useCustomHours = ref(false);
+
+// Глобальные часы работы по умолчанию (наследуются всеми локациями без своего расписания)
+const defaultHoursForm = useForm({
+    default_working_hours: props.defaultWorkingHours || null,
+});
+
+const saveDefaultWorkingHours = () => {
+    defaultHoursForm.post(route('settings.branches.default-working-hours'), {
+        preserveScroll: true,
+    });
+};
 
 // --- СЕРВЕРНАЯ ФИЛЬТРАЦИЯ И ПОИСК ---
 const search = ref(props.filters?.search || '');
@@ -127,7 +142,7 @@ const openModal = (branch = null) => {
         form.address = branch.address || '';
         form.city = branch.city || '';
         form.phone = branch.phone || '';
-        form.timezone = branch.timezone || 'Europe/Moscow';
+        form.timezone = branch.timezone || props.tenantTimezone;
         form.is_active = Boolean(branch.is_active);
         form.working_hours = branch.working_hours || null;
         useCustomHours.value = !!branch.working_hours;
@@ -138,6 +153,9 @@ const openModal = (branch = null) => {
         form.reset();
         form.is_active = true;
         form.working_hours = null;
+        // Новый тенант: если часовой пояс ещё не выбран — подставляем пояс
+        // тенанта (обязателен при регистрации), а не оставляем пустым.
+        form.timezone = props.tenantTimezone;
         useCustomHours.value = false;
         logoPreviewUrl.value = null;
     }
@@ -221,6 +239,28 @@ const deleteBranch = (branch) => {
                         Управление физическими локациями обслуживания клиентов
                     </p>
                 </div>
+            </div>
+
+            <!-- Глобальные часы работы (по умолчанию для всех локаций) -->
+            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Часы работы по умолчанию</h2>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            По умолчанию это время наследуется всеми локациями. Для конкретной локации его можно изменить индивидуально — при редактировании локации включите «Свои часы работы».
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        @click="saveDefaultWorkingHours"
+                        :disabled="defaultHoursForm.processing"
+                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50 shrink-0"
+                    >
+                        <span v-if="defaultHoursForm.processing">Сохранение...</span>
+                        <span v-else>Сохранить</span>
+                    </button>
+                </div>
+                <WorkingHoursEditor v-model="defaultHoursForm.default_working_hours" />
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
@@ -399,14 +439,13 @@ const deleteBranch = (branch) => {
 
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Часовой пояс</label>
-                            <select
+                            <SearchableSelect
                                 v-model="form.timezone"
-                                class="block w-full sm:w-1/2 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0"
-                            >
-                                <option value="Europe/Moscow" class="bg-white dark:bg-gray-800">Europe/Moscow</option>
-                                <option value="Europe/Berlin" class="bg-white dark:bg-gray-800">Europe/Berlin</option>
-                                <option value="Asia/Almaty" class="bg-white dark:bg-gray-800">Asia/Almaty</option>
-                            </select>
+                                :options="timezones"
+                                placeholder="Выберите часовой пояс..."
+                                search-placeholder="Поиск пояса..."
+                                clearable
+                            />
                         </div>
 
                         <!-- Часы работы -->
@@ -419,7 +458,7 @@ const deleteBranch = (branch) => {
                                     Свои часы работы для этой локации
                                 </label>
                             </div>
-                            <p v-if="!useCustomHours" class="text-xs text-gray-500 dark:text-gray-400 mb-2">Действует расписание по умолчанию всего детейлинг-центра (Настройки → Клиенты и Авто).</p>
+                            <p v-if="!useCustomHours" class="text-xs text-gray-500 dark:text-gray-400 mb-2">Действует расписание по умолчанию всего детейлинг-центра (см. выше на этой странице).</p>
                             <WorkingHoursEditor v-if="useCustomHours" v-model="form.working_hours" />
                         </div>
 

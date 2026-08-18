@@ -2,20 +2,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PageHelper from '@/Components/PageHelper.vue';
 import SettingsNav from '@/Components/SettingsNav.vue';
-import WorkingHoursEditor from '@/Components/WorkingHoursEditor.vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
     strictPlateValidation: Boolean,
     pricingBasis: String,
-    defaultWorkingHours: { type: Array, default: () => null },
     calendarColorSource: { type: String, default: 'status' },
 });
 
 const form = useForm({
     strict_plate_validation: props.strictPlateValidation,
     pricing_basis: props.pricingBasis || 'none',
-    default_working_hours: props.defaultWorkingHours || null,
     calendar_color_source: props.calendarColorSource || 'status',
 });
 
@@ -111,12 +108,6 @@ const submit = () => {
                                 </div>
                             </label>
                         </div>
-                    </div>
-
-                    <div class="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50/50 dark:bg-gray-800/30">
-                        <label class="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Часы работы по умолчанию</label>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">Действует для всего детейлинг-центра. Если у конкретной локации заданы свои часы работы (Настройки → Локации), они имеют приоритет над этим расписанием.</p>
-                        <WorkingHoursEditor v-model="form.default_working_hours" />
                     </div>
 
                     <div class="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700">

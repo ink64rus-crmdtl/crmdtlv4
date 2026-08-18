@@ -135,6 +135,7 @@ Route::middleware([
         Route::delete('/settings/branches/{branch}', [BranchController::class, 'destroy'])->name('settings.branches.destroy');
         Route::post('/settings/branches/bulk-delete', [BranchController::class, 'bulkDestroy'])->name('settings.branches.bulk-destroy');
         Route::post('/settings/branches/bulk-export', [BranchController::class, 'bulkExport'])->name('settings.branches.bulk-export');
+        Route::post('/settings/branches/default-working-hours', [BranchController::class, 'storeDefaultWorkingHours'])->name('settings.branches.default-working-hours');
         Route::get('/settings/branches/{branch}/logo', [BranchController::class, 'logo'])->name('settings.branches.logo');
 
         // Переключение контекста

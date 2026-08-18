@@ -38,10 +38,18 @@ const updateDay = (index, patch) => {
     const next = schedule.value.map((d, i) => i === index ? { ...d, ...patch } : d);
     emit('update:modelValue', next);
 };
+
+const copyFromMonday = () => {
+    const monday = schedule.value[0];
+    if (!monday) return;
+    const next = schedule.value.map((d, i) => i === 0 ? d : { ...d, open: monday.open, close: monday.close });
+    emit('update:modelValue', next);
+};
 </script>
 
 <template>
-    <div class="space-y-2">
+    <div>
+        <div class="space-y-2">
         <div v-for="(d, index) in schedule" :key="d.day" class="flex flex-wrap items-center gap-3 py-1">
             <div class="w-40 flex items-center gap-2 shrink-0">
                 <div
@@ -66,8 +74,18 @@ const updateDay = (index, patch) => {
                     @input="updateDay(index, { close: $event.target.value })"
                     class="rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-1.5 px-2 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
                 />
+                <button
+                    v-if="index === 0"
+                    type="button"
+                    @click="copyFromMonday"
+                    class="inline-flex items-center gap-1 text-xs text-primary hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                    title="Скопировать время открытия/закрытия понедельника на вторник–воскресенье (состояние «выходной» у дней не меняется)"
+                >
+                    <i class="ri-file-copy-line"></i> Скопировать время из понедельника во все дни
+                </button>
             </template>
             <span v-else class="text-xs text-gray-400">Выходной</span>
+        </div>
         </div>
     </div>
 </template>
