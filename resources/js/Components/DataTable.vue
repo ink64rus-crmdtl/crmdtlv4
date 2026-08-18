@@ -138,6 +138,14 @@ const toggleRow = (id, checked) => {
 
 const alignClass = (align) => (align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '');
 
+// Пропорциональные ширины колонок при fitColumns: col.weight (default 1) — относительная
+// ширина, "2" = вдвое шире колонки с weight 1. Сумма весов делит всю ширину таблицы.
+const totalWeight = computed(() =>
+    props.columns.reduce((sum, col) => sum + (col.weight || 1), 0)
+);
+const colWidth = (col) =>
+    props.fitColumns ? { width: `${(((col.weight || 1) / totalWeight.value) * 100).toFixed(3)}%` } : null;
+
 const totalColspan = computed(() => props.columns.length + (props.selectable ? 1 : 0) + (props.hasActions ? 1 : 0));
 </script>
 
@@ -151,6 +159,7 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                 <th
                     v-for="col in columns"
                     :key="col.key"
+                    :style="colWidth(col)"
                     :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', alignClass(col.align), col.sortable ? 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : '', fitColumns ? 'break-words align-top' : '', col.headerClass]"
                     @click="toggleSort(col, $event)"
                 >
@@ -199,6 +208,7 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                     <td
                         v-for="col in columns"
                         :key="col.key"
+                        :style="colWidth(col)"
                         :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', alignClass(col.align), fitColumns ? 'break-words align-top' : '', col.cellClass]"
                     >
                         <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]">{{ row[col.key] }}</slot>
