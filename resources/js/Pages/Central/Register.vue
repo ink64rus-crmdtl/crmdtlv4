@@ -1,6 +1,6 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 
 // countries — тот же CountryConfigService::getSupportedCountries(), что и
 // Settings/LegalEntities (схема реквизитов юрлица) — единый источник
@@ -9,6 +9,12 @@ import { computed } from 'vue';
 // CountryConfigService — эта форма ничего не хардкодит и не требует правок.
 const props = defineProps({
     countries: { type: Object, default: () => ({}) },
+    // Российские часовые пояса «Europe/Saratov (+4)» — генерирует бэкенд
+    // (DateTimeZone::listIdentifiers(PER_COUNTRY, 'RU')), единый источник.
+    timezones: { type: Object, default: () => ({}) },
+    // Заполняется после успешной отправки: провижининг ушёл в очередь,
+    // готовность отслеживаем поллингом status()-эндпоинта.
+    registration: { type: Object, default: null },
 });
 
 const countryList = computed(() => Object.values(props.countries));
@@ -37,8 +43,61 @@ const onCountryChange = () => {
     form.default_locale = country.locale;
 };
 
+// --- Экран «Создаем вашу CRM...» ---
+// Создание БД + 134 миграции + сидеры теперь выполняются в очереди (Horizon),
+// а не внутри HTTP-запроса — иначе форма висела бы на кнопке по несколько
+// минут. Готовность узнаём поллингом /register-company/status/{tenant}.
+const creating = ref(false);
+const creatingError = ref('');
+let pollTimer = null;
+
+const startPolling = () => {
+    if (!props.registration) return;
+    creating.value = true;
+    creatingError.value = '';
+    let attempts = 0;
+
+    const tick = async () => {
+        attempts++;
+        try {
+            const res = await fetch(route('central.register.status', props.registration.tenant_id));
+            const data = await res.json();
+            if (data.status === 'ready') {
+                window.location.href = props.registration.redirect_url;
+                return;
+            }
+            if (data.status === 'failed') {
+                creating.value = false;
+                creatingError.value = 'Не удалось создать CRM. Попробуйте ещё раз или обратитесь в поддержку.';
+                return;
+            }
+        } catch (e) {
+            // Сеть/сервер моргнули — просто ждём следующего тика.
+        }
+        // ~10 минут без результата: останавливаемся и сообщаем, что создание
+        // всё ещё идёт в фоне (обновление страницы покажет финальный статус).
+        if (attempts >= 200) {
+            creating.value = false;
+            creatingError.value = 'Создание занимает дольше обычного. Компания уже создаётся — обновите страницу через несколько минут.';
+            return;
+        }
+        pollTimer = setTimeout(tick, 3000);
+    };
+
+    tick();
+};
+
+onUnmounted(() => {
+    if (pollTimer) clearTimeout(pollTimer);
+});
+
 const submit = () => {
     form.post('/register-company', {
+        onSuccess: () => {
+            if (props.registration) {
+                startPolling();
+            }
+        },
         onError: () => {
             // Автоматическая прокрутка к верху формы при ошибках
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -62,7 +121,21 @@ const submit = () => {
 
         <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
             <div class="bg-slate-900 py-8 px-4 shadow-xl border border-slate-800 sm:rounded-lg sm:px-10">
-                
+
+                <!-- Экран создания: провижининг идёт в очереди, поллим статус -->
+                <div v-if="creating" class="py-12 text-center">
+                    <div class="mx-auto w-12 h-12 rounded-full border-4 border-indigo-500/30 border-t-indigo-500 animate-spin"></div>
+                    <p class="mt-5 text-base font-medium text-white">Создаем вашу CRM...</p>
+                    <p class="mt-2 text-sm text-slate-400">Обычно это занимает 1–2 минуты. Страница обновится сама.</p>
+                    <div v-if="creatingError" class="mt-6 p-4 rounded-md bg-red-900/50 border border-red-700 text-red-200 text-sm">
+                        <p>{{ creatingError }}</p>
+                        <button type="button" @click="creating = false" class="mt-3 inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200">
+                            <i class="ri-arrow-left-line"></i> Вернуться к форме
+                        </button>
+                    </div>
+                </div>
+
+                <template v-else>
                 <!-- Блок общих ошибок валидации -->
                 <div v-if="form.hasErrors" class="mb-6 p-4 rounded-md bg-red-900/50 border border-red-700 text-red-200 text-sm">
                     <p class="font-bold mb-1">Пожалуйста, исправьте следующие ошибки:</p>
@@ -139,13 +212,16 @@ const submit = () => {
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-300">Часовой пояс</label>
-                                <input
+                                <select
                                     v-model="form.timezone"
-                                    type="text"
                                     required
-                                    class="mt-1 block w-full rounded-md bg-slate-950 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-indigo-500 focus:bg-slate-950 sm:text-sm"
-                                />
-                                <p class="text-[11px] text-slate-500 mt-1">Подставляется по стране, можно изменить</p>
+                                    class="mt-1 block w-full rounded-md bg-slate-950 border-slate-700 text-white focus:border-indigo-500 focus:ring-indigo-500 focus:bg-slate-950 sm:text-sm"
+                                >
+                                    <option v-for="(label, id) in timezones" :key="id" :value="id" class="bg-slate-900 text-white">{{ label }}</option>
+                                    <!-- Не-российская таймзона из конфига страны (KZ/DE/...) — держим выбранной -->
+                                    <option v-if="form.timezone && !timezones[form.timezone]" :value="form.timezone" class="bg-slate-900 text-white">{{ form.timezone }}</option>
+                                </select>
+                                <p class="text-[11px] text-slate-500 mt-1">Российские города со смещением от UTC, например «Europe/Saratov (+4)»</p>
                                 <span v-if="form.errors.timezone" class="text-xs text-red-400 mt-1 block">{{ form.errors.timezone }}</span>
                             </div>
 
@@ -229,6 +305,7 @@ const submit = () => {
                     </div>
 
                 </form>
+                </template>
             </div>
         </div>
     </div>

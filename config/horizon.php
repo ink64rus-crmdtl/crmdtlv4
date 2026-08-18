@@ -218,12 +218,19 @@ return [
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
+                // Провижининг нового тенанта: CreateDatabase + 134 миграции
+                // выполняются одной джобой (Stancl\JobPipeline) — дефолтных 60с
+                // не хватает, джоба гибнет по таймауту.
+                'timeout' => 3600,
             ],
         ],
 
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,
+                // То же, что и в production: миграции свежесозданной БД тенанта
+                // идут дольше 60 секунд (VirtualBox), см. комментарий выше.
+                'timeout' => 3600,
             ],
         ],
     ],

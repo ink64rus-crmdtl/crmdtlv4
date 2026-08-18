@@ -49,6 +49,9 @@ Route::get('/', function () {
 // был явно объявлен здесь. Другое имя URI устраняет коллизию полностью.
 Route::get('/register-company', [RegisterTenantController::class, 'create'])->name('central.register.create');
 Route::post('/register-company', [RegisterTenantController::class, 'store'])->name('central.register.store');
+// Статус провижининга (создание БД/миграции/сидеры ушли в очередь) —
+// форма регистрации поллит его и сама переходит на login нового тенанта.
+Route::get('/register-company/status/{tenant}', [RegisterTenantController::class, 'status'])->name('central.register.status');
 
 // Кабинет администратора платформы (Фаза 16) — отдельный гвард
 // 'platform_admin', см. config/auth.php и App\Models\Central\PlatformAdmin.
