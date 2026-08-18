@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import axios from 'axios';
+import { getEcho } from '@/echo';
 
 const props = defineProps({
     clientId: { type: Number, required: true },
@@ -44,13 +45,13 @@ const subscribeToActiveChat = () => {
     if (echoChannel === activeChatId.value) return;
 
     if (echoChannel) {
-        window.Echo.leave(`chat.${echoChannel}`);
+        getEcho().leave(`chat.${echoChannel}`);
         echoChannel = null;
     }
-    if (!activeChatId.value || !window.Echo) return;
+    if (!activeChatId.value) return;
 
     echoChannel = activeChatId.value;
-    window.Echo.private(`chat.${activeChatId.value}`).listen('.message.received', (e) => {
+    getEcho().private(`chat.${activeChatId.value}`).listen('.message.received', (e) => {
         const chat = chats.value.find(c => c.id === e.message.chat_id);
         if (chat) {
             chat.messages.push(e.message);
@@ -71,7 +72,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-    if (echoChannel) window.Echo?.leave(`chat.${echoChannel}`);
+    if (echoChannel) getEcho().leave(`chat.${echoChannel}`);
 });
 
 const sendMessage = async () => {
