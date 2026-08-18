@@ -89,6 +89,25 @@ const filteredServices = computed(() => {
     return props.services.filter(s => s.service_category_id === Number(ruleForm.service_category_id));
 });
 
+const serviceCategoryOptions = computed(() => props.serviceCategories.map(c => ({ id: c.id, label: getLocalizedLabel(c.name) })));
+const branchOptions = computed(() => props.branches.map(b => ({ id: b.id, label: b.name })));
+
+const selectAllCategories = () => {
+    ruleForm.service_category_ids = props.serviceCategories.map(c => c.id);
+};
+
+const clearCategories = () => {
+    ruleForm.service_category_ids = [];
+};
+
+const selectAllBranches = () => {
+    ruleForm.branch_ids = props.branches.map(b => b.id);
+};
+
+const clearBranches = () => {
+    ruleForm.branch_ids = [];
+};
+
 const openRuleModal = (rule = null) => {
     editingRule.value = rule;
     if (rule) {
@@ -452,12 +471,18 @@ const ruleColumns = [
                                 <span v-if="!editingRule" class="text-gray-400 font-normal">— можно выбрать несколько, на каждую создастся своя ставка</span>
                             </label>
                             <template v-if="!editingRule">
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar p-3 border border-gray-200 dark:border-gray-700 rounded-md">
-                                    <label v-for="c in serviceCategories" :key="c.id" class="flex items-center cursor-pointer group">
-                                        <input type="checkbox" :value="c.id" v-model="ruleForm.service_category_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ getLocalizedLabel(c.name) }}</span>
-                                    </label>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-xs text-gray-400">Выбрано: {{ ruleForm.service_category_ids.length }}</span>
+                                    <div class="flex items-center gap-3">
+                                        <button type="button" @click="selectAllCategories" class="text-xs text-primary hover:underline">Выбрать все</button>
+                                        <button v-if="ruleForm.service_category_ids.length > 0" type="button" @click="clearCategories" class="text-xs text-gray-400 hover:text-danger hover:underline">Очистить</button>
+                                    </div>
                                 </div>
+                                <SearchableMultiSelect
+                                    v-model="ruleForm.service_category_ids"
+                                    :options="serviceCategoryOptions"
+                                    placeholder="Выберите группы услуг..."
+                                />
                             </template>
                             <select v-else v-model="ruleForm.service_category_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="" disabled>Выберите группу</option>
@@ -497,12 +522,18 @@ const ruleColumns = [
                                 <span v-if="!editingRule" class="text-gray-400 font-normal">— можно выбрать несколько, пусто = все локации</span>
                             </label>
                             <template v-if="!editingRule">
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-3 border border-gray-200 dark:border-gray-700 rounded-md">
-                                    <label v-for="b in branches" :key="b.id" class="flex items-center cursor-pointer group">
-                                        <input type="checkbox" :value="b.id" v-model="ruleForm.branch_ids" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
-                                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">{{ b.name }}</span>
-                                    </label>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-xs text-gray-400">Выбрано: {{ ruleForm.branch_ids.length }}</span>
+                                    <div class="flex items-center gap-3">
+                                        <button type="button" @click="selectAllBranches" class="text-xs text-primary hover:underline">Выбрать все</button>
+                                        <button v-if="ruleForm.branch_ids.length > 0" type="button" @click="clearBranches" class="text-xs text-gray-400 hover:text-danger hover:underline">Очистить</button>
+                                    </div>
                                 </div>
+                                <SearchableMultiSelect
+                                    v-model="ruleForm.branch_ids"
+                                    :options="branchOptions"
+                                    placeholder="Выберите локации..."
+                                />
                             </template>
                             <select v-else v-model="ruleForm.branch_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
                                 <option value="">Все локации</option>
