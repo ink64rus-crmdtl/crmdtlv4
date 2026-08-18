@@ -11,6 +11,8 @@ use App\Models\Pipeline;
 use App\Models\PipelineStage;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehicleMake;
+use App\Models\VehicleModel;
 use App\Models\WorkOrder;
 use App\Services\ActivityLogger;
 use App\Services\Sales\PipelineAutomationService;
@@ -56,6 +58,8 @@ class DealController extends Controller
                 'filters' => $request->all(),
                 'owners' => [],
                 'sources' => [],
+                'makes' => [],
+                'models' => [],
                 'leadsWithoutDeals' => 0,
             ]);
         }
@@ -87,6 +91,10 @@ class DealController extends Controller
                 ->where('is_active', true)
                 ->orderBy('sort_order')
                 ->get(['id', 'label']),
+            // Для быстрого добавления автомобиля прямо из формы сделки — тот же
+            // набор, что у WorkOrderController::index()/AppointmentController::index().
+            'makes' => VehicleMake::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'models' => VehicleModel::where('is_active', true)->orderBy('name')->get(['id', 'vehicle_make_id', 'name']),
             // Подсказка вместо автоконвертации: лиды, по которым ещё не завели
             // ни одной сделки (CLAUDE.md, Фаза 17 — is_lead намеренно остаётся).
             'leadsWithoutDeals' => Client::where('is_lead', true)

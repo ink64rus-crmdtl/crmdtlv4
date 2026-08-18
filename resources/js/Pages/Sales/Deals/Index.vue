@@ -19,6 +19,8 @@ const props = defineProps({
     leadsWithoutDeals: { type: Number, default: 0 },
     lossReasons: { type: Array, default: () => [] },
     sources: { type: Array, default: () => [] },
+    makes: { type: Array, default: () => [] },
+    models: { type: Array, default: () => [] },
 });
 
 const page = usePage();
@@ -169,6 +171,27 @@ const dealForm = useForm({
 const branches = computed(() => page.props.branches || []);
 const legalEntities = computed(() => page.props.legal_entities || []);
 
+// Источник — Lookup(type=client_source) со связью по id (FK), поэтому
+// CreatableSelect (работает со строкой) тут не подходит. Держим список локально:
+// создание нового значения идёт axios'ом и Inertia-проп sources не обновляет.
+const sourcesList = ref(props.sources.map(s => ({ id: s.id, label: s.label })));
+
+const fetchClients = async () => {
+    const { data } = await axios.get(route('crm.clients.index'), { params: { per_page: 500 } });
+    clients.value = (data.data || data).map(c => ({ value: c.id, label: `${c.name}${c.phone ? ' · ' + c.phone : ''}` }));
+};
+
+const fetchVehicles = async (clientId) => {
+    if (!clientId) {
+        vehicles.value = [];
+        return;
+    }
+    const { data } = await axios.get(route('crm.vehicles.index'), { params: { client_id: clientId, per_page: 200 } });
+    vehicles.value = (data.data || data)
+        .filter(v => v.client_id === clientId)
+        .map(v => ({ value: v.id, label: `${v.make?.name || ''} ${v.plate_number || ''}`.trim() }));
+};
+
 const openDealModal = async () => {
     dealForm.reset();
     dealForm.clearErrors();
@@ -181,8 +204,7 @@ const openDealModal = async () => {
     if (clients.value.length === 0) {
         loadingRefs.value = true;
         try {
-            const { data } = await axios.get(route('crm.clients.index'), { params: { per_page: 500 } });
-            clients.value = (data.data || data).map(c => ({ value: c.id, label: `${c.name}${c.phone ? ' · ' + c.phone : ''}` }));
+            await fetchClients();
         } finally {
             loadingRefs.value = false;
         }
@@ -192,16 +214,144 @@ const openDealModal = async () => {
 // Автомобили — только выбранного клиента (сервер это же и проверяет).
 watch(() => dealForm.client_id, async (clientId) => {
     dealForm.vehicle_id = '';
-    vehicles.value = [];
-    if (!clientId) return;
-    const { data } = await axios.get(route('crm.vehicles.index'), { params: { client_id: clientId, per_page: 200 } });
-    vehicles.value = (data.data || data)
-        .filter(v => v.client_id === clientId)
-        .map(v => ({ value: v.id, label: `${v.make?.name || ''} ${v.plate_number || ''}`.trim() }));
+    await fetchVehicles(clientId);
 });
 
 const submitDeal = () => {
     dealForm.post(route('sales.deals.store'), { preserveScroll: true });
+};
+
+// --- Быстрое добавление клиента/автомобиля/источника прямо из формы сделки ---
+// Тот же приём, что и в Operations/WorkOrders/Index.vue: обычный Inertia-POST
+// на существующие crm.clients.store/crm.vehicles.store, без нового бэкенда.
+// preserveState ОБЯЗАТЕЛЕН: родительская модалка открыта через <Modal> — без
+// него Inertia пересоздаёт компонент и нативный <dialog> умирает. Списки
+// клиентов/авто здесь грузятся axios'ом, а не приходят пропами, поэтому новая
+// запись ищется диффом списка до/после повторной загрузки (тот же принцип,
+// что и дифф props.clients в форме заказа).
+const isQuickClientModalOpen = ref(false);
+const quickClientForm = useForm({
+    branch_id: '',
+    type: 'b2c',
+    name: '',
+    phone: '',
+    phone_required: true,
+});
+
+const openQuickClientModal = () => {
+    quickClientForm.reset();
+    quickClientForm.branch_id = dealForm.branch_id || branches.value[0]?.id || '';
+    quickClientForm.type = 'b2c';
+    isQuickClientModalOpen.value = true;
+};
+
+const closeQuickClientModal = () => {
+    isQuickClientModalOpen.value = false;
+    quickClientForm.reset();
+    quickClientForm.clearErrors();
+};
+
+const submitQuickClient = () => {
+    const existingIds = new Set(clients.value.map((c) => c.value));
+    quickClientForm.post(route('crm.clients.store'), {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: async () => {
+            await fetchClients();
+            const created = clients.value.find((c) => !existingIds.has(c.value));
+            if (created) {
+                dealForm.client_id = created.value;
+                // Симметричная связь: клиента могли заводить прямо из модалки
+                // автомобиля — подставляем его и туда.
+                if (isQuickVehicleModalOpen.value) {
+                    quickVehicleForm.client_id = created.value;
+                }
+            }
+            closeQuickClientModal();
+        },
+    });
+};
+
+const isQuickVehicleModalOpen = ref(false);
+const quickVehicleForm = useForm({
+    client_id: '',
+    vehicle_make_id: '',
+    vehicle_model_id: '',
+    plate_number: '',
+});
+
+const quickVehicleModels = computed(() => props.models.filter(m => m.vehicle_make_id === quickVehicleForm.vehicle_make_id));
+
+const openQuickVehicleModal = () => {
+    quickVehicleForm.reset();
+    quickVehicleForm.client_id = dealForm.client_id;
+    isQuickVehicleModalOpen.value = true;
+};
+
+const closeQuickVehicleModal = () => {
+    isQuickVehicleModalOpen.value = false;
+    quickVehicleForm.reset();
+    quickVehicleForm.clearErrors();
+};
+
+const submitQuickVehicle = () => {
+    const existingIds = new Set(vehicles.value.map((v) => v.value));
+    quickVehicleForm.post(route('crm.vehicles.store'), {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: async () => {
+            // Авто завели под владельцем из модалки — сделка следует за ним
+            // (тот же принцип, что onVehicleSelected в форме заказа).
+            dealForm.client_id = quickVehicleForm.client_id;
+            await fetchVehicles(dealForm.client_id);
+            const created = vehicles.value.find((v) => !existingIds.has(v.value));
+            if (created) {
+                dealForm.vehicle_id = created.value;
+            }
+            closeQuickVehicleModal();
+        },
+    });
+};
+
+const isQuickSourceModalOpen = ref(false);
+const quickSourceValue = ref('');
+const quickSourceSaving = ref(false);
+const quickSourceError = ref('');
+
+const openQuickSourceModal = () => {
+    quickSourceValue.value = '';
+    quickSourceError.value = '';
+    isQuickSourceModalOpen.value = true;
+};
+
+const closeQuickSourceModal = () => {
+    isQuickSourceModalOpen.value = false;
+    quickSourceValue.value = '';
+    quickSourceError.value = '';
+};
+
+const submitQuickSource = async () => {
+    const value = quickSourceValue.value.trim();
+    if (!value || quickSourceSaving.value) return;
+    quickSourceSaving.value = true;
+    quickSourceError.value = '';
+    try {
+        const { data } = await axios.post(route('settings.lookups.store'), {
+            type: 'client_source',
+            value,
+            is_active: true,
+        });
+        const created = data?.data;
+        if (created) {
+            sourcesList.value.push({ id: created.id, label: created.label || created.value || value });
+            dealForm.source_lookup_id = created.id;
+            closeQuickSourceModal();
+        }
+    } catch (error) {
+        quickSourceError.value = error?.response?.data?.message || 'Не удалось добавить источник. Попробуйте ещё раз.';
+    } finally {
+        quickSourceSaving.value = false;
+    }
 };
 
 const branchLegalEntities = computed(() => {
@@ -440,13 +590,23 @@ const branchLegalEntities = computed(() => {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Клиент <span class="text-danger">*</span></label>
-                            <SearchableSelect v-model="dealForm.client_id" :options="clients" placeholder="Выберите клиента" />
+                            <div class="flex gap-2">
+                                <SearchableSelect v-model="dealForm.client_id" :options="clients" placeholder="Выберите клиента" class="flex-1" />
+                                <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента">
+                                    <i class="ri-add-line text-primary"></i>
+                                </button>
+                            </div>
                             <p class="text-[11px] text-gray-400 mt-1">Лид тоже заводится как клиент — так работает поиск дублей по телефону.</p>
                             <p v-if="dealForm.errors.client_id" class="text-xs text-danger mt-1">{{ dealForm.errors.client_id }}</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Автомобиль</label>
-                            <SearchableSelect v-model="dealForm.vehicle_id" :options="vehicles" :disabled="!dealForm.client_id" placeholder="Не выбран" />
+                            <div class="flex gap-2">
+                                <SearchableSelect v-model="dealForm.vehicle_id" :options="vehicles" :disabled="!dealForm.client_id" placeholder="Не выбран" class="flex-1" />
+                                <button type="button" @click="openQuickVehicleModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить автомобиль">
+                                    <i class="ri-add-line text-primary"></i>
+                                </button>
+                            </div>
                             <p v-if="dealForm.errors.vehicle_id" class="text-xs text-danger mt-1">{{ dealForm.errors.vehicle_id }}</p>
                         </div>
                     </div>
@@ -471,10 +631,15 @@ const branchLegalEntities = computed(() => {
 
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Источник</label>
-                        <select v-model="dealForm.source_lookup_id" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
-                            <option value="" class="bg-white dark:bg-gray-800">Не указан</option>
-                            <option v-for="s in sources" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ s.label }}</option>
-                        </select>
+                        <div class="flex gap-2">
+                            <select v-model="dealForm.source_lookup_id" class="block w-full flex-1 rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" class="bg-white dark:bg-gray-800">Не указан</option>
+                                <option v-for="s in sourcesList" :key="s.id" :value="s.id" class="bg-white dark:bg-gray-800">{{ s.label }}</option>
+                            </select>
+                            <button type="button" @click="openQuickSourceModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить источник">
+                                <i class="ri-add-line text-primary"></i>
+                            </button>
+                        </div>
                         <p class="text-[11px] text-gray-400 mt-1">Для отчёта по источникам на дашборде — откуда реально приходят сделки.</p>
                     </div>
 
@@ -498,6 +663,148 @@ const branchLegalEntities = computed(() => {
                 <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
                     <button type="button" @click="isDealModalOpen = false" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
                     <button type="submit" :disabled="dealForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Создать сделку</button>
+                </div>
+            </form>
+        </Modal>
+
+        <!-- Быстрое добавление клиента — обязательно через <Modal> (не голый div с
+        z-index): родительская форма сделки сама открыта через <Modal>, а тот
+        рендерится нативным <dialog>.showModal() в браузерный top layer, который
+        физически выше ЛЮБОГО обычного элемента независимо от z-index. См.
+        CLAUDE.md про пополняемые списки. -->
+        <Modal :show="isQuickClientModalOpen" @close="closeQuickClientModal" max-width="md">
+            <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый клиент</h3>
+                <button @click="closeQuickClientModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
+            </div>
+            <form @submit.prevent="submitQuickClient" class="flex flex-col">
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
+                        <select v-model="quickClientForm.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                            <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
+                            <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
+                        </select>
+                        <p v-if="quickClientForm.errors.branch_id" class="text-xs text-danger mt-1">{{ quickClientForm.errors.branch_id }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя <span class="text-danger">*</span></label>
+                        <input v-model="quickClientForm.name" type="text" required placeholder="Иван Иванов" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        <p v-if="quickClientForm.errors.name" class="text-xs text-danger mt-1">{{ quickClientForm.errors.name }}</p>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Телефон <span v-if="quickClientForm.phone_required" class="text-danger">*</span>
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    :checked="!quickClientForm.phone_required"
+                                    @change="quickClientForm.phone_required = !$event.target.checked"
+                                    class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary focus:ring-offset-0"
+                                />
+                                Без номера
+                            </label>
+                        </div>
+                        <input
+                            v-model="quickClientForm.phone"
+                            type="text"
+                            :required="quickClientForm.phone_required"
+                            placeholder="+7 (999) 000-00-00"
+                            class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                        />
+                        <p v-if="quickClientForm.errors.phone" class="text-xs text-danger mt-1 block">{{ quickClientForm.errors.phone }}</p>
+                        <p v-if="!quickClientForm.phone_required" class="text-xs text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 mt-2 flex items-start gap-1.5">
+                            <i class="ri-error-warning-line mt-0.5"></i>
+                            <span>Без номера высок риск случайно создать дубль клиента — указывайте это только если контакта действительно нет.</span>
+                        </p>
+                    </div>
+                    <p class="text-xs text-gray-400">Остальные данные клиента можно заполнить позже, в карточке клиента.</p>
+                </div>
+                <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                    <button type="button" @click="closeQuickClientModal" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                    <button type="submit" :disabled="quickClientForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                </div>
+            </form>
+        </Modal>
+
+        <!-- Быстрое добавление автомобиля (см. пояснение выше про <Modal>) -->
+        <Modal :show="isQuickVehicleModalOpen" @close="closeQuickVehicleModal" max-width="md">
+            <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый автомобиль</h3>
+                <button @click="closeQuickVehicleModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
+            </div>
+            <form @submit.prevent="submitQuickVehicle" class="flex flex-col">
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Клиент <span class="text-danger">*</span></label>
+                        <div class="flex gap-2">
+                            <SearchableSelect
+                                v-model="quickVehicleForm.client_id"
+                                :options="clients"
+                                placeholder="Выберите клиента..."
+                                class="flex-1"
+                            />
+                            <button type="button" @click="openQuickClientModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента">
+                                <i class="ri-add-line text-primary"></i>
+                            </button>
+                        </div>
+                        <p v-if="quickVehicleForm.errors.client_id" class="text-xs text-danger mt-1">{{ quickVehicleForm.errors.client_id }}</p>
+                        <p class="text-xs text-gray-400 mt-1">Нет клиента? Добавьте его кнопкой «+», не закрывая эту форму.</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Марка <span class="text-danger">*</span></label>
+                            <select v-model="quickVehicleForm.vehicle_make_id" @change="quickVehicleForm.vehicle_model_id = ''" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите марку...</option>
+                                <option v-for="make in makes" :key="make.id" :value="make.id" class="bg-white dark:bg-gray-800">{{ make.name }}</option>
+                            </select>
+                            <p v-if="quickVehicleForm.errors.vehicle_make_id" class="text-xs text-danger mt-1">{{ quickVehicleForm.errors.vehicle_make_id }}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Модель <span class="text-danger">*</span></label>
+                            <select v-model="quickVehicleForm.vehicle_model_id" :disabled="!quickVehicleForm.vehicle_make_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0 disabled:opacity-50">
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите модель...</option>
+                                <option v-for="model in quickVehicleModels" :key="model.id" :value="model.id" class="bg-white dark:bg-gray-800">{{ model.name }}</option>
+                            </select>
+                            <p v-if="quickVehicleForm.errors.vehicle_model_id" class="text-xs text-danger mt-1">{{ quickVehicleForm.errors.vehicle_model_id }}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Госномер</label>
+                        <input v-model="quickVehicleForm.plate_number" type="text" placeholder="А 000 АА 00" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        <p v-if="quickVehicleForm.errors.plate_number" class="text-xs text-danger mt-1">{{ quickVehicleForm.errors.plate_number }}</p>
+                    </div>
+                    <p class="text-xs text-gray-400">VIN, год и остальные данные можно заполнить позже, в карточке автомобиля.</p>
+                </div>
+                <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                    <button type="button" @click="closeQuickVehicleModal" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                    <button type="submit" :disabled="quickVehicleForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                </div>
+            </form>
+        </Modal>
+
+        <!-- Быстрое добавление источника — Lookup(type=client_source) создаётся
+        через settings.lookups.store (тот же роут, что у <CreatableSelect>, но
+        здесь нужен id записи, поэтому компактная модалка вместо строки) -->
+        <Modal :show="isQuickSourceModalOpen" @close="closeQuickSourceModal" max-width="sm">
+            <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый источник</h3>
+                <button @click="closeQuickSourceModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
+            </div>
+            <form @submit.prevent="submitQuickSource" class="flex flex-col">
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
+                        <input v-model="quickSourceValue" type="text" required placeholder="Например: Авито, Instagram, знакомые" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                        <p v-if="quickSourceError" class="text-xs text-danger mt-1">{{ quickSourceError }}</p>
+                    </div>
+                    <p class="text-xs text-gray-400">Источник сразу подставится в сделку. Тот же справочник используется и в карточке клиента.</p>
+                </div>
+                <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                    <button type="button" @click="closeQuickSourceModal" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                    <button type="submit" :disabled="quickSourceSaving" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary-600 disabled:opacity-50">{{ quickSourceSaving ? 'Сохранение...' : 'Добавить' }}</button>
                 </div>
             </form>
         </Modal>
