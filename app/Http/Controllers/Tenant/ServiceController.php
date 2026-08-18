@@ -68,6 +68,11 @@ class ServiceController extends Controller
             'availableColumns' => $availableColumns,
             'listView' => ['visible_columns' => $visibleColumns],
             'materialProducts' => Product::where('is_active', true)->get(['id', 'name', 'unit']),
+            // Для подсказки про материалы в форме услуги: уменьшают ли материалы
+            // базу расчёта ЗП в текущих настройках (мастер-выключатель
+            // PayrollSettingsController::storeGeneral, тот же источник истины,
+            // что у PayrollCalculationService).
+            'workerBaseExcludesMaterials' => Setting::where('key', 'payroll_worker_base_excludes_materials')->value('value') !== '0',
         ]);
     }
 

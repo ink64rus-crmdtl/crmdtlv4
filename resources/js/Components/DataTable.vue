@@ -48,6 +48,7 @@ const props = defineProps({
     emptyMessage: { type: String, default: 'Ничего не найдено.' },
     rowClickable: { type: Boolean, default: false }, // добавляет cursor-pointer; @row-click эмитится всегда
     sort: { type: Array, default: () => [] }, // [{key, dir: 'asc'|'desc'}, ...] в порядке приоритета
+    fitColumns: { type: Boolean, default: false }, // "резиновый вид": table-fixed, колонки делят ширину экрана, длинный текст переносится (иначе min-w-full + whitespace-nowrap и горизонтальная прокрутка)
 });
 
 const emit = defineEmits(['update:modelValue', 'row-click', 'sort']);
@@ -141,16 +142,16 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
 </script>
 
 <template>
-    <table class="min-w-full text-left whitespace-nowrap">
+    <table :class="['text-left', fitColumns ? 'w-full table-fixed whitespace-normal' : 'min-w-full whitespace-nowrap']">
         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
             <tr>
-                <th v-if="selectable" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
+                <th v-if="selectable" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center whitespace-nowrap">
                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                 </th>
                 <th
                     v-for="col in columns"
                     :key="col.key"
-                    :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', alignClass(col.align), col.sortable ? 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : '', col.headerClass]"
+                    :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', alignClass(col.align), col.sortable ? 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : '', fitColumns ? 'break-words align-top' : '', col.headerClass]"
                     @click="toggleSort(col, $event)"
                 >
                     <span :class="['inline-flex items-center gap-0.5', col.align === 'right' ? 'flex-row-reverse' : '']">
@@ -174,7 +175,7 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                         </span>
                     </span>
                 </th>
-                <th v-if="hasActions" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">
+                <th v-if="hasActions" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right whitespace-nowrap">
                     {{ actionsLabel }}
                 </th>
             </tr>
@@ -186,7 +187,7 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                 :class="['odd:bg-gray-100/80 dark:odd:bg-gray-800/40 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors group', rowClickable ? 'cursor-pointer' : '']"
                 @click="emit('row-click', row)"
             >
-                <td v-if="selectable" class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center" @click.stop>
+                <td v-if="selectable" class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center whitespace-nowrap" @click.stop>
                     <input
                         type="checkbox"
                         :checked="modelValue.includes(row[rowKey])"
@@ -198,11 +199,11 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                     <td
                         v-for="col in columns"
                         :key="col.key"
-                        :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', alignClass(col.align), col.cellClass]"
+                        :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', alignClass(col.align), fitColumns ? 'break-words align-top' : '', col.cellClass]"
                     >
                         <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]">{{ row[col.key] }}</slot>
                     </td>
-                    <td v-if="hasActions" class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2" @click.stop>
+                    <td v-if="hasActions" class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50 text-right space-x-2 whitespace-nowrap" @click.stop>
                         <slot name="actions" :row="row" />
                     </td>
                 </slot>

@@ -8,9 +8,10 @@ import Pagination from '@/Components/Pagination.vue';
 import Modal from '@/Components/Modal.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
+import TableFitToggle from '@/Components/TableFitToggle.vue';
 import DataTable from '@/Components/DataTable.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
-import { Head, useForm, router } from '@inertiajs/vue3';
+import { Head, useForm, router, Link } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { useServerSort } from '@/Composables/useServerSort.js';
@@ -26,6 +27,7 @@ const props = defineProps({
     availableColumns: { type: Array, default: () => [] },
     listView: { type: Object, default: () => ({ visible_columns: [] }) },
     materialProducts: { type: Array, default: () => [] },
+    workerBaseExcludesMaterials: { type: Boolean, default: true },
 });
 
 const isModalOpen = ref(false);
@@ -61,6 +63,7 @@ const initialFilters = {
 const filtersForm = reactive(initialFilters);
 const isFiltersOpen = ref(false);
 const isColumnsModalOpen = ref(false);
+const fitColumns = ref(localStorage.getItem('services.fit-columns') === '1');
 
 const hasActiveFilters = computed(() => Object.values(filtersForm).some(v => v !== '' && v !== null));
 
@@ -350,6 +353,7 @@ const removeDefaultMaterial = (material) => {
                     placeholder="Поиск по названию услуги..."
                 >
                     <template #actions>
+                        <TableFitToggle v-model="fitColumns" storage-key="services.fit-columns" />
                         <button
                             @click="openCategoryModal()"
                             class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all bg-secondary/10 text-secondary hover:bg-secondary hover:text-white shadow-sm"
@@ -369,6 +373,7 @@ const removeDefaultMaterial = (material) => {
                 <div v-if="!matrixActive" class="overflow-x-auto w-full">
                     <DataTable
                         :columns="dataTableColumns"
+                        :fit-columns="fitColumns"
                         :rows="services.data"
                         selectable
                         v-model="selectedIds"
@@ -411,7 +416,7 @@ const removeDefaultMaterial = (material) => {
                 <!-- Матричный режим (динамическая колонка цены на каждое значение справочника, rowspan/colspan-заголовок) —
                      DataTable.vue не поддерживает многострочный thead, остаётся raw-таблицей. -->
                 <div v-else class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
+                    <table :class="['text-left', fitColumns ? 'w-full table-fixed whitespace-normal' : 'min-w-full whitespace-nowrap']">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
                                 <th rowspan="2" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center align-bottom">
@@ -449,7 +454,7 @@ const removeDefaultMaterial = (material) => {
                                     </span>
                                     <span v-else class="text-gray-400 text-xs">—</span>
                                 </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
+                                <td :class="['py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50', fitColumns ? 'break-words align-top' : '']">
                                     {{ getLocalizedLabel(service.name) }}
                                 </td>
                                 <td class="py-4 px-4 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
@@ -539,7 +544,11 @@ const removeDefaultMaterial = (material) => {
                             </h4>
                             <p class="text-xs text-gray-500 mb-3">Оставьте значение пустым, чтобы подставлять базовую цену.</p>
                             
-                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                            <!-- auto-fit (не auto-fill): пустые треки схлопываются, и блоки
+                                 цен делят ВСЮ ширину формы поровну — 2 категории → по 50%
+                                 каждый, 3 → по трети и т.д. auto-fill оставлял бы пустой
+                                 трек, и пара категорий занимала бы только часть ширины. -->
+                            <div class="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
                                 <div v-for="lookup in (lookups[pricingBasis] || [])" :key="lookup.id" class="bg-gray-50 dark:bg-gray-800/40 p-2.5 rounded border border-gray-200 dark:border-gray-700">
                                     <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{{ lookup.value }} (₽)</label>
                                     <input v-model="pricesInput[lookup.value]" type="number" step="0.01" min="0" class="block w-full rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 px-2 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
@@ -561,7 +570,9 @@ const removeDefaultMaterial = (material) => {
                              ссылается на её id, для новой его ещё нет. -->
                         <div v-if="editingService" class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
                             <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-1">Материалы по умолчанию</h4>
-                            <p class="text-xs text-gray-500 mb-3">При добавлении этой услуги в заказ система предложит (или сразу добавит — зависит от настройки в Настройки → Склад) эти материалы в заданном количестве. Материалы скрыты от клиента и по умолчанию уменьшают базу расчёта ЗП.</p>
+                            <p class="text-xs text-gray-500 mb-3">
+                                При добавлении этой услуги в заказ система предложит (или сразу добавит — зависит от настройки в Настройки → Склад) эти материалы в заданном количестве. Материалы скрыты от клиента и {{ workerBaseExcludesMaterials ? 'по текущим настройкам уменьшают базу расчёта ЗП' : 'по текущим настройкам не влияют на базу расчёта ЗП (вычитаться не будут)' }}. <Link :href="route('settings.payroll.index')" class="text-primary hover:underline">Можно настроить здесь</Link>.
+                            </p>
 
                             <div v-if="currentServiceMaterials.length > 0" class="space-y-1.5 mb-3">
                                 <div v-for="material in currentServiceMaterials" :key="material.id" class="flex items-center justify-between gap-2 p-2 rounded border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">

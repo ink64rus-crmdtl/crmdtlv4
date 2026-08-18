@@ -7,6 +7,8 @@ use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentTemplate;
 use App\Models\Employee;
+use App\Models\LegalEntity;
+use App\Models\ListView;
 use App\Models\Transaction;
 use App\Models\WorkOrder;
 use App\Services\Documents\DocumentGenerationService;
@@ -43,7 +45,15 @@ class DocumentController extends Controller
 
     public function index(Request $request): Response
     {
-        $query = Document::with(['template', 'branch.legalEntities', 'documentable', 'supersededBy:id,number']);
+        $query = Document::with([
+            'template',
+            'branch.legalEntities',
+            // documentable полиморфный: legalEntity есть только у WorkOrder
+            // (явный legal_entity_id), у остальных типов её нет — без morphWith
+            // eager-load попытался бы загрузить её и у Client/Transaction и упал.
+            'documentable' => fn ($morph) => $morph->morphWith([WorkOrder::class => ['legalEntity']]),
+            'supersededBy:id,number',
+        ]);
 
         if ($request->filled('document_template_id')) {
             $query->where('document_template_id', $request->input('document_template_id'));
@@ -54,7 +64,9 @@ class DocumentController extends Controller
         }
 
         if ($request->filled('legal_entity_id')) {
-            $query->whereHas('branch', fn ($q) => $q->where('legal_entity_id', $request->input('legal_entity_id')));
+            // У точки больше нет единственной колонки legal_entity_id — связь
+            // многие-ко-многим (branch_legal_entity), фильтруем через неё же.
+            $query->whereHas('branch.legalEntities', fn ($q) => $q->whereKey($request->input('legal_entity_id')));
         }
 
         if ($request->filled('date_from')) {
@@ -90,14 +102,60 @@ class DocumentController extends Controller
         }
 
         $documents = $query->paginate(15)->withQueryString();
-        $documents->getCollection()->each->append('is_stale');
+        $documents->getCollection()->each(function (Document $document) {
+            $document->append('is_stale');
+            $document->setAttribute('legal_entity_name', $this->resolveLegalEntityName($document));
+        });
+
+        // Те же колонки, что и раньше (см. Documents/Index.vue), — с флагом
+        // is_default для дефолтного вида и пользовательской настройкой видимости
+        // через ListView (entity_type='document', механизм list-views.store).
+        $availableColumns = [
+            ['key' => 'number', 'label' => 'Номер', 'is_default' => true],
+            ['key' => 'title', 'label' => 'Название', 'is_default' => true],
+            ['key' => 'entity_type', 'label' => 'Тип', 'is_default' => true],
+            ['key' => 'entity_record', 'label' => 'Связанная запись', 'is_default' => true],
+            ['key' => 'legal_entity', 'label' => 'Юрлицо', 'is_default' => true],
+            ['key' => 'created_at', 'label' => 'Дата', 'is_default' => true],
+        ];
+
+        $listView = ListView::where('entity_type', 'document')
+            ->where('user_id', auth()->id())
+            ->first();
+
+        $visibleColumns = $listView
+            ? $listView->visible_columns
+            : array_values(array_map(fn ($c) => $c['key'], array_filter($availableColumns, fn ($c) => $c['is_default'])));
 
         return Inertia::render('Documents/Index', [
             'documents' => $documents,
             'templates' => DocumentTemplate::where('is_active', true)->get(['id', 'name', 'entity_type']),
             'entityTypes' => DocumentTemplateController::ENTITY_TYPES,
+            'legalEntities' => LegalEntity::orderBy('name')->get(['id', 'name']),
+            'availableColumns' => $availableColumns,
+            'listView' => [
+                'visible_columns' => $visibleColumns,
+            ],
             'filters' => $request->only(['document_template_id', 'entity_type', 'legal_entity_id', 'date_from', 'date_to', 'search', 'sort_by', 'sort_dir']),
         ]);
+    }
+
+    /**
+     * Юрлицо документа — тем же правилом резолюции, что и у печатной формы
+     * (DocumentPlaceholderService::resolveLegalEntity()): явный legal_entity_id
+     * связанной записи, иначе — юрлицо локации, ТОЛЬКО если оно у неё ровно
+     * одно (иначе неоднозначно, показываем прочерк). Требует eager-loaded
+     * documentable.legalEntity / branch.legalEntities (см. index()).
+     */
+    private function resolveLegalEntityName(Document $document): ?string
+    {
+        if ($document->documentable && $document->documentable->legal_entity_id) {
+            return $document->documentable->legalEntity?->name;
+        }
+
+        $entities = $document->branch?->legalEntities;
+
+        return $entities && $entities->count() === 1 ? $entities->first()->name : null;
     }
 
     /**
