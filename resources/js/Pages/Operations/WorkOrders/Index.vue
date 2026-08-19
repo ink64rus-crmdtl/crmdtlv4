@@ -14,7 +14,7 @@ import DataTable from '@/Components/DataTable.vue';
 import WorkOrderReopenModal from '@/Components/WorkOrderReopenModal.vue';
 import draggable from 'vuedraggable';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
-import { ref, computed, watch, reactive } from 'vue';
+import { ref, computed, watch, reactive, onMounted } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { useServerSort } from '@/Composables/useServerSort.js';
 import { buildTimeSlots, withCurrentValue } from '@/Composables/useWorkingHoursSlots.js';
@@ -424,6 +424,9 @@ const openModal = (order = null) => {
         form.reset();
         form.branch_id = page.props.current_branch_id || (props.branches.length > 0 ? props.branches[0].id : '');
         form.legal_entity_id = defaultLegalEntityIdFor(form.branch_id);
+        // Активный фильтр по клиенту (например, со ссылки «Новый заказ» из карточки
+        // клиента) сразу подставляется в форму создания
+        form.client_id = filtersForm.client_id || '';
         form.status = 'new';
         const now = new Date();
         form.order_date = toLocalDateTimeString(now);
@@ -444,6 +447,26 @@ const closeModal = () => {
     form.reset();
     form.clearErrors();
 };
+
+// Ссылка «Новый заказ» (из карточки клиента) ведёт на эту страницу с ?create=1 —
+// открываем форму создания сразу и убираем параметр из URL, чтобы он не срабатывал
+// повторно при навигации назад/обновлении.
+onMounted(() => {
+    // Ziggy v2: Router extends String, у него queryParams (а не query).
+    // Inertia v2: router.replace(url, opts) не существует (был в v1) — замена
+    // записи истории делается опцией replace: true у visit/get.
+    if (route().queryParams.create === '1') {
+        openModal();
+        const q = { ...route().queryParams };
+        delete q.create;
+        // В Inertia v2 сигнатура get(url, data, options) — опции третьим аргументом
+        router.get(route('operations.work-orders.index', q), {}, {
+            replace: true,
+            preserveState: true,
+            preserveScroll: true,
+        });
+    }
+});
 
 // --- Выбор времени слотами в пределах рабочих часов выбранной в форме локации
 // (CLAUDE.md "Дата/время создания и готовности заказ-наряда") — переиспользует

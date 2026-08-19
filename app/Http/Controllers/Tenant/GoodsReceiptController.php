@@ -13,6 +13,7 @@ use App\Models\Lookup;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Transaction;
+use App\Models\TransactionCategory;
 use App\Models\Warehouse;
 use App\Services\ActivityLogger;
 use App\Services\FinanceService;
@@ -192,6 +193,9 @@ class GoodsReceiptController extends Controller
                     'comment' => 'Оплата поставщику по накладной №'.$receipt->id.($receipt->supplier ? ' ('.$receipt->supplier->name.')' : ''),
                     'payable_type' => GoodsReceipt::class,
                     'payable_id' => $receipt->id,
+                    'counterparty_type' => Client::class,
+                    'counterparty_id' => $receipt->supplier_id,
+                    'transaction_category_id' => TransactionCategory::systemId('purchase_payment'),
                 ], auth()->id());
 
                 $receipt->syncPaymentStatus();

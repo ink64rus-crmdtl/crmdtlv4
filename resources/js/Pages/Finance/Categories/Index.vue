@@ -65,7 +65,11 @@ const { sort, onSort } = useServerSort('finance.categories.index', () => props.f
 const selectedIds = ref([]);
 
 const bulkDelete = () => {
-    if (confirm(`Удалить выбранные статьи (${selectedIds.value.length})?`)) {
+    const hasSystem = props.categories.data.some(c => c.is_system && selectedIds.value.includes(c.id));
+    const confirmText = hasSystem
+        ? `Удалить выбранные статьи (${selectedIds.value.length})? Системные статьи среди выбранных будут отклонены сервером.`
+        : `Удалить выбранные статьи (${selectedIds.value.length})?`;
+    if (confirm(confirmText)) {
         router.post(route('finance.categories.bulk-destroy'), { ids: selectedIds.value }, {
             onSuccess: () => {
                 selectedIds.value = [];
@@ -104,6 +108,7 @@ const getLocalizedLabel = (label) => {
 };
 
 const openModal = (category = null) => {
+    if (category?.is_system) return;
     editingCategory.value = category;
     if (category) {
         form.name = getLocalizedLabel(category.name);
@@ -136,6 +141,7 @@ const submit = () => {
 };
 
 const deleteCategory = (category) => {
+    if (category.is_system) return;
     if (confirm(`Удалить статью "${getLocalizedLabel(category.name)}"?`)) {
         form.delete(route('finance.categories.destroy', category.id));
     }
@@ -157,6 +163,7 @@ const deleteCategory = (category) => {
             <PageHelper title="Статьи доходов и расходов">
                 <p>Справочник статей позволяет вам классифицировать все финансовые операции в компании для последующей аналитики (P&L отчета).</p>
                 <p>Например: «Аренда», «Закупка материалов», «Зарплата», «Оплата от клиентов».</p>
+                <p class="mt-2"><strong>Системные статьи</strong> («Оплата заказа», «Выплата зарплаты» и др.) созданы платформой и автоматически подставляются в типовые операции — они недоступны для правки и удаления.</p>
             </PageHelper>
 
             <!-- Action Bar (Bulk Actions) -->
@@ -202,7 +209,12 @@ const deleteCategory = (category) => {
                             <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger/10 text-danger"><i class="ri-arrow-right-up-line"></i> Расход</span>
                         </template>
                         <template #cell-name="{ row: category }">
-                            <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(category.name) }}</span>
+                            <span class="inline-flex items-center gap-2">
+                                <span class="font-bold text-gray-800 dark:text-gray-200">{{ getLocalizedLabel(category.name) }}</span>
+                                <span v-if="category.is_system" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-secondary/10 text-secondary" title="Системная статья — создана платформой, используется в типовых операциях, недоступна для правки и удаления">
+                                    <i class="ri-settings-3-line"></i> Системная
+                                </span>
+                            </span>
                         </template>
                         <template #cell-status="{ row: category }">
                             <span :class="[category.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
@@ -210,10 +222,10 @@ const deleteCategory = (category) => {
                             </span>
                         </template>
                         <template #actions="{ row: category }">
-                            <button @click="openModal(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать">
+                            <button @click="openModal(category)" :disabled="category.is_system" :title="category.is_system ? 'Системная статья — недоступна для редактирования' : 'Редактировать'" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-primary/10 text-primary hover:bg-primary hover:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary/10">
                                 <i class="ri-pencil-line"></i>
                             </button>
-                            <button @click="deleteCategory(category)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить">
+                            <button @click="deleteCategory(category)" :disabled="category.is_system" :title="category.is_system ? 'Системная статья — недоступна для удаления' : 'Удалить'" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all duration-300 bg-danger/10 text-danger hover:bg-danger hover:text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-danger/10">
                                 <i class="ri-delete-bin-line"></i>
                             </button>
                         </template>

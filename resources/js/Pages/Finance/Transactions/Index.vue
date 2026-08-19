@@ -8,6 +8,8 @@ import Pagination from '@/Components/Pagination.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
 import DataTable from '@/Components/DataTable.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
+import Modal from '@/Components/Modal.vue';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
@@ -19,6 +21,11 @@ const props = defineProps({
     accounts: Array,
     branches: Array,
     categories: Array,
+    clients: Array,
+    employees: Array,
+    baseOrders: Array,
+    positions: { type: Array, default: () => [] },
+    tenantCountry: { type: String, default: 'RU' },
     filters: Object,
     closedThroughDate: { type: String, default: null },
     availableColumns: { type: Array, default: () => [] },
@@ -61,6 +68,59 @@ const form = useForm({
     amount: 0,
     transaction_date: todayIso(),
     comment: '',
+    counterparty: '',
+    counterparty_type: '',
+    counterparty_id: '',
+    work_order_id: '',
+});
+
+// --- КОНТРАГЕНТ И ОСНОВАНИЕ (Фаза А) ---
+
+const employeeFullName = (e) => [e.last_name, e.first_name, e.middle_name].filter(Boolean).join(' ') || 'Сотрудник #' + e.id;
+
+// Значение — закодированная строка "client:5" / "employee:3": SearchableSelect
+// эмитит только value, тип нужно переносить вместе с id.
+const counterpartyOptions = computed(() => [
+    ...(props.clients || []).map(c => ({ value: `client:${c.id}`, label: `${c.name}${c.phone ? ' — ' + c.phone : ''}` })),
+    ...(props.employees || []).map(e => ({ value: `employee:${e.id}`, label: `Сотрудник: ${employeeFullName(e)}` })),
+]);
+
+const baseOrderOptions = computed(() => (props.baseOrders || []).map(o => ({
+    value: String(o.id),
+    label: `#${String(o.id).padStart(6, '0')} — ${o.client?.name || 'без клиента'}`,
+})));
+
+const orderClientMap = computed(() => {
+    const map = {};
+    (props.baseOrders || []).forEach(o => { map[String(o.id)] = o.client_id; });
+    return map;
+});
+
+// Раскодирование контрагента в пару (тип, id) для отправки на бэкенд
+watch(() => form.counterparty, (value) => {
+    if (!value) {
+        form.counterparty_type = '';
+        form.counterparty_id = '';
+        return;
+    }
+    const [kind, id] = value.split(':');
+    form.counterparty_type = kind === 'employee' ? 'App\\Models\\Employee' : 'App\\Models\\Client';
+    form.counterparty_id = Number(id) || '';
+});
+
+// Выбор заказ-наряда как основания автоматически подставляет клиента заказа
+// и статью «Оплата заказа» (если она ещё не выбрана вручную)
+watch(() => form.work_order_id, (orderId) => {
+    if (orderId) {
+        const clientId = orderClientMap.value[String(orderId)];
+        if (clientId) {
+            form.counterparty = `client:${clientId}`;
+        }
+        const orderPayment = (props.categories || []).find(c => c.value === 'order_payment');
+        if (orderPayment && !form.transaction_category_id) {
+            form.transaction_category_id = orderPayment.id;
+        }
+    }
 });
 
 const openModal = () => {
@@ -86,6 +146,11 @@ const openEditModal = (transaction) => {
     form.amount = transaction.amount / 100;
     form.transaction_date = transaction.transaction_date;
     form.comment = transaction.comment || '';
+    // Контрагент редактируется только у операций без основания
+    if (transaction.counterparty_type && !transaction.payable_type) {
+        const kind = transaction.counterparty_type === 'App\\Models\\Employee' ? 'employee' : 'client';
+        form.counterparty = `${kind}:${transaction.counterparty_id}`;
+    }
     isModalOpen.value = true;
 };
 
@@ -108,6 +173,126 @@ const submit = () => {
             onSuccess: () => closeModal(),
         });
     }
+};
+
+// --- БЫСТРОЕ СОЗДАНИЕ НА ЛЕТУ (статья / контрагент) ---
+// Паттерн «кнопка „+“ рядом с полем» — CLAUDE.md про пополняемые списки:
+// компактная модалка на существующий store()-роут, preserveState — обязательно
+// (иначе Inertia пересоздаст страницу и разорвёт открытую форму операции),
+// новая запись находится диффом списков до/после и подставляется в форму.
+
+const isQuickCategoryModalOpen = ref(false);
+const isQuickCounterpartyModalOpen = ref(false);
+const quickCounterpartyKind = ref('client');
+
+const quickCategoryForm = useForm({
+    name: '',
+    type: 'expense',
+});
+
+const quickClientForm = useForm({
+    branch_id: '',
+    type: 'b2c',
+    name: '',
+    phone: '',
+    phone_required: true,
+});
+
+const quickEmployeeForm = useForm({
+    branch_id: '',
+    first_name: '',
+    last_name: '',
+    middle_name: '',
+    phone: '',
+    position_id: '',
+    type: 'staff',
+    has_crm_access: false,
+});
+
+// Отчество обязательно на бэкенде только для RU/BY/KZ (EmployeeController::store)
+const needsMiddleName = computed(() => ['RU', 'BY', 'KZ'].includes(props.tenantCountry));
+
+const positionOptions = computed(() => (props.positions || []).map(p => ({
+    value: String(p.id),
+    label: getLocalizedLabel(p.name),
+})));
+
+const openQuickCategoryModal = () => {
+    quickCategoryForm.reset();
+    quickCategoryForm.clearErrors();
+    quickCategoryForm.type = form.type === 'expense' ? 'expense' : 'income';
+    isQuickCategoryModalOpen.value = true;
+};
+
+const closeQuickCategoryModal = () => {
+    isQuickCategoryModalOpen.value = false;
+    quickCategoryForm.reset();
+    quickCategoryForm.clearErrors();
+};
+
+const submitQuickCategory = () => {
+    const existingIds = new Set(props.categories.map(c => c.id));
+    quickCategoryForm.post(route('finance.categories.store'), {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.categories.find(c => !existingIds.has(c.id));
+            if (created) {
+                form.transaction_category_id = created.id;
+            }
+            closeQuickCategoryModal();
+        },
+    });
+};
+
+const openQuickCounterpartyModal = () => {
+    quickClientForm.reset();
+    quickClientForm.clearErrors();
+    quickEmployeeForm.reset();
+    quickEmployeeForm.clearErrors();
+    quickCounterpartyKind.value = 'client';
+    const branchId = form.branch_id || (props.branches[0]?.id ?? '');
+    quickClientForm.branch_id = branchId;
+    quickEmployeeForm.branch_id = branchId;
+    isQuickCounterpartyModalOpen.value = true;
+};
+
+const closeQuickCounterpartyModal = () => {
+    isQuickCounterpartyModalOpen.value = false;
+    quickClientForm.reset();
+    quickClientForm.clearErrors();
+    quickEmployeeForm.reset();
+    quickEmployeeForm.clearErrors();
+};
+
+const submitQuickClient = () => {
+    const existingIds = new Set(props.clients.map(c => c.id));
+    quickClientForm.post(route('crm.clients.store'), {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.clients.find(c => !existingIds.has(c.id));
+            if (created) {
+                form.counterparty = `client:${created.id}`;
+            }
+            closeQuickCounterpartyModal();
+        },
+    });
+};
+
+const submitQuickEmployee = () => {
+    const existingIds = new Set(props.employees.map(e => e.id));
+    quickEmployeeForm.post(route('hr.employees.store'), {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            const created = props.employees.find(e => !existingIds.has(e.id));
+            if (created) {
+                form.counterparty = `employee:${created.id}`;
+            }
+            closeQuickCounterpartyModal();
+        },
+    });
 };
 
 const deleteTransaction = (transaction) => {
@@ -158,6 +343,8 @@ const filtersForm = reactive({
     type: props.filters?.filters?.type || '',
     transaction_category_id: props.filters?.filters?.transaction_category_id || '',
     is_reconciled: props.filters?.filters?.is_reconciled || '',
+    counterparty: props.filters?.filters?.counterparty || '',
+    work_order_id: props.filters?.filters?.work_order_id || '',
 });
 
 const isFiltersOpen = ref(false);
@@ -186,6 +373,8 @@ const resetFilters = () => {
     filtersForm.type = '';
     filtersForm.transaction_category_id = '';
     filtersForm.is_reconciled = '';
+    filtersForm.counterparty = '';
+    filtersForm.work_order_id = '';
 };
 // ------------------------------------
 
@@ -348,18 +537,34 @@ const totalBalance = computed(() => {
                         <template #cell-category="{ row: tx }">
                             {{ tx.category ? getLocalizedLabel(tx.category.name) : '—' }}
                         </template>
+                        <template #cell-counterparty="{ row: tx }">
+                            <span v-if="tx.counterparty_label" class="inline-flex items-center gap-1.5">
+                                <i :class="[tx.counterparty_kind === 'employee' ? 'bg-info/10 text-info ri-user-star-line' : 'bg-primary/10 text-primary ri-user-3-line', 'w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0']"></i>
+                                <span class="font-medium truncate max-w-[180px]" :title="tx.counterparty_label">{{ tx.counterparty_label }}</span>
+                            </span>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
+                        <template #cell-base="{ row: tx }">
+                            <template v-if="tx.payable_type === 'App\\Models\\WorkOrder'">
+                                <Link :href="route('operations.work-orders.show', tx.payable_id)" class="text-primary hover:underline font-medium">
+                                    Заказ-наряд #{{ String(tx.payable_id).padStart(6, '0') }}
+                                </Link>
+                            </template>
+                            <template v-else-if="tx.payable_type === 'App\\Models\\GoodsReceipt'">
+                                <span class="font-medium">Приходная накладная №{{ tx.payable_id }}</span>
+                            </template>
+                            <template v-else-if="tx.payable_type === 'App\\Models\\Payroll'">
+                                <span class="font-medium">Выплата ЗП #{{ tx.payable_id }}</span>
+                            </template>
+                            <span v-else class="text-gray-400">—</span>
+                        </template>
                         <template #cell-amount="{ row: tx }">
                             <span :class="tx.type === 'income' ? 'text-success' : (tx.type === 'expense' ? 'text-danger' : 'text-gray-800 dark:text-gray-200')">
                                 {{ tx.type === 'income' ? '+' : (tx.type === 'expense' ? '-' : '') }}{{ formatMoney(tx.amount) }}
                             </span>
                         </template>
                         <template #cell-comment="{ row: tx }">
-                            <div v-if="tx.payable_type === 'App\\Models\\WorkOrder'">
-                                <Link :href="route('operations.work-orders.show', tx.payable_id)" class="text-primary hover:underline font-medium block">
-                                    Заказ-наряд #{{ String(tx.payable_id).padStart(6, '0') }}
-                                </Link>
-                            </div>
-                            <div class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" :title="tx.comment">{{ tx.comment || '—' }}</div>
+                            <div class="text-xs text-gray-500 truncate max-w-xs" :title="tx.comment">{{ tx.comment || '—' }}</div>
                         </template>
                         <template #cell-reconciled="{ row: tx }">
                             <button
@@ -399,9 +604,15 @@ const totalBalance = computed(() => {
                 <form @submit.prevent="submit" class="flex flex-col">
                     <div class="p-6 space-y-6">
 
+                        <div v-if="Object.keys(form.errors).length" class="p-3 rounded-md bg-danger/10 border border-danger/20 text-sm text-danger">
+                            <p v-for="(msg, key) in form.errors" :key="key" class="flex items-start gap-2">
+                                <i class="ri-error-warning-fill shrink-0 mt-0.5"></i> {{ msg }}
+                            </p>
+                        </div>
+
                         <div v-if="editingTransaction" class="p-3 rounded-md bg-info/5 border border-info/20 text-xs text-gray-600 dark:text-gray-400">
                             <i class="ri-information-line text-info mr-1"></i>
-                            Тип, счет и локацию операции менять нельзя — доступны сумма, дата, статья и комментарий. Если нужно перенести операцию на другой счет — отмените её и проведите заново.
+                            Тип, счет и локацию операции менять нельзя — доступны сумма, дата, статья, комментарий и контрагент (если операция без основания). Если нужно перенести операцию на другой счет — отмените её и проведите заново.
                         </div>
 
                         <!-- Выбор типа операции -->
@@ -443,11 +654,61 @@ const totalBalance = computed(() => {
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Статья <span class="text-danger">*</span></label>
-                                    <select v-model="form.transaction_category_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
-                                        <option value="" disabled class="bg-white dark:bg-gray-800">Выберите статью...</option>
-                                        <option v-for="cat in categories.filter(c => c.type === form.type)" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
-                                    </select>
+                                    <div class="flex gap-2">
+                                        <select v-model="form.transaction_category_id" required class="flex-1 block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
+                                            <option value="" disabled class="bg-white dark:bg-gray-800">Выберите статью...</option>
+                                            <option v-for="cat in categories.filter(c => c.type === form.type)" :key="cat.id" :value="cat.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(cat.name) }}</option>
+                                        </select>
+                                        <button type="button" @click="openQuickCategoryModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить статью">
+                                            <i class="ri-add-line text-primary"></i>
+                                        </button>
+                                    </div>
                                 </div>
+                            </div>
+
+                            <!-- Основание: привязка ручной оплаты к заказ-наряду (только создание дохода) -->
+                            <div v-if="!editingTransaction && form.type === 'income'">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основание (заказ-наряд)</label>
+                                <SearchableSelect
+                                    v-model="form.work_order_id"
+                                    :options="baseOrderOptions"
+                                    placeholder="Без основания — свободная операция"
+                                    searchPlaceholder="Поиск по номеру заказа..."
+                                    clearable
+                                />
+                                <p class="text-xs text-gray-400 mt-1">Свяжет операцию с заказом: контрагент и статья «Оплата заказа» подставятся автоматически, оплата зачтётся в остаток долга заказа.</p>
+                            </div>
+
+                            <!-- Контрагент: обязателен для свободного дохода/расхода, автозаполняется из основания -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                    Контрагент
+                                    <span v-if="!editingTransaction && form.type !== 'transfer' && !form.work_order_id" class="text-danger">*</span>
+                                </label>
+                                <template v-if="editingTransaction && editingTransaction.payable_type">
+                                    <div class="px-3 py-2 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300">
+                                        <i class="ri-lock-2-line mr-1.5 text-gray-400"></i>
+                                        Контрагент определяется основанием: {{ editingTransaction.counterparty_label || '—' }}
+                                    </div>
+                                    <p class="text-xs text-gray-400 mt-1">Операция привязана к документу — смените контрагента через отмену и повторное проведение операции.</p>
+                                </template>
+                                <template v-else>
+                                    <div class="flex gap-2">
+                                        <SearchableSelect
+                                            v-model="form.counterparty"
+                                            :options="counterpartyOptions"
+                                            placeholder="Клиент или сотрудник..."
+                                            searchPlaceholder="Поиск по имени или телефону..."
+                                            :disabled="!!form.work_order_id"
+                                            clearable
+                                            class="flex-1"
+                                        />
+                                        <button v-if="!form.work_order_id" type="button" @click="openQuickCounterpartyModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента или сотрудника">
+                                            <i class="ri-add-line text-primary"></i>
+                                        </button>
+                                    </div>
+                                    <p v-if="!!form.work_order_id" class="text-xs text-gray-400 mt-1">Контрагент подставлен автоматически из выбранного заказ-наряда.</p>
+                                </template>
                             </div>
                         </template>
 
@@ -554,6 +815,26 @@ const totalBalance = computed(() => {
                         </select>
                     </div>
                     <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Контрагент</label>
+                        <SearchableSelect
+                            v-model="filtersForm.counterparty"
+                            :options="counterpartyOptions"
+                            placeholder="Все контрагенты"
+                            searchPlaceholder="Поиск по имени или телефону..."
+                            clearable
+                        />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Заказ-наряд (основание)</label>
+                        <SearchableSelect
+                            v-model="filtersForm.work_order_id"
+                            :options="baseOrderOptions"
+                            placeholder="Все операции"
+                            searchPlaceholder="Поиск по номеру заказа..."
+                            clearable
+                        />
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Сверка с банком</label>
                         <select v-model="filtersForm.is_reconciled" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-gray-300 dark:focus:border-gray-600 focus:ring-0">
                             <option value="">Все</option>
@@ -581,6 +862,166 @@ const totalBalance = computed(() => {
             @close="isColumnsModalOpen = false"
             @saved="isColumnsModalOpen = false"
         />
+
+        <!-- Быстрое создание статьи на лету — обязательно через <Modal> (не голый div
+        с z-index): форма операции открыта модалкой, а <Modal> рендерит нативный
+        <dialog>.showModal() в браузерный top layer, который физически выше ЛЮБОГО
+        обычного элемента независимо от z-index. Только второй <dialog> корректно
+        ляжет поверх первого (top layer стекуется по порядку открытия).
+        post() с preserveState обязателен — иначе Inertia пересоздаст страницу
+        и разорвёт открытую форму операции (см. CLAUDE.md про пополняемые списки). -->
+        <Modal :show="isQuickCategoryModalOpen" @close="closeQuickCategoryModal" maxWidth="md">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новая статья</h3>
+                    <button @click="closeQuickCategoryModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <form @submit.prevent="submitQuickCategory" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Название <span class="text-danger">*</span></label>
+                            <input v-model="quickCategoryForm.name" type="text" required placeholder="Например, Аренда бокса" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <span v-if="quickCategoryForm.errors.name" class="text-xs text-danger mt-1">{{ quickCategoryForm.errors.name }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Тип</label>
+                            <div class="px-3 py-2 rounded-md bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-300">
+                                {{ quickCategoryForm.type === 'income' ? 'Доход' : 'Расход' }}
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1.5">Тип зафиксирован по текущей операции — статью другого типа можно завести в справочнике статей.</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeQuickCategoryModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="quickCategoryForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
+        <!-- Быстрое создание контрагента на лету (клиент или сотрудник), см. пояснение выше про <Modal> -->
+        <Modal :show="isQuickCounterpartyModalOpen" @close="closeQuickCounterpartyModal" maxWidth="md">
+            <div class="bg-white dark:bg-[#313a46] rounded-md flex flex-col">
+                <div class="border-b border-gray-200 dark:border-gray-700 py-3 px-6 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                    <h3 class="text-base font-semibold text-gray-800 dark:text-gray-200">Новый контрагент</h3>
+                    <button @click="closeQuickCounterpartyModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"><i class="ri-close-line text-xl"></i></button>
+                </div>
+                <div class="flex border-b border-gray-200 dark:border-gray-700">
+                    <button type="button" @click="quickCounterpartyKind = 'client'" class="flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 -mb-px" :class="quickCounterpartyKind === 'client' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                        <i class="ri-user-3-line mr-1.5"></i>Клиент
+                    </button>
+                    <button type="button" @click="quickCounterpartyKind = 'employee'" class="flex-1 py-3 px-4 text-sm font-medium transition-colors border-b-2 -mb-px" :class="quickCounterpartyKind === 'employee' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'">
+                        <i class="ri-team-line mr-1.5"></i>Сотрудник
+                    </button>
+                </div>
+
+                <form v-if="quickCounterpartyKind === 'client'" @submit.prevent="submitQuickClient" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
+                            <select v-model="quickClientForm.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
+                                <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
+                            </select>
+                            <span v-if="quickClientForm.errors.branch_id" class="text-xs text-danger mt-1">{{ quickClientForm.errors.branch_id }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя <span class="text-danger">*</span></label>
+                            <input v-model="quickClientForm.name" type="text" required placeholder="Иван Иванов" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <span v-if="quickClientForm.errors.name" class="text-xs text-danger mt-1">{{ quickClientForm.errors.name }}</span>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Телефон <span v-if="quickClientForm.phone_required" class="text-danger">*</span>
+                                </label>
+                                <label class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        :checked="!quickClientForm.phone_required"
+                                        @change="quickClientForm.phone_required = !$event.target.checked"
+                                        class="rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary focus:ring-offset-0"
+                                    />
+                                    Без номера
+                                </label>
+                            </div>
+                            <input
+                                v-model="quickClientForm.phone"
+                                type="text"
+                                :required="quickClientForm.phone_required"
+                                placeholder="+7 (999) 000-00-00"
+                                class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0"
+                            />
+                            <span v-if="quickClientForm.errors.phone" class="text-xs text-danger mt-1 block">{{ quickClientForm.errors.phone }}</span>
+                            <p v-if="!quickClientForm.phone_required" class="text-xs text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 mt-2 flex items-start gap-1.5">
+                                <i class="ri-error-warning-line mt-0.5"></i>
+                                <span>Без номера высок риск случайно создать дубль клиента — указывайте это только если контакта действительно нет.</span>
+                            </p>
+                        </div>
+                        <p class="text-xs text-gray-400">Остальные данные клиента можно заполнить позже, в карточке клиента.</p>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeQuickCounterpartyModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="quickClientForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                    </div>
+                </form>
+
+                <form v-else @submit.prevent="submitQuickEmployee" class="flex flex-col">
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Локация <span class="text-danger">*</span></label>
+                            <select v-model="quickEmployeeForm.branch_id" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0">
+                                <option value="" disabled class="bg-white dark:bg-gray-800">Выберите локацию...</option>
+                                <option v-for="branch in branches" :key="branch.id" :value="branch.id" class="bg-white dark:bg-gray-800">{{ branch.name }}</option>
+                            </select>
+                            <span v-if="quickEmployeeForm.errors.branch_id" class="text-xs text-danger mt-1">{{ quickEmployeeForm.errors.branch_id }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Должность <span class="text-danger">*</span></label>
+                            <SearchableSelect
+                                v-model="quickEmployeeForm.position_id"
+                                :options="positionOptions"
+                                placeholder="Выберите должность..."
+                                searchPlaceholder="Поиск должности..."
+                                :disabled="positionOptions.length === 0"
+                            />
+                            <span v-if="quickEmployeeForm.errors.position_id" class="text-xs text-danger mt-1">{{ quickEmployeeForm.errors.position_id }}</span>
+                            <p v-if="positionOptions.length === 0" class="text-xs text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 mt-2 flex items-start gap-1.5">
+                                <i class="ri-error-warning-line mt-0.5"></i>
+                                <span>В системе нет ни одной должности — добавьте их в разделе «Сотрудники → Должности», затем вернитесь сюда.</span>
+                            </p>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Фамилия <span class="text-danger">*</span></label>
+                                <input v-model="quickEmployeeForm.last_name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span v-if="quickEmployeeForm.errors.last_name" class="text-xs text-danger mt-1">{{ quickEmployeeForm.errors.last_name }}</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Имя <span class="text-danger">*</span></label>
+                                <input v-model="quickEmployeeForm.first_name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                                <span v-if="quickEmployeeForm.errors.first_name" class="text-xs text-danger mt-1">{{ quickEmployeeForm.errors.first_name }}</span>
+                            </div>
+                        </div>
+                        <div v-if="needsMiddleName">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Отчество <span class="text-danger">*</span></label>
+                            <input v-model="quickEmployeeForm.middle_name" type="text" required class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <span v-if="quickEmployeeForm.errors.middle_name" class="text-xs text-danger mt-1">{{ quickEmployeeForm.errors.middle_name }}</span>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Телефон <span class="text-danger">*</span></label>
+                            <input v-model="quickEmployeeForm.phone" type="text" required placeholder="+7 (999) 000-00-00" class="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-transparent py-2 px-3 text-sm text-gray-800 dark:text-gray-200 focus:border-primary focus:ring-0" />
+                            <span v-if="quickEmployeeForm.errors.phone" class="text-xs text-danger mt-1 block">{{ quickEmployeeForm.errors.phone }}</span>
+                        </div>
+                        <p class="text-xs text-gray-400">Сотрудник будет создан как контрагент операции без доступа в систему — доступ настраивается в карточке сотрудника.</p>
+                    </div>
+                    <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
+                        <button type="button" @click="closeQuickCounterpartyModal()" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-secondary/10 text-secondary hover:bg-secondary hover:text-white">Отмена</button>
+                        <button type="submit" :disabled="quickEmployeeForm.processing" class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-colors bg-primary text-white hover:bg-primary-600 disabled:opacity-50">Добавить</button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
 
     </AuthenticatedLayout>
 </template>

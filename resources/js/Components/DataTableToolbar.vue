@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
+import TableFitToggle from '@/Components/TableFitToggle.vue';
 
 const props = defineProps({
     modelValue: {
@@ -13,7 +14,20 @@ const props = defineProps({
     placeholder: {
         type: String,
         default: 'Поиск...',
-    }
+    },
+    // Кнопка «Вместить в экран» показывается во всех тулбарах автоматически
+    // (состояние — общий стор useTableFit, его же читает DataTable страницы).
+    // Отключается на страницах, где таблиц с поддержкой «резинового» вида нет
+    // (например drag-n-drop таблицы постов).
+    showFitToggle: {
+        type: Boolean,
+        default: true,
+    },
+    // Ключ хранения состояния (по умолчанию — имя текущего роута)
+    fitStorageKey: {
+        type: String,
+        default: null,
+    },
 });
 
 const emit = defineEmits(['update:modelValue', 'open-filters', 'open-columns']);
@@ -63,6 +77,9 @@ const clearSearch = () => {
         <!-- Правая часть: Действия и Настройки -->
         <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
             
+            <!-- Кнопка "Вместить в экран" (резиновый вид таблицы) -->
+            <TableFitToggle v-if="showFitToggle" :storage-key="fitStorageKey" />
+
             <!-- Слот для кастомных кнопок (например, "Добавить") -->
             <slot name="actions"></slot>
 

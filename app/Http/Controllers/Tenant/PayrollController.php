@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Payroll;
+use App\Models\TransactionCategory;
 use App\Models\Transaction;
 use App\Services\ActivityLogger;
 use App\Services\FinanceService;
@@ -314,6 +315,9 @@ class PayrollController extends Controller
             'comment' => $payoutLabel.': '.$payeeName.($payroll->comment ? ' ('.$payroll->comment.')' : ''),
             'payable_type' => Payroll::class,
             'payable_id' => $payroll->id,
+            'counterparty_type' => $payroll->employee_id ? Employee::class : Client::class,
+            'counterparty_id' => $payroll->employee_id ?? $payroll->client_id,
+            'transaction_category_id' => TransactionCategory::systemId('payroll_payment'),
         ], auth()->id());
 
         $payroll->update([

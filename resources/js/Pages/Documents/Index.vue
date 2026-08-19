@@ -5,7 +5,6 @@ import DataTable from '@/Components/DataTable.vue';
 import DataTableToolbar from '@/Components/DataTableToolbar.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
-import TableFitToggle from '@/Components/TableFitToggle.vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import { ref, reactive, computed, watch } from 'vue';
 import { useServerSort } from '@/Composables/useServerSort.js';
@@ -35,7 +34,6 @@ const initialFilters = {
 const filtersForm = reactive(initialFilters);
 const isFiltersOpen = ref(false);
 const isColumnsModalOpen = ref(false);
-const fitColumns = ref(localStorage.getItem('documents.fit-columns') === '1');
 
 const fetchFiltered = useDebounceFn(() => {
     router.get(route('documents.index'), {
@@ -145,11 +143,7 @@ const entityRecordLabel = (doc) => {
                     @open-filters="isFiltersOpen = true"
                     @open-columns="openColumnsModal"
                     placeholder="Поиск по номеру/названию..."
-                >
-                    <template #actions>
-                        <TableFitToggle v-model="fitColumns" storage-key="documents.fit-columns" />
-                    </template>
-                </DataTableToolbar>
+                />
                 <div class="overflow-x-auto w-full">
                     <DataTable
                         :columns="dataTableColumns"
@@ -157,7 +151,6 @@ const entityRecordLabel = (doc) => {
                         has-actions
                         :sort="sort"
                         @sort="onSort"
-                        :fit-columns="fitColumns"
                         empty-message="Документов пока нет."
                         row-key="id"
                     >

@@ -27,6 +27,7 @@ use App\Models\ServiceCategory;
 use App\Models\Setting;
 use App\Models\StockBalance;
 use App\Models\StockMovement;
+use App\Models\TransactionCategory;
 use App\Models\Vehicle;
 use App\Models\VehicleMake;
 use App\Models\VehicleModel;
@@ -1461,6 +1462,9 @@ class WorkOrderController extends Controller
                     'comment' => 'Оплата по заказ-наряду #'.$workOrder->id,
                     'payable_type' => WorkOrder::class,
                     'payable_id' => $workOrder->id,
+                    'counterparty_type' => Client::class,
+                    'counterparty_id' => $workOrder->client_id,
+                    'transaction_category_id' => TransactionCategory::systemId('order_payment'),
                 ], auth()->id());
 
                 // Списание бонусных баллов клиента пропорционально оплаченной сумме
@@ -1506,6 +1510,7 @@ class WorkOrderController extends Controller
                             'comment' => 'Комиссия эквайринга по заказ-наряду #'.$workOrder->id,
                             'payable_type' => WorkOrder::class,
                             'payable_id' => $workOrder->id,
+                            'transaction_category_id' => TransactionCategory::systemId('commission'),
                         ], auth()->id());
                     }
                 }

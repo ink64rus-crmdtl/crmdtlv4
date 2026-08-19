@@ -490,7 +490,7 @@ const deleteAccount = (account) => {
                             'py-3.5 px-2 text-sm transition-colors flex items-center gap-2 focus:outline-none'
                         ]"
                     >
-                        <span>Расчетные счета</span>
+                        <span>Счета предприятия</span>
                         <span class="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-0.5 rounded-full font-semibold">
                             {{ editingEntity.accounts?.length || 0 }}
                         </span>

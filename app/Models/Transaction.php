@@ -15,6 +15,7 @@ class Transaction extends Model
         'currency_id', 'exchange_rate_snapshot', 'comment', 'created_by',
         'edited_at', 'edited_by', 'idempotency_key',
         'is_reconciled', 'reconciled_at', 'reconciled_by',
+        'counterparty_type', 'counterparty_id',
     ];
 
     protected function casts(): array
@@ -53,6 +54,38 @@ class Transaction extends Model
     public function payable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Контрагент операции — Client или Employee (полиморф). Пуст у переводов
+     * и комиссии эквайринга. У операций с payable контрагент выводится из него
+     * и не редактируется вручную.
+     */
+    public function counterparty(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /**
+     * Человекочитаемое имя контрагента для списков (требует eager-loaded
+     * counterparty). null — контрагента нет (перевод/комиссия/удалённая запись).
+     */
+    public function counterpartyLabel(): ?string
+    {
+        $counterparty = $this->counterparty;
+        if (! $counterparty) {
+            return null;
+        }
+
+        if ($counterparty instanceof Employee) {
+            return trim(implode(' ', array_filter([
+                $counterparty->last_name,
+                $counterparty->first_name,
+                $counterparty->middle_name,
+            ]))) ?: 'Сотрудник #'.$counterparty->id;
+        }
+
+        return $counterparty->name ?? 'Клиент #'.$counterparty->id;
     }
 
     public function editor(): BelongsTo

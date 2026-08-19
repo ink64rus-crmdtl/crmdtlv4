@@ -29,6 +29,13 @@ use Exception;
  */
 class ChannelController extends Controller
 {
+    // ⚠️ green_api — ЗАДЕКЛАРИРОВАННЫЙ, но НЕ РЕАЛИЗОВАННЫЙ провайдер
+    // (решение владельца: будет подключён позже). Он проходит валидацию
+    // здесь, но ветки в MessengerProviderFactory::make() не имеет — попытка
+    // провижининга такого канала молча упадёт (InvalidArgumentException →
+    // статус «Ошибка настройки» навсегда), в UI он не выводится. НЕ удаляй
+    // его из этого списка и НЕ добавляй ветку в фабрику раньше времени —
+    // только вместе с реальной реализацией Green API (см. AGENTS.md §4).
     private const MESSENGER_PROVIDERS = ['wappi_pro', 'green_api'];
     private const SMS_PROVIDERS = ['sms_aero'];
 

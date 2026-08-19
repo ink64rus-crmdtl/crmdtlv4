@@ -160,6 +160,7 @@ const deletePost = (post) => {
                 <DataTableToolbar
                     v-model="search"
                     :has-filters="false"
+                    :show-fit-toggle="false"
                     placeholder="Поиск по названию..."
                 >
                     <template #actions>

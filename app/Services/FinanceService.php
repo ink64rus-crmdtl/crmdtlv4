@@ -46,6 +46,8 @@ class FinanceService
                 'transaction_category_id' => $data['transaction_category_id'] ?? null,
                 'payable_type' => $data['payable_type'] ?? null,
                 'payable_id' => $data['payable_id'] ?? null,
+                'counterparty_type' => $data['counterparty_type'] ?? null,
+                'counterparty_id' => $data['counterparty_id'] ?? null,
                 'type' => $data['type'],
                 'amount' => $amount,
                 'transaction_date' => $transactionDate,
@@ -189,7 +191,7 @@ class FinanceService
                 }
             }
 
-            foreach (['transaction_date', 'comment', 'transaction_category_id'] as $field) {
+            foreach (['transaction_date', 'comment', 'transaction_category_id', 'counterparty_type', 'counterparty_id'] as $field) {
                 if (array_key_exists($field, $data)) {
                     $transaction->$field = $data[$field];
                 }

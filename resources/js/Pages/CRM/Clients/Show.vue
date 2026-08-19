@@ -546,9 +546,14 @@ const currentCountrySchema = computed(() => {
                 <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80">
                     <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
                         <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200">Заказ-наряды ({{ workOrders.length }})</h3>
-                        <Link :href="route('operations.work-orders.index', { filters: { client_id: client.id } })" class="text-primary hover:text-primary-600 transition-colors text-sm font-medium flex items-center gap-1">
-                            <i class="ri-add-line"></i> Все заказы
-                        </Link>
+                        <div class="flex items-center gap-4">
+                            <Link :href="route('operations.work-orders.index', { create: 1, filters: { client_id: client.id } })" class="text-primary hover:text-primary-600 transition-colors text-sm font-medium flex items-center gap-1">
+                                <i class="ri-add-line"></i> Новый заказ
+                            </Link>
+                            <Link :href="route('operations.work-orders.index', { filters: { client_id: client.id } })" class="text-primary hover:text-primary-600 transition-colors text-sm font-medium flex items-center gap-1">
+                                <i class="ri-list-check-2"></i> Все заказы
+                            </Link>
+                        </div>
                     </div>
                     <div v-if="workOrders.length > 0" class="p-6 space-y-2.5">
                         <Link

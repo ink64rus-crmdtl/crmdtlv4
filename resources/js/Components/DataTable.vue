@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, reactive, onBeforeUnmount } from 'vue';
+import { useTableFit } from '@/Composables/useTableFit.js';
 
 /**
  * Общий компонент таблицы — заменяет только <table>...</table> (шапка+тело),
@@ -48,7 +49,7 @@ const props = defineProps({
     emptyMessage: { type: String, default: 'Ничего не найдено.' },
     rowClickable: { type: Boolean, default: false }, // добавляет cursor-pointer; @row-click эмитится всегда
     sort: { type: Array, default: () => [] }, // [{key, dir: 'asc'|'desc'}, ...] в порядке приоритета
-    fitColumns: { type: Boolean, default: false }, // "резиновый вид": table-fixed, колонки делят ширину экрана, длинный текст переносится (иначе min-w-full + whitespace-nowrap и горизонтальная прокрутка)
+    fitColumns: { type: Boolean, default: null }, // "резиновый вид": table-fixed, колонки делят ширину экрана, длинный текст переносится (иначе min-w-full + whitespace-nowrap и горизонтальная прокрутка). Не задан (null) — берётся из общего стора useTableFit (тот же ключ, что у кнопки «Вместить в экран» в DataTableToolbar)
 });
 
 const emit = defineEmits(['update:modelValue', 'row-click', 'sort']);
@@ -138,19 +139,108 @@ const toggleRow = (id, checked) => {
 
 const alignClass = (align) => (align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '');
 
-// Пропорциональные ширины колонок при fitColumns: col.weight (default 1) — относительная
-// ширина, "2" = вдвое шире колонки с weight 1. Сумма весов делит всю ширину таблицы.
+// --- "Резиновый" вид (fit) ---
+// Явный проп имеет приоритет; иначе — общий стор useTableFit с ключом текущего
+// роута (тот же, что у кнопки «Вместить в экран» в DataTableToolbar).
+const { fit: fitFromStore } = useTableFit();
+const effectiveFit = computed(() => props.fitColumns ?? fitFromStore.value);
+
+// Колонка с потенциально самой длинной записью (название/наименование/клиент и
+// т.п.) в режиме fit получает вес 2 — вдвое шире остальных (CLAUDE.md §7,
+// реестр согласован по всем разделам: Прайс-лист/Товары/Локации/Юрлица... —
+// key 'name'; Заказы/Записи — 'client'/'comment'; Документы — 'title' и т.д.).
+// Явный col.weight на странице перекрывает реестр.
+const NAME_WEIGHT_KEYS = new Set([
+    'name', 'title', 'label', 'full_name',
+    'client_name', 'employee_name', 'vehicle_info',
+    'product', 'supplier', 'client', 'comment', 'description',
+]);
+const colWeight = (col) => col.weight ?? (NAME_WEIGHT_KEYS.has(col.key) ? 2 : 1);
+
+// Пропорциональные ширины при fit: вес колонки / сумма весов × 100%.
 const totalWeight = computed(() =>
-    props.columns.reduce((sum, col) => sum + (col.weight || 1), 0)
+    props.columns.reduce((sum, col) => sum + colWeight(col), 0)
 );
-const colWidth = (col) =>
-    props.fitColumns ? { width: `${(((col.weight || 1) / totalWeight.value) * 100).toFixed(3)}%` } : null;
+const colWidth = (col) => {
+    if (!effectiveFit.value) return null;
+    return { width: `${((colWeight(col) / totalWeight.value) * 100).toFixed(3)}%` };
+};
+
+// --- Ручная ширина колонок (обычный вид) ---
+// Перетаскивание границы заголовка меняет ширину колонки, значения запоминаются
+// в localStorage по странице (table-col-widths.{route}) и применяются в обычном
+// виде; двойной клик по границе сбрасывает ширину колонки. В режиме fit ручные
+// ширины игнорируются — там ширины делятся весами.
+const widthsStorageKey = (() => {
+    try {
+        return `table-col-widths.${route().current()}`;
+    } catch {
+        return 'table-col-widths.default';
+    }
+})();
+// localStorage — внешняя среда: повреждённое значение (старый формат, обрыв
+// записи, расширение браузера) не должно ронять setup компонента — иначе вся
+// страница перестаёт открываться и по навигации, и по обновлению.
+const manualWidths = reactive((() => {
+    try {
+        return JSON.parse(localStorage.getItem(widthsStorageKey) || '{}') || {};
+    } catch {
+        return {};
+    }
+})());
+const saveWidths = () => {
+    try {
+        localStorage.setItem(widthsStorageKey, JSON.stringify(manualWidths));
+    } catch {
+        // localStorage недоступен (private mode/квота) — не даём упасть ресайзу
+    }
+};
+
+const colStyle = (col) => {
+    // Ручная ширина перекрывает и обычный вид, и «резиновый» (weight) — колонка,
+    // которую пользователь растянул, остаётся своей ширины; двойной клик по
+    // границе возвращает её к весу/автоширине.
+    const w = manualWidths[col.key];
+    if (w) return { width: `${w}px`, minWidth: `${w}px` };
+    if (effectiveFit.value) return colWidth(col);
+    return null;
+};
+
+const resizeState = ref(null); // { colKey, startX, startWidth }
+const onResizeStart = (e, col) => {
+    e.preventDefault();
+    const th = e.currentTarget.closest('th');
+    const startWidth = manualWidths[col.key] || th.offsetWidth;
+    resizeState.value = { colKey: col.key, startX: e.clientX, startWidth };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onResizeMove);
+    window.addEventListener('mouseup', onResizeEnd);
+};
+const onResizeMove = (e) => {
+    if (!resizeState.value) return;
+    const w = Math.max(80, resizeState.value.startWidth + (e.clientX - resizeState.value.startX));
+    manualWidths[resizeState.value.colKey] = Math.round(w);
+    saveWidths();
+};
+const onResizeEnd = () => {
+    resizeState.value = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onResizeMove);
+    window.removeEventListener('mouseup', onResizeEnd);
+};
+const onResizeReset = (col) => {
+    delete manualWidths[col.key];
+    saveWidths();
+};
+onBeforeUnmount(onResizeEnd);
 
 const totalColspan = computed(() => props.columns.length + (props.selectable ? 1 : 0) + (props.hasActions ? 1 : 0));
 </script>
 
 <template>
-    <table :class="['text-left', fitColumns ? 'w-full table-fixed whitespace-normal' : 'min-w-full whitespace-nowrap']">
+    <table :class="['text-left', effectiveFit ? 'w-full table-fixed whitespace-normal' : 'min-w-full whitespace-nowrap']">
         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
             <tr>
                 <th v-if="selectable" class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center whitespace-nowrap">
@@ -159,8 +249,8 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                 <th
                     v-for="col in columns"
                     :key="col.key"
-                    :style="colWidth(col)"
-                    :class="['py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', alignClass(col.align), col.sortable ? 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : '', fitColumns ? 'break-words align-top' : '', col.headerClass]"
+                    :style="colStyle(col)"
+                    :class="['relative group py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700', alignClass(col.align), col.sortable ? 'cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200' : '', effectiveFit ? 'break-words align-top' : '', col.headerClass]"
                     @click="toggleSort(col, $event)"
                 >
                     <span :class="['inline-flex items-center gap-0.5', col.align === 'right' ? 'flex-row-reverse' : '']">
@@ -183,6 +273,15 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                             >{{ sortPriority(col.sortKey || col.key) }}</sup>
                         </span>
                     </span>
+                    <!-- Ручная смена ширины колонки: перетаскивание границы заголовка
+                         (в обоих видах; в "резиновом" ручная ширина перекрывает вес
+                         колонки), двойной клик — сброс ширины -->
+                    <div
+                        class="absolute right-0 top-0 h-full w-1.5 cursor-col-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                        :title="'Изменить ширину колонки (перетаскивание). Двойной клик — сбросить ширину.'"
+                        @mousedown="onResizeStart($event, col)"
+                        @dblclick.stop="onResizeReset(col)"
+                    ></div>
                 </th>
                 <th v-if="hasActions" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right whitespace-nowrap">
                     {{ actionsLabel }}
@@ -208,8 +307,8 @@ const totalColspan = computed(() => props.columns.length + (props.selectable ? 1
                     <td
                         v-for="col in columns"
                         :key="col.key"
-                        :style="colWidth(col)"
-                        :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', alignClass(col.align), fitColumns ? 'break-words align-top' : '', col.cellClass]"
+                        :style="colStyle(col)"
+                        :class="['py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50', alignClass(col.align), effectiveFit ? 'break-words align-top' : '', col.cellClass]"
                     >
                         <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]">{{ row[col.key] }}</slot>
                     </td>

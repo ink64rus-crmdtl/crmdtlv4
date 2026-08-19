@@ -10,6 +10,7 @@ import { Head, useForm, router } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import axios from 'axios';
+import { useTableFit } from '@/Composables/useTableFit.js';
 
 const props = defineProps({
     services: Object,
@@ -23,6 +24,12 @@ const props = defineProps({
 const isModalOpen = ref(false);
 const isCategoryModalOpen = ref(false);
 const editingService = ref(null);
+
+// «Резиновый» вид raw-таблицы — общий стор (кнопка «Вместить в экран» в тулбаре).
+// Название услуги — вес 2 (вдвое шире остальных), как в Прайс-листе.
+const { fit: fitColumns } = useTableFit();
+const TABLE_TOTAL_WEIGHT = 8; // 1+1+2 (название)+1+1+1+1
+const tableColWidth = (weight) => fitColumns.value ? { width: `${((weight / TABLE_TOTAL_WEIGHT) * 100).toFixed(3)}%` } : null;
 
 const pricesInput = ref({});
 
@@ -235,19 +242,19 @@ const submitCategory = () => {
                     </template>
                 </DataTableToolbar>
                 <div class="overflow-x-auto w-full">
-                    <table class="min-w-full text-left whitespace-nowrap">
+                    <table :class="['text-left', fitColumns ? 'w-full table-fixed whitespace-normal' : 'min-w-full whitespace-nowrap']">
                         <thead class="bg-gray-50/50 dark:bg-gray-800/50">
                             <tr>
                                 <th class="py-3 px-4 w-10 border-b border-gray-200 dark:border-gray-700 text-center">
                                     <input type="checkbox" v-model="selectAll" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Категория</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Направление</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название услуги</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Базовая цена</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Нормо-время</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
-                                <th class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
+                                <th :style="tableColWidth(1)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Категория</th>
+                                <th :style="tableColWidth(1)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Направление</th>
+                                <th :style="tableColWidth(2)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Название услуги</th>
+                                <th :style="tableColWidth(1)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Базовая цена</th>
+                                <th :style="tableColWidth(1)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Нормо-время</th>
+                                <th :style="tableColWidth(1)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">Статус</th>
+                                <th :style="tableColWidth(1)" class="py-3 px-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700 text-right">Действия</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -255,22 +262,22 @@ const submitCategory = () => {
                                 <td class="py-4 px-4 border-b border-gray-100 dark:border-gray-700/50 text-center">
                                     <input type="checkbox" :value="service.id" v-model="selectedIds" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" />
                                 </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                <td :style="tableColWidth(1)" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span v-if="service.category" class="inline-flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-medium">
                                         <i class="ri-folder-line"></i> {{ getLocalizedLabel(service.category.name) }}
                                     </span>
                                     <span v-else class="text-gray-400 text-xs">—</span>
                                 </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
+                                <td :style="tableColWidth(1)" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50">
                                     <span v-if="service.business_direction" class="inline-flex items-center gap-1.5 bg-info/10 text-info px-2 py-0.5 rounded text-xs font-medium">
                                         <i class="ri-node-tree"></i> {{ service.business_direction.name }}
                                     </span>
                                     <span v-else class="text-gray-400 text-xs">—</span>
                                 </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50">
+                                <td :style="tableColWidth(2)" :class="['py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50', fitColumns ? 'break-words align-top' : '']">
                                     {{ getLocalizedLabel(service.name) }}
                                 </td>
-                                <td class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                <td :style="tableColWidth(1)" class="py-4 px-6 text-sm font-bold text-gray-800 dark:text-gray-200 border-b border-gray-100 dark:border-gray-700/50 text-right">
                                     <div v-if="pricingBasis !== 'none' && service.prices && Object.keys(service.prices).length > 0">
                                         <span class="text-xs text-info font-medium mr-2">Матрица цен</span>
                                         {{ formatMoney(service.price) }}
@@ -279,15 +286,15 @@ const submitCategory = () => {
                                         {{ formatMoney(service.price) }}
                                     </div>
                                 </td>
-                                <td class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">
+                                <td :style="tableColWidth(1)" class="py-4 px-6 text-sm text-gray-800 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700/50 text-right">
                                     {{ service.duration_minutes }} мин
                                 </td>
-                                <td class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
+                                <td :style="tableColWidth(1)" class="py-4 px-6 text-sm border-b border-gray-100 dark:border-gray-700/50">
                                     <span :class="[service.is_active ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger', 'inline-flex items-center gap-1.5 py-0.5 px-2 rounded text-xs font-medium']">
                                         {{ service.is_active ? 'Активно' : 'Неактивно' }}
                                     </span>
                                 </td>
-                                <td class="py-4 px-6 text-sm text-right border-b border-gray-100 dark:border-gray-700/50 space-x-2">
+                                <td :style="tableColWidth(1)" class="py-4 px-6 text-sm text-right border-b border-gray-100 dark:border-gray-700/50 space-x-2">
                                     <button @click="openModal(service)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white" title="Редактировать"><i class="ri-pencil-line"></i></button>
                                     <button @click="deleteService(service)" class="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-all bg-danger/10 text-danger hover:bg-danger hover:text-white" title="Удалить"><i class="ri-delete-bin-line"></i></button>
                                 </td>

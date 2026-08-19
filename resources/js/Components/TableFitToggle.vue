@@ -1,36 +1,31 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { useTableFit } from '@/Composables/useTableFit.js';
 
 /**
- * Переключатель "резинового" вида таблицы (все колонки в ширину экрана,
- * длинный текст переносится) и обычного вида (автоширина колонок +
- * горизонтальная прокрутка). Состояние хранится в localStorage по ключу
- * storageKey — у каждой страницы свой, чтобы выбор не "протекал" между
- * разделами. Управляет пропом fitColumns у <DataTable>.
+ * Переключатель "резинового" вида таблицы (все колонки в ширину экрана, текст
+ * переносится, название/наименование — вдвое шире остальных) и обычного вида
+ * (автоширина колонок + горизонтальная прокрутка). Состояние — через общий стор
+ * useTableFit() (localStorage по storageKey), его же читает DataTable той же
+ * страницы, поэтому кнопка и таблица всегда синхронны.
  */
 const props = defineProps({
     storageKey: {
         type: String,
-        required: true,
+        default: null,
     },
 });
 
-const emit = defineEmits(['update:modelValue']);
-
-const fit = ref(localStorage.getItem(props.storageKey) === '1');
-
-watch(fit, (value) => {
-    localStorage.setItem(props.storageKey, value ? '1' : '0');
-    emit('update:modelValue', value);
-});
+const { fit, setFit } = useTableFit(props.storageKey);
 </script>
 
 <template>
     <button
         type="button"
-        @click="fit = !fit"
+        @click="setFit(!fit)"
         class="inline-flex items-center justify-center rounded px-3 py-2 text-sm font-medium transition-colors bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm gap-1.5"
-        :title="fit ? 'Вместить все колонки в экран (перенос текста)' : 'Обычный вид: автоширина колонок и горизонтальная прокрутка'"
+        :title="fit
+            ? 'Вместить в экран: ВКЛ. Все колонки делят ширину страницы, длинный текст переносится. Колонка с названием/наименованием — в 2 раза шире остальных. Ширину любой колонки можно изменить перетаскиванием границы в заголовке, двойной клик по границе сбросит её. Нажмите, чтобы вернуть обычный вид (автоширина + горизонтальная прокрутка).'
+            : 'Вместить в экран: ВЫКЛ (обычный вид — колонки по содержимому, при нехватке места — горизонтальная прокрутка). Нажмите, чтобы все колонки делили ширину страницы и текст переносился; колонка с названием/наименованием — в 2 раза шире остальных. Ширину любой колонки можно изменить перетаскиванием границы в заголовке, двойной клик по границе сбросит её.'"
     >
         <i :class="[fit ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line', 'text-gray-500 dark:text-gray-400']"></i>
         <span class="hidden sm:inline">{{ fit ? 'Сжать колонки' : 'Вместить в экран' }}</span>

@@ -8,8 +8,8 @@ import Pagination from '@/Components/Pagination.vue';
 import Modal from '@/Components/Modal.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import ColumnSettingsModal from '@/Components/ColumnSettingsModal.vue';
-import TableFitToggle from '@/Components/TableFitToggle.vue';
 import DataTable from '@/Components/DataTable.vue';
+import { useTableFit } from '@/Composables/useTableFit.js';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, router, Link } from '@inertiajs/vue3';
 import { ref, computed, watch, reactive } from 'vue';
@@ -63,7 +63,9 @@ const initialFilters = {
 const filtersForm = reactive(initialFilters);
 const isFiltersOpen = ref(false);
 const isColumnsModalOpen = ref(false);
-const fitColumns = ref(localStorage.getItem('services.fit-columns') === '1');
+// «Резиновый» вид матрицы читается из общего стора (кнопка в DataTableToolbar
+// и DataTable плоского режима используют тот же источник)
+const { fit: fitColumns } = useTableFit();
 
 const hasActiveFilters = computed(() => Object.values(filtersForm).some(v => v !== '' && v !== null));
 
@@ -383,7 +385,6 @@ const removeDefaultMaterial = (material) => {
                     placeholder="Поиск по названию услуги..."
                 >
                     <template #actions>
-                        <TableFitToggle v-model="fitColumns" storage-key="services.fit-columns" />
                         <button
                             @click="openCategoryModal()"
                             class="hidden sm:inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all bg-secondary/10 text-secondary hover:bg-secondary hover:text-white shadow-sm"
@@ -403,7 +404,6 @@ const removeDefaultMaterial = (material) => {
                 <div v-if="!matrixActive" class="overflow-x-auto w-full">
                     <DataTable
                         :columns="dataTableColumns"
-                        :fit-columns="fitColumns"
                         :rows="services.data"
                         selectable
                         v-model="selectedIds"

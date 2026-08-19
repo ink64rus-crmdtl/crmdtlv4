@@ -7,8 +7,9 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Блокирует ЛЮБОЙ HTTP-доступ к sandbox-тенанту агента (раздел 16.5/16.6
- * системной инструкции), независимо от того, как именно резолвился домен.
+ * Блокирует ЛЮБОЙ HTTP-доступ к sandbox-тенанту агента (см. AGENTS.md §1.3 —
+ * CrmDevAgent/LarAgent, а также §2, phpunit.tenant.xml), независимо от того,
+ * как именно резолвился домен.
  *
  * Важно: резолвинг через *.localhost сам по себе НЕ является защитой —
  * Host-заголовок можно подделать вручную (curl -H "Host: ..."), если запрос

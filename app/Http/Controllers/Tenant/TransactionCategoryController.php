@@ -66,6 +66,13 @@ class TransactionCategoryController extends Controller
 
     public function update(Request $request, TransactionCategory $category)
     {
+        // Системные статьи (Фаза А) заблокированы от правки целиком — на них
+        // завязана авто-простановка статьи в типовых операциях (оплата заказа,
+        // выплата ЗП и т.д.), тот же паттерн, что Lookup.is_system.
+        if ($category->is_system) {
+            return redirect()->back()->withErrors(['error' => 'Системная статья недоступна для редактирования.']);
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', 'in:income,expense'],
@@ -86,6 +93,10 @@ class TransactionCategoryController extends Controller
 
     public function destroy(TransactionCategory $category)
     {
+        if ($category->is_system) {
+            return redirect()->back()->withErrors(['error' => 'Системная статья недоступна для удаления.']);
+        }
+
         $category->delete();
 
         return redirect()->back()->with('success', 'Статья удалена');
@@ -97,6 +108,10 @@ class TransactionCategoryController extends Controller
             'ids' => ['required', 'array'],
             'ids.*' => ['exists:transaction_categories,id'],
         ]);
+
+        if (TransactionCategory::whereIn('id', $validated['ids'])->where('is_system', true)->exists()) {
+            return redirect()->back()->withErrors(['error' => 'Среди выбранных статей есть системные — они недоступны для удаления.']);
+        }
 
         TransactionCategory::whereIn('id', $validated['ids'])->delete();
 
