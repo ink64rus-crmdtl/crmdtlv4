@@ -7,6 +7,7 @@ use App\Jobs\ExportEntitiesJob;
 use App\Models\Client;
 use App\Models\Employee;
 use App\Models\ListView;
+use App\Models\Lookup;
 use App\Models\Position;
 use App\Models\Transaction;
 use App\Models\TransactionCategory;
@@ -85,9 +86,15 @@ class TransactionController extends Controller
         $categories = TransactionCategory::where('is_active', true)->get(['id', 'name', 'type', 'value']);
 
         // Контрагенты для формы и фильтров — полные списки (конвенция проекта:
-        // SearchableSelect фильтрует локально, HTTP-запросов за опциями не делает)
-        $clients = Client::orderBy('name')->get(['id', 'name', 'phone']);
+        // SearchableSelect фильтрует локально, HTTP-запросов за опциями не делает).
+        // Роли клиентов нужны фронту, чтобы фильтровать список по статье операции
+        // (поставщик / клиент / выплата зарплаты — только сотрудники).
+        $clients = Client::with('roles:id,value')->orderBy('name')->get(['id', 'name', 'phone']);
         $employees = Employee::orderBy('last_name')->get(['id', 'first_name', 'last_name', 'middle_name']);
+
+        // Роли клиентов как справочник для быстрого создания «поставщик»/«клиент» на лету
+        // (роль при создании назначается исходя из выбранной статьи операции)
+        $clientRoles = Lookup::where('type', 'client_role')->where('is_active', true)->get(['id', 'value', 'label']);
 
         // Заказ-наряды с невыплаченным остатком — для привязки ручной операции
         // к конкретному заказу («Основание»). Ограничены свежими, чтобы не
@@ -125,6 +132,7 @@ class TransactionController extends Controller
             'categories' => $categories,
             'clients' => $clients,
             'employees' => $employees,
+            'clientRoles' => $clientRoles,
             'baseOrders' => $baseOrders,
             'positions' => $positions,
             'tenantCountry' => config('tenant.country_code', 'RU'),

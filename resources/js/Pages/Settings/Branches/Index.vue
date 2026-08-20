@@ -9,7 +9,7 @@ import Pagination from '@/Components/Pagination.vue';
 import WorkingHoursEditor from '@/Components/WorkingHoursEditor.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, Link, router } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import { useServerSort } from '@/Composables/useServerSort.js';
 import axios from 'axios';
@@ -21,6 +21,10 @@ const props = defineProps({
     tenantTimezone: { type: String, default: 'UTC' },
     defaultWorkingHours: { type: Array, default: () => null },
 });
+
+// Режим работы считается настроенным, когда задано глобальное расписание
+// по умолчанию (массив из 7 дней). Пока его нет — показываем напоминание.
+const hasWorkingHours = computed(() => Array.isArray(props.defaultWorkingHours) && props.defaultWorkingHours.length > 0);
 
 const isModalOpen = ref(false);
 const editingBranch = ref(null);
@@ -241,26 +245,16 @@ const deleteBranch = (branch) => {
                 </div>
             </div>
 
-            <!-- Глобальные часы работы (по умолчанию для всех локаций) -->
-            <div class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6">
-                <div class="flex items-center justify-between mb-3">
-                    <div>
-                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Часы работы по умолчанию</h2>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            По умолчанию это время наследуется всеми локациями. Для конкретной локации его можно изменить индивидуально — при редактировании локации включите «Свои часы работы».
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        @click="saveDefaultWorkingHours"
-                        :disabled="defaultHoursForm.processing"
-                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50 shrink-0"
-                    >
-                        <span v-if="defaultHoursForm.processing">Сохранение...</span>
-                        <span v-else>Сохранить</span>
-                    </button>
-                </div>
-                <WorkingHoursEditor v-model="defaultHoursForm.default_working_hours" />
+            <!-- Напоминание: режим работы обязателен (настройка ниже, у якоря #working-hours) -->
+            <div v-if="!hasWorkingHours" class="flex items-start gap-3 bg-info/5 border border-info/20 rounded-md p-4">
+                <i class="ri-time-line text-info text-lg mt-0.5"></i>
+                <p class="text-sm text-gray-700 dark:text-gray-300">
+                    Обязательно настройте режим работы — без него записи и расписание локаций будут некорректны.
+                    <a href="#working-hours" class="text-primary font-medium hover:underline inline-flex items-center gap-1">
+                        Перейти к настройке времени
+                        <i class="ri-arrow-down-line"></i>
+                    </a>
+                </p>
             </div>
 
             <!-- Action Bar (Bulk Actions) -->
@@ -346,6 +340,28 @@ const deleteBranch = (branch) => {
                     </DataTable>
                 </div>
                 <Pagination :meta="branchesList" />
+            </div>
+
+            <!-- Глобальные часы работы (по умолчанию для всех локаций) — якорь #working-hours -->
+            <div id="working-hours" class="bg-white border border-gray-200/80 rounded-md shadow-sm dark:bg-[#313a46] dark:border-gray-700/80 p-6 scroll-mt-20">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Часы работы по умолчанию</h2>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            По умолчанию это время наследуется всеми локациями. Для конкретной локации его можно изменить индивидуально — при редактировании локации включите «Свои часы работы».
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        @click="saveDefaultWorkingHours"
+                        :disabled="defaultHoursForm.processing"
+                        class="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium transition-all duration-300 bg-primary text-white hover:bg-primary-600 disabled:opacity-50 shrink-0"
+                    >
+                        <span v-if="defaultHoursForm.processing">Сохранение...</span>
+                        <span v-else>Сохранить</span>
+                    </button>
+                </div>
+                <WorkingHoursEditor v-model="defaultHoursForm.default_working_hours" />
             </div>
         </div>
 

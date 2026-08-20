@@ -76,7 +76,12 @@ class HandleInertiaRequests extends Middleware
                 ? $request->user()->availableLegalEntities()->where('is_active', true)->get(['legal_entities.id', 'legal_entities.name'])
                 : [],
             'branches' => fn () => ($request->user() && tenancy()->initialized)
-                ? $request->user()->availableBranches()->where('is_active', true)->with('legalEntities:id')->get(['branches.id', 'branches.name'])
+                ? $request->user()->availableBranches()->where('is_active', true)
+                    ->with(['legalEntities:id', 'media'])
+                    ->get(['branches.id', 'branches.name'])
+                    // logo_url — аксессор модели (route('settings.branches.logo', id));
+                    // eager-load media выше исключает N+1 по таблице media на каждый рендер.
+                    ->each(fn ($branch) => $branch->append('logo_url'))
                 : [],
             'current_legal_entity_id' => fn () => ($request->user() && tenancy()->initialized)
                 ? LegalEntityContext::current() // null means 'all'

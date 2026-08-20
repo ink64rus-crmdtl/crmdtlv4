@@ -23,6 +23,7 @@ const props = defineProps({
     categories: Array,
     clients: Array,
     employees: Array,
+    clientRoles: { type: Array, default: () => [] },
     baseOrders: Array,
     positions: { type: Array, default: () => [] },
     tenantCountry: { type: String, default: 'RU' },
@@ -80,10 +81,40 @@ const employeeFullName = (e) => [e.last_name, e.first_name, e.middle_name].filte
 
 // Значение — закодированная строка "client:5" / "employee:3": SearchableSelect
 // эмитит только value, тип нужно переносить вместе с id.
-const counterpartyOptions = computed(() => [
-    ...(props.clients || []).map(c => ({ value: `client:${c.id}`, label: `${c.name}${c.phone ? ' — ' + c.phone : ''}` })),
-    ...(props.employees || []).map(e => ({ value: `employee:${e.id}`, label: `Сотрудник: ${employeeFullName(e)}` })),
-]);
+const clientOptions = computed(() => (props.clients || []).map(c => ({
+    value: `client:${c.id}`,
+    label: `${c.name}${c.phone ? ' — ' + c.phone : ''}`,
+    roles: (c.roles || []).map(r => r.value),
+})));
+
+const employeeOptions = computed(() => (props.employees || []).map(e => ({
+    value: `employee:${e.id}`,
+    label: `Сотрудник: ${employeeFullName(e)}`,
+})));
+
+// Фильтрация контрагентов по выбранной статье операции:
+// «Выплата зарплаты» — только сотрудники (зарплата платится им, не контрагентам);
+// «Оплата поставщику» — только клиенты с ролью «Поставщик»;
+// «Возврат клиенту» — только клиенты с ролью «Клиент»;
+// остальные статьи — полный список клиентов и сотрудников.
+const selectedCategory = computed(() => (props.categories || []).find(c => c.id === form.transaction_category_id) || null);
+const isOrderPayment = computed(() => selectedCategory.value?.value === 'order_payment');
+const isPayrollPayment = computed(() => selectedCategory.value?.value === 'payroll_payment');
+const isPurchasePayment = computed(() => selectedCategory.value?.value === 'purchase_payment');
+const isRefund = computed(() => selectedCategory.value?.value === 'refund');
+
+const counterpartyOptions = computed(() => {
+    if (isPayrollPayment.value) {
+        return employeeOptions.value;
+    }
+    if (isPurchasePayment.value) {
+        return clientOptions.value.filter(c => c.roles.includes('supplier'));
+    }
+    if (isRefund.value) {
+        return clientOptions.value.filter(c => c.roles.includes('client'));
+    }
+    return [...clientOptions.value, ...employeeOptions.value];
+});
 
 const baseOrderOptions = computed(() => (props.baseOrders || []).map(o => ({
     value: String(o.id),
@@ -120,6 +151,24 @@ watch(() => form.work_order_id, (orderId) => {
         if (orderPayment && !form.transaction_category_id) {
             form.transaction_category_id = orderPayment.id;
         }
+    }
+});
+
+// Смена статьи: поле «Основание» существует только при статье «Оплата заказа» —
+// при уходе с неё привязку к заказу сбрасываем, иначе она молча ушла бы в запрос
+// со статьёй, для которой основание не осмысленно. Контрагент, не проходящий
+// в новый фильтр списка (например, клиент при статье «Выплата зарплаты»),
+// тоже сбрасывается, чтобы в форме не висело значение, которого нет в списке.
+watch(() => form.transaction_category_id, () => {
+    if (!isOrderPayment.value && form.work_order_id) {
+        const autoClient = orderClientMap.value[String(form.work_order_id)];
+        if (autoClient && form.counterparty === `client:${autoClient}`) {
+            form.counterparty = '';
+        }
+        form.work_order_id = '';
+    }
+    if (form.counterparty && !counterpartyOptions.value.some(o => o.value === form.counterparty)) {
+        form.counterparty = '';
     }
 });
 
@@ -196,6 +245,7 @@ const quickClientForm = useForm({
     name: '',
     phone: '',
     phone_required: true,
+    role_ids: [],
 });
 
 const quickEmployeeForm = useForm({
@@ -216,6 +266,11 @@ const positionOptions = computed(() => (props.positions || []).map(p => ({
     value: String(p.id),
     label: getLocalizedLabel(p.name),
 })));
+
+const quickClientRoleName = computed(() => {
+    const role = (props.clientRoles || []).find(r => quickClientForm.role_ids.includes(r.id));
+    return role ? getLocalizedLabel(role.label) : '';
+});
 
 const openQuickCategoryModal = () => {
     quickCategoryForm.reset();
@@ -250,7 +305,18 @@ const openQuickCounterpartyModal = () => {
     quickClientForm.clearErrors();
     quickEmployeeForm.reset();
     quickEmployeeForm.clearErrors();
-    quickCounterpartyKind.value = 'client';
+    // При статье «Выплата зарплаты» создаём на лету сотрудника, иначе — клиента;
+    // для «Оплаты поставщику» / «Возврата клиенту» роль назначается сразу,
+    // иначе созданный клиент не попадёт в отфильтрованный по роли список.
+    quickCounterpartyKind.value = isPayrollPayment.value ? 'employee' : 'client';
+    const roleIdByValue = (v) => (props.clientRoles || []).find(r => r.value === v)?.id;
+    if (isPurchasePayment.value) {
+        const supplierRoleId = roleIdByValue('supplier');
+        quickClientForm.role_ids = supplierRoleId ? [supplierRoleId] : [];
+    } else if (isRefund.value) {
+        const clientRoleId = roleIdByValue('client');
+        quickClientForm.role_ids = clientRoleId ? [clientRoleId] : [];
+    }
     const branchId = form.branch_id || (props.branches[0]?.id ?? '');
     quickClientForm.branch_id = branchId;
     quickEmployeeForm.branch_id = branchId;
@@ -666,8 +732,9 @@ const totalBalance = computed(() => {
                                 </div>
                             </div>
 
-                            <!-- Основание: привязка ручной оплаты к заказ-наряду (только создание дохода) -->
-                            <div v-if="!editingTransaction && form.type === 'income'">
+                            <!-- Основание: привязка ручной оплаты к заказ-наряду. Показывается только
+                                 для дохода со статьёй «Оплата заказа» — остальные статьи основания не имеют. -->
+                            <div v-if="!editingTransaction && form.type === 'income' && isOrderPayment">
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Основание (заказ-наряд)</label>
                                 <SearchableSelect
                                     v-model="form.work_order_id"
@@ -679,10 +746,12 @@ const totalBalance = computed(() => {
                                 <p class="text-xs text-gray-400 mt-1">Свяжет операцию с заказом: контрагент и статья «Оплата заказа» подставятся автоматически, оплата зачтётся в остаток долга заказа.</p>
                             </div>
 
-                            <!-- Контрагент: обязателен для свободного дохода/расхода, автозаполняется из основания -->
+                            <!-- Контрагент: обязателен для свободного дохода/расхода, автозаполняется из основания.
+                                 Список фильтруется по статье: зарплата — сотрудники, поставщику — клиенты
+                                 с ролью «Поставщик», возврат клиенту — клиенты с ролью «Клиент». -->
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                    Контрагент
+                                    {{ isPayrollPayment ? 'Сотрудник' : 'Контрагент' }}
                                     <span v-if="!editingTransaction && form.type !== 'transfer' && !form.work_order_id" class="text-danger">*</span>
                                 </label>
                                 <template v-if="editingTransaction && editingTransaction.payable_type">
@@ -697,17 +766,25 @@ const totalBalance = computed(() => {
                                         <SearchableSelect
                                             v-model="form.counterparty"
                                             :options="counterpartyOptions"
-                                            placeholder="Клиент или сотрудник..."
+                                            :placeholder="isPayrollPayment ? 'Выберите сотрудника...' : 'Клиент или сотрудник...'"
                                             searchPlaceholder="Поиск по имени или телефону..."
                                             :disabled="!!form.work_order_id"
                                             clearable
                                             class="flex-1"
                                         />
-                                        <button v-if="!form.work_order_id" type="button" @click="openQuickCounterpartyModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" title="Добавить клиента или сотрудника">
+                                        <button v-if="!form.work_order_id" type="button" @click="openQuickCounterpartyModal" class="shrink-0 inline-flex items-center justify-center rounded-md border border-primary/30 dark:border-primary/40 bg-primary/10 dark:bg-primary/15 px-3 hover:bg-primary/20 dark:hover:bg-primary/25 transition-colors" :title="isPayrollPayment ? 'Добавить сотрудника' : 'Добавить клиента или сотрудника'">
                                             <i class="ri-add-line text-primary"></i>
                                         </button>
                                     </div>
                                     <p v-if="!!form.work_order_id" class="text-xs text-gray-400 mt-1">Контрагент подставлен автоматически из выбранного заказ-наряда.</p>
+                                    <p v-else-if="isPurchasePayment && counterpartyOptions.length === 0" class="text-xs text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 mt-2 flex items-start gap-1.5">
+                                        <i class="ri-error-warning-line mt-0.5"></i>
+                                        <span>Нет клиентов с ролью «Поставщик» — создайте его кнопкой «+» (роль назначится автоматически) или в карточке клиента.</span>
+                                    </p>
+                                    <p v-else-if="isRefund && counterpartyOptions.length === 0" class="text-xs text-warning bg-warning/5 border border-warning/20 rounded-md px-3 py-2 mt-2 flex items-start gap-1.5">
+                                        <i class="ri-error-warning-line mt-0.5"></i>
+                                        <span>Нет клиентов с ролью «Клиент» — создайте его кнопкой «+» (роль назначится автоматически) или в карточке клиента.</span>
+                                    </p>
                                 </template>
                             </div>
                         </template>
@@ -958,6 +1035,10 @@ const totalBalance = computed(() => {
                                 <span>Без номера высок риск случайно создать дубль клиента — указывайте это только если контакта действительно нет.</span>
                             </p>
                         </div>
+                        <p v-if="quickClientForm.role_ids.length > 0" class="text-xs text-info bg-info/5 border border-info/20 rounded-md px-3 py-2 flex items-start gap-1.5">
+                                <i class="ri-flag-2-line mt-0.5 shrink-0"></i>
+                                <span>Клиенту сразу будет назначена роль «{{ quickClientRoleName }}» — иначе он не появится в списке выбора для этой статьи операции.</span>
+                            </p>
                         <p class="text-xs text-gray-400">Остальные данные клиента можно заполнить позже, в карточке клиента.</p>
                     </div>
                     <div class="flex justify-end gap-3 border-t border-gray-200 dark:border-gray-700 py-4 px-6 bg-gray-50/50 dark:bg-transparent">
