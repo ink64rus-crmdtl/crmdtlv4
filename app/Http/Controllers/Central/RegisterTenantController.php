@@ -32,6 +32,7 @@ class RegisterTenantController extends Controller
         return Inertia::render('Central/Register', [
             'countries' => CountryConfigService::getSupportedCountries(),
             'timezones' => $this->russianTimezones(),
+            'domain_suffix' => config('tenancy.tenant_domain_suffix', '.localhost'),
         ]);
     }
 
@@ -69,7 +70,8 @@ class RegisterTenantController extends Controller
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
-        $domainName = $validated['subdomain'].'.localhost';
+        $domainSuffix = config('tenancy.tenant_domain_suffix', '.localhost');
+        $domainName = $validated['subdomain'].$domainSuffix;
 
         // Проверяем занятость поддомена
         if (DB::table('domains')->where('domain', $domainName)->exists()) {
@@ -98,11 +100,15 @@ class RegisterTenantController extends Controller
             // status()-эндпоинт и сам перейдёт на login нового тенанта.
             ProvisionTenantJob::dispatch($tenant, $validated);
 
-            $redirectUrl = 'http://'.$domainName.':8000/login';
+            // Схема берётся из APP_URL (http/https), чтобы редирект после
+            // провижининга вёл на тот же протокол, что и сама платформа.
+            $scheme = (str_starts_with((string) config('app.url'), 'https')) ? 'https' : 'http';
+            $redirectUrl = $scheme.'://'.$domainName.'/login';
 
             return Inertia::render('Central/Register', [
                 'countries' => CountryConfigService::getSupportedCountries(),
                 'timezones' => $this->russianTimezones(),
+                'domain_suffix' => $domainSuffix,
                 'registration' => [
                     'tenant_id' => $tenant->id,
                     'redirect_url' => $redirectUrl,

@@ -12,6 +12,9 @@ const props = defineProps({
     // Российские часовые пояса «Europe/Saratov (+4)» — генерирует бэкенд
     // (DateTimeZone::listIdentifiers(PER_COUNTRY, 'RU')), единый источник.
     timezones: { type: Object, default: () => ({}) },
+    // Суффикс домена тенантов ('.localhost' в dev, '.ваш-домен.ru' на сервере) —
+    // приходит с бэкенда из config('tenancy.tenant_domain_suffix').
+    domain_suffix: { type: String, default: '.localhost' },
     // Заполняется после успешной отправки: провижининг ушёл в очередь,
     // готовность отслеживаем поллингом status()-эндпоинта.
     registration: { type: Object, default: null },
@@ -175,7 +178,7 @@ const submit = () => {
                                         placeholder="mycompany" 
                                         class="block w-full rounded-none rounded-l-md bg-slate-950 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-indigo-500 focus:bg-slate-950 sm:text-sm" 
                                     />
-                                    <span class="inline-flex items-center rounded-r-md border border-l-0 border-slate-700 bg-slate-800 px-3 text-slate-300 sm:text-sm">.localhost</span>
+                                    <span class="inline-flex items-center rounded-r-md border border-l-0 border-slate-700 bg-slate-800 px-3 text-slate-300 sm:text-sm">{{ props.domain_suffix }}</span>
                                 </div>
                                 <span v-if="form.errors.subdomain" class="text-xs text-red-400 mt-1 block">{{ form.errors.subdomain }}</span>
                             </div>

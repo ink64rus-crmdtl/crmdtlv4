@@ -89,6 +89,15 @@ fi
 # Хост центральной платформы — для tenancy.central_domains: домен или IP сервера.
 CENTRAL_DOMAIN_HOST="${DOMAIN:-${IP_ADDRESS}}"
 
+# Суффикс домена тенантов: при заданном DOMAIN — поддомены этого домена
+# (mdtl.<DOMAIN>, требует wildcard-DNS *.DOMAIN -> IP). Без домена (только IP) —
+# остаётся .localhost (доступ через /etc/hosts с рабочих машин).
+TENANT_DOMAIN_SUFFIX="${SETUP_TENANT_DOMAIN_SUFFIX:-}"
+if [ -z "$TENANT_DOMAIN_SUFFIX" ] && [ -n "$DOMAIN" ]; then
+    TENANT_DOMAIN_SUFFIX=".${DOMAIN}"
+fi
+[ -z "$TENANT_DOMAIN_SUFFIX" ] && TENANT_DOMAIN_SUFFIX=".localhost"
+
 DB_USER="${SETUP_DB_USER:-admin}"
 DB_PASS="${SETUP_DB_PASS:-password}"
 DB_NAME="${SETUP_DB_NAME:-crmdtlv4}"
@@ -388,6 +397,8 @@ REVERB_SCHEME=http
 # сервера здесь корневой "/" уходит в tenancy-группу и падает с
 # TenantCouldNotBeIdentifiedOnDomainException (см. config/tenancy.php).
 TENANCY_CENTRAL_DOMAINS=127.0.0.1,localhost,${CENTRAL_DOMAIN_HOST}
+# Суффикс домена тенантов: .localhost (dev) или .<DOMAIN> (wildcard-DNS).
+TENANT_DOMAIN_SUFFIX=${TENANT_DOMAIN_SUFFIX}
 VITE_REVERB_APP_KEY="\${REVERB_APP_KEY}"
 VITE_REVERB_HOST="\${REVERB_HOST}"
 VITE_REVERB_PORT="\${REVERB_PORT}"
@@ -395,12 +406,18 @@ VITE_REVERB_SCHEME="\${REVERB_SCHEME}"
 ENV
 fi
 
-# Гарантируем TENANCY_CENTRAL_DOMAINS и в уже существующем .env
-if [ -f .env ] && ! grep -q '^TENANCY_CENTRAL_DOMAINS=' .env; then
-    echo "" >> .env
-    echo "# Центральные домены платформы (см. config/tenancy.php)" >> .env
-    echo "TENANCY_CENTRAL_DOMAINS=127.0.0.1,localhost,${CENTRAL_DOMAIN_HOST}" >> .env
-    warn "В существующий .env добавлен TENANCY_CENTRAL_DOMAINS."
+# Гарантируем TENANCY_CENTRAL_DOMAINS и TENANT_DOMAIN_SUFFIX в уже существующем .env
+if [ -f .env ]; then
+    if ! grep -q '^TENANCY_CENTRAL_DOMAINS=' .env; then
+        echo "" >> .env
+        echo "# Центральные домены платформы (см. config/tenancy.php)" >> .env
+        echo "TENANCY_CENTRAL_DOMAINS=127.0.0.1,localhost,${CENTRAL_DOMAIN_HOST}" >> .env
+        warn "В существующий .env добавлен TENANCY_CENTRAL_DOMAINS."
+    fi
+    if ! grep -q '^TENANT_DOMAIN_SUFFIX=' .env; then
+        echo "TENANT_DOMAIN_SUFFIX=${TENANT_DOMAIN_SUFFIX}" >> .env
+        warn "В существующий .env добавлен TENANT_DOMAIN_SUFFIX=${TENANT_DOMAIN_SUFFIX}."
+    fi
 fi
 
 # APP_KEY обязателен

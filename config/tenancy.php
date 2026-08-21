@@ -12,6 +12,15 @@ return [
     'domain_model' => Domain::class,
 
     /**
+     * Суффикс домена тенантов: поддомен + этот суффикс = домен тенанта.
+     * По умолчанию '.localhost' (локальная разработка через dnsmasq). На
+     * боевом сервере — '.ваш-домен.ru' с wildcard-DNS *.ваш-домен.ru -> IP
+     * (см. setup_server.sh, переменная SETUP_TENANT_DOMAIN_SUFFIX).
+     * Задаётся в .env: TENANT_DOMAIN_SUFFIX=.example.com
+     */
+    'tenant_domain_suffix' => (string) env('TENANT_DOMAIN_SUFFIX', '.localhost'),
+
+    /**
      * The list of domains hosting your central app.
      *
      * Only relevant if you're using the domain or subdomain identification middleware.
