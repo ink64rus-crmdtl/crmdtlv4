@@ -51,8 +51,10 @@ const productStockQuantity = (product, warehouseId) => {
 // При включённом складе в списке только товары, реально присутствующие на складе
 // (CLAUDE.md «Фильтр каталога по остаткам») — иначе материал добавится без единого
 // шанса определить себестоимость и физически списать то, чего нет.
+// Выключатель «Все товары» снимает этот фильтр (появляется при включённом складе).
+const showAllProducts = ref(false);
 const productOptions = computed(() => {
-    const list = warehouseEnabled.value
+    const list = warehouseEnabled.value && !showAllProducts.value
         ? props.products.filter(p => productStockQuantity(p, selectedWarehouseId.value) > 0)
         : props.products;
 
@@ -119,8 +121,24 @@ const submit = () => {
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Материал <span class="text-danger">*</span></label>
                     <SearchableSelect v-model="form.itemable_id" :options="productOptions" placeholder="Выберите товар из каталога" />
+                    <div v-if="warehouseEnabled" class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden text-[11px] font-semibold mt-1.5">
+                        <button
+                            type="button"
+                            @click="showAllProducts = false"
+                            :class="!showAllProducts ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-2 py-1 transition-colors"
+                            title="Показывать только товары с остатком на складе"
+                        >Только на складе</button>
+                        <button
+                            type="button"
+                            @click="showAllProducts = true"
+                            :class="showAllProducts ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-2 py-1 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                            title="Показывать все товары каталога, включая те, которых нет на складе"
+                        >Все товары</button>
+                    </div>
                     <p v-if="form.errors.itemable_id" class="text-xs text-danger mt-1">{{ form.errors.itemable_id }}</p>
-                    <p v-if="warehouseEnabled && productOptions.length === 0" class="text-[11px] text-warning mt-1">Нет товаров с остатком на складе{{ selectedWarehouseId ? ' в выбранном складе' : '' }}.</p>
+                    <p v-if="warehouseEnabled && !showAllProducts && productOptions.length === 0" class="text-[11px] text-warning mt-1">Нет товаров с остатком на складе{{ selectedWarehouseId ? ' в выбранном складе' : '' }}.</p>
                 </div>
 
                 <div>

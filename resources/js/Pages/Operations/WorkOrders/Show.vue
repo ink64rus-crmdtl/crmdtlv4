@@ -414,6 +414,10 @@ const getItemCountInOrder = (type, itemId) => {
 
 const warehouseEnabled = computed(() => page.props.warehouse_enabled !== false);
 
+// Выключатель каталога товаров: «Только на складе» (по умолчанию) / «Все товары».
+// Виден только при включённом складском учёте; при выключенном — всегда все.
+const catalogStockMode = ref('stock');
+
 // Фильтр каталога товаров/материалов по остаткам на складе — при включённом
 // складском учёте в списке добавления должны быть видны только позиции,
 // реально присутствующие на складе (не пустой каталог из карточек без остатка).
@@ -431,6 +435,7 @@ const productStockQuantity = (product, warehouseId) => {
 };
 const stockFilteredProducts = computed(() => {
     if (!warehouseEnabled.value) return props.products || [];
+    if (catalogStockMode.value === 'all') return props.products || [];
     return (props.products || []).filter(p => productStockQuantity(p, catalogWarehouseFilter.value) > 0);
 });
 
@@ -1574,6 +1579,22 @@ const formatMoney = (amount) => {
                             <option v-for="wh in warehouses" :key="wh.id" :value="wh.id">{{ wh.name }}</option>
                         </select>
                     </div>
+                    <div v-if="drawerTab === 'products' && warehouseEnabled" class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden text-[11px] font-semibold shrink-0 self-center">
+                        <button
+                            type="button"
+                            @click="catalogStockMode = 'stock'"
+                            :class="catalogStockMode === 'stock' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-2.5 py-1.5 transition-colors"
+                            title="Показывать только товары с остатком на складе"
+                        >Только на складе</button>
+                        <button
+                            type="button"
+                            @click="catalogStockMode = 'all'"
+                            :class="catalogStockMode === 'all' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                            class="px-2.5 py-1.5 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                            title="Показывать все товары каталога, включая те, которых нет на складе"
+                        >Все товары</button>
+                    </div>
                 </div>
 
                 <!-- Вкладки Услуги / Товары -->
@@ -2070,6 +2091,22 @@ const formatMoney = (amount) => {
                                             <option v-for="p in stockFilteredProducts" :key="p.id" :value="p.id" class="bg-white dark:bg-gray-800">{{ getLocalizedLabel(p.name) }}</option>
                                         </template>
                                     </select>
+                                    <div v-if="itemForm.itemable_type === 'product' && warehouseEnabled" class="inline-flex rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden text-[11px] font-semibold mt-1.5">
+                                        <button
+                                            type="button"
+                                            @click="catalogStockMode = 'stock'"
+                                            :class="catalogStockMode === 'stock' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                            class="px-2 py-1 transition-colors"
+                                            title="Показывать только товары с остатком на складе"
+                                        >Только на складе</button>
+                                        <button
+                                            type="button"
+                                            @click="catalogStockMode = 'all'"
+                                            :class="catalogStockMode === 'all' ? 'bg-primary text-white' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                                            class="px-2 py-1 border-l border-gray-200 dark:border-gray-700 transition-colors"
+                                            title="Показывать все товары каталога, включая те, которых нет на складе"
+                                        >Все товары</button>
+                                    </div>
                                 </div>
                             </div>
                             
