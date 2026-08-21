@@ -15,11 +15,17 @@ return [
      * The list of domains hosting your central app.
      *
      * Only relevant if you're using the domain or subdomain identification middleware.
+     *
+     * Читается из .env через TENANCY_CENTRAL_DOMAINS (список через запятую),
+     * дефолт — локальная разработка. На боевом/рабочем сервере сюда попадают
+     * IP или домен платформы (см. setup_server.sh, который прописывает их в .env),
+     * иначе корневой роут "/" уходит в tenancy-группу и падает с
+     * TenantCouldNotBeIdentifiedOnDomainException.
      */
-    'central_domains' => [
-        '127.0.0.1',
-        'localhost',
-    ],
+    'central_domains' => array_values(array_filter(array_map(
+        fn (string $d) => trim($d),
+        explode(',', (string) env('TENANCY_CENTRAL_DOMAINS', '127.0.0.1,localhost'))
+    ))),
 
     /**
      * Tenancy bootstrappers are executed when tenancy is initialized.
